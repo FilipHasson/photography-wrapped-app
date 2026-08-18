@@ -11,9 +11,26 @@ import { formatDay, formatYearMonth, WEEKDAYS } from "../core/time.ts";
  * than rendered empty.
  */
 
+/**
+ * A row the reader can switch off.
+ *
+ * One iPhone frame imported into a catalog is a whole camera as far as the data
+ * is concerned, and it lands on the "cameras" slide beside a body with forty
+ * thousand frames. Hiding it takes its frames out of *every* count, not just
+ * off that one chart, which is why the key travels with the row.
+ */
+export interface RowKey {
+  dimension: "camera" | "lens";
+  key: string;
+  excluded: boolean;
+}
+
 export interface SlideTable {
   columns: string[];
+  /** Every row behind the slide, including the tail the chart folded away. */
   rows: Array<Array<string | number>>;
+  /** Parallel to `rows`; `null` for a row that is not a piece of gear. */
+  rowKeys?: Array<RowKey | null>;
 }
 
 export interface Tile {
@@ -119,7 +136,11 @@ export function buildDeck(stats: DeckStats, ownerName = ""): Deck {
   const title =
     range.spec.kind === "all"
       ? owner === "" ? "Everything, so far" : `${possessive} photography, so far`
-      : owner === "" ? range.label : `${possessive} ${range.label}`;
+      : // A milestone is already a phrase someone wrote — "Since bought the a9
+        // III" — and a possessive in front of it never reads right.
+        range.spec.kind === "since" || owner === ""
+        ? range.label
+        : `${possessive} ${range.label}`;
 
   if (totals.shots === 0) {
     return {
@@ -222,9 +243,19 @@ function opening(stats: DeckStats, rangeLabel: string): Slide {
     subtitle,
     tiles,
     note:
-      totals.files > totals.shots
-        ? `${fmtInt(totals.files)} files, counted as ${fmtInt(totals.shots)} photographs — raw and JPEG pairs, and files seen by more than one source, count once.`
-        : undefined,
+      [
+        totals.files > totals.shots
+          ? `${fmtInt(totals.files)} files, counted as ${fmtInt(totals.shots)} photographs — raw and JPEG pairs, and files seen by more than one source, count once.`
+          : "",
+        // Both of these change every number on every slide, so they are said
+        // once, plainly, on the slide that opens the deck.
+        range.clipped ? `Starts at ${formatDay(range.from)}; anything earlier is left out of this library.` : "",
+        stats.hiddenCameras.length + stats.hiddenLenses.length > 0
+          ? `${stats.hiddenCameras.length + stats.hiddenLenses.length} pieces of gear are hidden.`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" ") || undefined,
     table: tableOf(
       ["Measure", "Value"],
       [
@@ -240,6 +271,9 @@ function opening(stats: DeckStats, rangeLabel: string): Slide {
   };
 }
 
+/** Bars past this are a wall rather than a chart; the tail pools into one. */
+const TOP_BARS = 8;
+
 /** Cameras, lenses and pairings differ only in wording, so they share a shape. */
 function ranked(
   stats: DeckStats,
@@ -254,6 +288,32 @@ function ranked(
   const top = rows[0];
   if (!top) return null;
 
+  // Drawn: the leaders, then everything else as one bar.
+  const drawn = rows.slice(0, TOP_BARS).map((row) => ({
+    label: row.label,
+    value: row.shots,
+    valueLabel: `${fmtInt(row.shots)}  ·  ${fmtPct(row.share)}`,
+    share: row.share,
+    muted: false,
+  }));
+
+  const tail = rows.slice(TOP_BARS);
+  if (tail.length > 0) {
+    const shots = tail.reduce((sum, row) => sum + row.shots, 0);
+    drawn.push({
+      label: `${tail.length} ${plural(tail.length, "other")}`,
+      value: shots,
+      valueLabel: `${fmtInt(shots)}  ·  ${fmtPct(known > 0 ? shots / known : 0)}`,
+      share: known > 0 ? shots / known : 0,
+      muted: true,
+    });
+  }
+
+  // Listed: every one of them, plus whatever is currently hidden.
+  const hidden = field === "cameras" ? stats.hiddenCameras : field === "lenses" ? stats.hiddenLenses : [];
+  const dimension = field === "cameras" ? "camera" : field === "lenses" ? "lens" : null;
+  const listed = [...rows, ...hidden];
+
   // One entry is a fact, not a ranking — but it is still worth its slide.
   const noun = field === "cameras" ? "camera" : field === "lenses" ? "lens" : "pairing";
   const headline =
@@ -267,30 +327,32 @@ function ranked(
       ? `${fmtInt(known)} of ${shotsPhrase(stats.totals.shots)} recorded ${subject}; the rest are not counted here.`
       : undefined;
 
+  const hiddenNote =
+    hidden.length > 0
+      ? `${hidden.length} hidden and left out of every count on every slide: ${hidden.map((row) => row.label).join(", ")}.`
+      : "";
+
   return {
     kind: "bars",
     id: field,
     title,
     subtitle,
     headline,
-    note: coverage,
-    items: rows.map((row) => ({
-      label: row.label,
-      value: row.shots,
-      valueLabel: `${fmtInt(row.shots)}  ·  ${fmtPct(row.share)}`,
-      share: row.share,
-      muted: row.key === "other",
-    })),
-    table: tableOf(
-      [title, "Photographs", "Share", "First", "Last"],
-      rows.map((row) => [
+    note: [coverage, hiddenNote].filter(Boolean).join(" ") || undefined,
+    items: drawn,
+    table: {
+      columns: [title, "Photographs", "Share", "First", "Last"],
+      rows: listed.map((row) => [
         row.label,
         row.shots,
-        fmtPct(row.share),
+        row.excluded ? "hidden" : fmtPct(row.share),
         row.firstDay ? formatDay(row.firstDay) : "—",
         row.lastDay ? formatDay(row.lastDay) : "—",
       ]),
-    ),
+      rowKeys: listed.map((row) =>
+        dimension === null ? null : { dimension, key: row.key, excluded: row.excluded },
+      ),
+    },
   };
 }
 
@@ -695,7 +757,8 @@ function placesSlide(stats: DeckStats): Slide | null {
       ["Position", "Photographs"],
       [...stats.places]
         .sort((a, b) => b.shots - a.shots)
-        .slice(0, 25)
+        // Every cluster, so the table is the whole picture; the map draws them
+        // all anyway, and a library with thousands of them has earned the rows.
         .map((place) => [coord(place), place.shots]),
     ),
   };

@@ -86,6 +86,35 @@
         </section>
 
         <section class="panel">
+          <div class="panel-head">
+            <h2>Milestones</h2>
+            <div class="panel-actions">
+              <span class="hint">Dates worth measuring from — they become ranges of their own</span>
+            </div>
+          </div>
+
+          <div class="milestones">
+            <div class="setting start-day">
+              <span class="setting-label">My library starts on</span>
+              <input id="setting-start" type="date" />
+              <button id="setting-start-clear" class="ghost" type="button">Clear</button>
+              <span class="hint">
+                Anything earlier is left out of every range, including all-time. Useful when a catalog
+                reaches back to phone snaps from before the photography started.
+              </span>
+            </div>
+
+            <div id="anchors" class="anchor-list"></div>
+
+            <form id="anchor-form" class="anchor-form">
+              <input id="anchor-label" type="text" maxlength="60" placeholder="Bought the a9 III" />
+              <input id="anchor-day" type="date" />
+              <button class="ghost" type="submit">Add milestone</button>
+            </form>
+          </div>
+        </section>
+
+        <section class="panel">
           <div class="panel-head"><h2>Settings</h2></div>
           <div class="settings">
             <label class="setting">
@@ -118,6 +147,7 @@
             <span id="deck-range" class="hint"></span>
           </div>
           <div class="deck-actions">
+            <div id="deck-formats" class="chips" role="group" aria-label="Slide shape"></div>
             <button id="deck-table-toggle" class="ghost" type="button" title="Show the numbers (t)">
               Numbers
             </button>

@@ -80,9 +80,10 @@ function installShim(): void {
 let root = "";
 let db: Db;
 let slides: Slide[] = [];
-let renderSlide: (slide: unknown, theme: unknown, position?: string) => ShimNode;
+let renderSlide: (slide: unknown, theme: unknown, position?: string, format?: unknown) => ShimNode;
 let LIGHT: unknown;
 let DARK: unknown;
+let FORMATS: Array<{ id: string; width: number; height: number }>;
 
 before(async () => {
   installShim();
@@ -105,7 +106,11 @@ before(async () => {
   // shapes asserted here are the ones this file uses.
   // @ts-expect-error — untyped module, imported for its behaviour.
   ({ renderSlide } = (await import("../src/web/chart.js")) as {
-    renderSlide: (slide: unknown, theme: unknown, position?: string) => ShimNode;
+    renderSlide: (slide: unknown, theme: unknown, position?: string, format?: unknown) => ShimNode;
+  });
+  // @ts-expect-error — untyped module, imported for its values.
+  ({ FORMATS } = (await import("../src/web/formats.js")) as {
+    FORMATS: Array<{ id: string; width: number; height: number }>;
   });
   // @ts-expect-error — untyped module, imported for its values.
   ({ LIGHT, DARK } = (await import("../src/web/theme.js")) as { LIGHT: unknown; DARK: unknown });
@@ -126,36 +131,86 @@ describe("rendering", () => {
     }
   });
 
-  test("every coordinate is a real number", () => {
-    for (const theme of [LIGHT, DARK]) {
-      for (const slide of slides) {
-        const svg = renderSlide(slide, theme, "1 / 20");
-        for (const node of svg.walk()) {
-          for (const [key, value] of node.attrs) {
-            if (!NUMERIC_ATTRS.has(key)) continue;
-            const numeric = Number(value);
-            assert.ok(
-              Number.isFinite(numeric),
-              `${slide.id}: ${node.tag}.${key} is "${value}"`,
-            );
+  test("every coordinate is a real number, in every shape", () => {
+    for (const format of FORMATS) {
+      for (const theme of [LIGHT, DARK]) {
+        for (const slide of slides) {
+          const svg = renderSlide(slide, theme, "1 / 20", format);
+          for (const node of svg.walk()) {
+            for (const [key, value] of node.attrs) {
+              if (!NUMERIC_ATTRS.has(key)) continue;
+              assert.ok(
+                Number.isFinite(Number(value)),
+                `${format.id}/${slide.id}: ${node.tag}.${key} is "${value}"`,
+              );
+            }
           }
         }
       }
     }
   });
 
-  test("nothing is drawn outside the frame", () => {
-    for (const slide of slides) {
-      const svg = renderSlide(slide, LIGHT, "1 / 20");
-      for (const node of svg.walk()) {
-        if (node.tag === "svg") continue;
-        const x = Number(node.attrs.get("x") ?? 0);
-        const y = Number(node.attrs.get("y") ?? 0);
-        const width = Number(node.attrs.get("width") ?? 0);
-        const height = Number(node.attrs.get("height") ?? 0);
+  test("nothing is drawn outside the frame, in every shape", () => {
+    for (const format of FORMATS) {
+      for (const slide of slides) {
+        const svg = renderSlide(slide, LIGHT, "1 / 20", format);
+        for (const node of svg.walk()) {
+          if (node.tag === "svg") continue;
+          const x = Number(node.attrs.get("x") ?? 0);
+          const y = Number(node.attrs.get("y") ?? 0);
+          const width = Number(node.attrs.get("width") ?? 0);
+          const height = Number(node.attrs.get("height") ?? 0);
 
-        assert.ok(x >= -1 && x + width <= 1601, `${slide.id}: ${node.tag} runs off the side (${x} + ${width})`);
-        assert.ok(y >= -1 && y + height <= 901, `${slide.id}: ${node.tag} runs off the bottom (${y} + ${height})`);
+          assert.ok(
+            x >= -1 && x + width <= format.width + 1,
+            `${format.id}/${slide.id}: ${node.tag} runs off the side (${x} + ${width})`,
+          );
+          assert.ok(
+            y >= -1 && y + height <= format.height + 1,
+            `${format.id}/${slide.id}: ${node.tag} runs off the bottom (${y} + ${height})`,
+          );
+        }
+      }
+    }
+  });
+
+  /**
+   * The overlap that started this: tiles laid out for more room than the slide
+   * had left, so a value sat on the label under it. Text has no box to measure,
+   * so the check is on the baselines the tiles were drawn at.
+   */
+  test("no two lines of text sit on top of each other", () => {
+    for (const format of FORMATS) {
+      for (const slide of slides) {
+        const svg = renderSlide(slide, LIGHT, "1 / 20", format);
+        const texts = [...svg.walk()]
+          .filter((node) => node.tag === "text" && node.textContent.trim() !== "")
+          .map((node) => ({
+            x: Number(node.attrs.get("x") ?? 0),
+            y: Number(node.attrs.get("y") ?? 0),
+            size: Number(node.attrs.get("font-size") ?? 16),
+            anchor: node.attrs.get("text-anchor") ?? "start",
+            value: node.textContent,
+          }));
+
+        for (let i = 0; i < texts.length; i++) {
+          for (let j = i + 1; j < texts.length; j++) {
+            const a = texts[i]!;
+            const b = texts[j]!;
+            if (a.anchor !== b.anchor) continue;
+            if (Math.abs(a.x - b.x) > 2) continue;
+            const gap = Math.abs(a.y - b.y);
+            if (gap === 0) continue;
+            // Text grows upward from its baseline, so what has to fit is the
+            // lower line s own height plus whatever the upper line s descenders
+            // drop below it.
+            const [upper, lower] = a.y < b.y ? [a, b] : [b, a];
+            assert.ok(
+              gap >= lower.size * 0.9 + upper.size * 0.12,
+              `${format.id}/${slide.id}: "${upper.value}" (${upper.size}px) and "${lower.value}" (${lower.size}px) are ${gap.toFixed(1)}px apart`,
+            );
+          }
+        }
       }
     }
   });

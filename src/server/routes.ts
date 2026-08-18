@@ -3,17 +3,19 @@ import fs from "node:fs/promises";
 import type { Db } from "../core/db.ts";
 import {
   defaultSource,
+  makeAnchor,
   makeKey,
   validateConfig,
   type AppConfig,
   type SourceConfig,
 } from "../core/config.ts";
 import { normPath } from "../core/paths.ts";
+import { parseIsoDay } from "../core/time.ts";
 import { indexSource, indexOverview, summarizeSources } from "../index/source.ts";
 import { rebuildPrimaries } from "../index/dedupe.ts";
 import { availableMonths, availableYears, computeStats } from "../stats/aggregate.ts";
 import { buildDeck } from "../stats/slides.ts";
-import { parseRangeSpec, resolveRange } from "../stats/range.ts";
+import { parseRangeSpec, resolveRange, type RangeSpec } from "../stats/range.ts";
 import { browse } from "./browse.ts";
 import type { JobManager } from "./jobs.ts";
 
@@ -64,6 +66,7 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
 function appState(ctx: AppContext) {
   const problems = validateConfig(ctx.config);
   const overview = indexOverview(ctx.db);
+  const floor = ctx.config.startDay;
 
   return {
     config: ctx.config,
@@ -74,13 +77,26 @@ function appState(ctx: AppContext) {
     /** Configured but never indexed — the page nudges these. */
     unindexed: ctx.config.sources.filter((s) => !ctx.db.getSource(s.key)).map((s) => s.key),
     overview,
-    years: availableYears(ctx.db),
-    months: availableMonths(ctx.db),
+    years: availableYears(ctx.db, floor),
+    months: availableMonths(ctx.db, floor),
     problems,
     ready: overview.shots > 0,
     activeJob: ctx.jobs.active,
     platform: process.platform,
   };
+}
+
+/**
+ * A saved anchor is addressed by id, not by the date and label it holds — the
+ * label reaches the deck's title, and a label off a URL is a label anyone could
+ * have written.
+ */
+function rangeSpecFor(ctx: AppContext, params: URLSearchParams): RangeSpec {
+  if (params.get("range") === "anchor") {
+    const anchor = ctx.config.anchors.find((a) => a.id === params.get("id"));
+    if (anchor) return { kind: "since", day: anchor.day, label: anchor.label };
+  }
+  return parseRangeSpec(params);
 }
 
 async function addSource(ctx: AppContext, body: Record<string, unknown>): Promise<void> {
@@ -125,6 +141,14 @@ async function applyConfigPatch(ctx: AppContext, body: Record<string, unknown>):
 
   if (typeof body.ownerName === "string") next.ownerName = body.ownerName.trim().slice(0, 60);
   if (typeof body.includeVideo === "boolean") next.includeVideo = body.includeVideo;
+
+  // `startDay: null` clears it; anything unparseable is a mistake, not a clear.
+  if (body.startDay === null) next.startDay = null;
+  else if (typeof body.startDay === "string" && body.startDay !== "") {
+    const day = parseIsoDay(body.startDay);
+    if (day === null) throw new HttpError(400, `"${body.startDay}" is not a date.`);
+    next.startDay = day;
+  }
   if (typeof body.mergeRawJpegPairs === "boolean" && body.mergeRawJpegPairs !== next.mergeRawJpegPairs) {
     next.mergeRawJpegPairs = body.mergeRawJpegPairs;
     dedupeChanged = true;
@@ -184,11 +208,15 @@ export async function handleApi(
 
     if (route === "GET /api/deck") {
       const overview = indexOverview(ctx.db);
-      const range = resolveRange(parseRangeSpec(url.searchParams), {
+      const range = resolveRange(rangeSpecFor(ctx, url.searchParams), {
         firstDay: overview.firstDay,
         lastDay: overview.lastDay,
+        floorDay: ctx.config.startDay,
       });
-      const stats = computeStats(ctx.db, range, { includeVideo: ctx.config.includeVideo });
+      const stats = computeStats(ctx.db, range, {
+        includeVideo: ctx.config.includeVideo,
+        excluded: ctx.config.excluded,
+      });
       json(res, 200, { range, deck: buildDeck(stats, ctx.config.ownerName) });
       return true;
     }
@@ -253,6 +281,51 @@ export async function handleApi(
         source.excludes = body.excludes.filter((e): e is string => typeof e === "string");
       }
 
+      await ctx.saveConfig(ctx.config);
+      json(res, 200, appState(ctx));
+      return true;
+    }
+
+    if (route === "POST /api/anchors") {
+      const body = await readJson(req);
+      const label = typeof body.label === "string" ? body.label.trim() : "";
+      const day = typeof body.day === "string" ? parseIsoDay(body.day) : null;
+
+      if (label === "") throw new HttpError(400, "An anchor needs a name.");
+      if (day === null) throw new HttpError(400, "An anchor needs a date.");
+
+      const taken = ctx.config.anchors.map((a) => a.id);
+      ctx.config.anchors = [...ctx.config.anchors, makeAnchor(label, day, taken)].sort(
+        (a, b) => a.day - b.day,
+      );
+      await ctx.saveConfig(ctx.config);
+      json(res, 200, appState(ctx));
+      return true;
+    }
+
+    const anchorMatch = url.pathname.match(/^\/api\/anchors\/([^/]+)$/);
+    if (anchorMatch && req.method === "DELETE") {
+      const id = decodeURIComponent(anchorMatch[1] as string);
+      ctx.config.anchors = ctx.config.anchors.filter((a) => a.id !== id);
+      await ctx.saveConfig(ctx.config);
+      json(res, 200, appState(ctx));
+      return true;
+    }
+
+    // Hiding a camera changes every count on every slide, so it is a setting
+    // rather than a view state — it is saved, and it survives a restart.
+    if (route === "POST /api/exclude") {
+      const body = await readJson(req);
+      const dimension = body.dimension === "camera" ? "cameras" : body.dimension === "lens" ? "lenses" : null;
+      const key = typeof body.key === "string" ? body.key : "";
+
+      if (dimension === null || key === "") throw new HttpError(400, "Which piece of gear?");
+
+      const current = new Set(ctx.config.excluded[dimension]);
+      if (body.excluded === false) current.delete(key);
+      else current.add(key);
+
+      ctx.config.excluded = { ...ctx.config.excluded, [dimension]: [...current] };
       await ctx.saveConfig(ctx.config);
       json(res, 200, appState(ctx));
       return true;

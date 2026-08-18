@@ -71,7 +71,11 @@ const store = {
   /** @type {any} */ range: { kind: "all" },
 };
 
-const deck = createDeck({ onExit: () => show("view-home"), onToast: toast });
+const deck = createDeck({
+  onExit: () => show("view-home"),
+  onToast: toast,
+  onExclude: (dimension, key, excluded) => void setExcluded(dimension, key, excluded),
+});
 
 function show(view) {
   for (const id of ["view-setup", "view-home", "view-deck"]) $(id).hidden = id !== view;
@@ -82,6 +86,7 @@ async function refreshState() {
   store.state = await api("/api/state");
   renderSources();
   renderRanges();
+  renderMilestones();
   renderSettings();
 
   if (store.state.config.sources.length === 0) show("view-setup");
@@ -176,6 +181,12 @@ function renderRanges() {
     { label: "Last 12 months", spec: { kind: "last", days: 365 } },
   ];
 
+  // Saved milestones come first among the dated ranges: "since I got the a9
+  // III" is the range someone actually wants, and a year is the fallback.
+  for (const anchor of store.state.config.anchors ?? []) {
+    presets.push({ label: `Since ${anchor.label}`, spec: { kind: "anchor", id: anchor.id } });
+  }
+
   for (const year of store.state.years.slice(0, 8)) {
     presets.push({ label: String(year.year), spec: { kind: "year", year: year.year }, count: year.shots });
   }
@@ -219,6 +230,66 @@ function renderSettings() {
   $("setting-video").checked = store.state.config.includeVideo;
 }
 
+const isoDay = (day) =>
+  day
+    ? `${Math.floor(day / 10000)}-${String(Math.floor(day / 100) % 100).padStart(2, "0")}-${String(day % 100).padStart(2, "0")}`
+    : "";
+
+function renderMilestones() {
+  const config = store.state.config;
+  $("setting-start").value = isoDay(config.startDay);
+
+  const anchors = config.anchors ?? [];
+  $("anchors").replaceChildren(
+    ...(anchors.length === 0
+      ? [
+          el("p", {
+            class: "empty-note",
+            text: "No milestones yet. The day a camera arrived is the usual one.",
+          }),
+        ]
+      : anchors.map((anchor) =>
+          el(
+            "div",
+            { class: "anchor" },
+            el(
+              "div",
+              {},
+              el("div", { class: "anchor-label", text: anchor.label }),
+              el("div", { class: "hint", text: formatDay(anchor.day) }),
+            ),
+            el(
+              "div",
+              { class: "anchor-actions" },
+              el("button", {
+                class: "ghost",
+                type: "button",
+                text: "Use as range",
+                onclick: () => {
+                  store.range = { kind: "anchor", id: anchor.id };
+                  renderRanges();
+                  void buildDeck();
+                },
+              }),
+              el("button", {
+                class: "ghost",
+                type: "button",
+                text: "Start here",
+                title: "Ignore everything before this date, everywhere",
+                onclick: () => void saveStartDay(isoDay(anchor.day)),
+              }),
+              el("button", {
+                class: "ghost",
+                type: "button",
+                text: "Remove",
+                onclick: () => void removeAnchor(anchor),
+              }),
+            ),
+          ),
+        )),
+  );
+}
+
 // -------------------------------------------------------------- actions ----
 
 async function startIndex(keys, full) {
@@ -259,8 +330,65 @@ async function saveSettings() {
   }
 }
 
+async function saveStartDay(value) {
+  try {
+    await api("/api/config", { method: "POST", body: { startDay: value === "" ? null : value } });
+    await refreshState();
+    toast(value === "" ? "Start date cleared." : `Library starts ${value}.`);
+    if (!$("view-deck").hidden) await buildDeck(true);
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+async function addAnchor(event) {
+  event.preventDefault();
+  const label = $("anchor-label").value.trim();
+  const day = $("anchor-day").value;
+
+  if (label === "" || day === "") {
+    toast("A milestone needs a name and a date.", true);
+    return;
+  }
+
+  try {
+    await api("/api/anchors", { method: "POST", body: { label, day } });
+    $("anchor-label").value = "";
+    $("anchor-day").value = "";
+    await refreshState();
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+async function removeAnchor(anchor) {
+  try {
+    await api(`/api/anchors/${encodeURIComponent(anchor.id)}`, { method: "DELETE" });
+    if (store.range.kind === "anchor" && store.range.id === anchor.id) store.range = { kind: "all" };
+    await refreshState();
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+/**
+ * Hiding a camera changes every count on every slide, so the deck is rebuilt
+ * from the server rather than filtered in the browser — and it comes back to
+ * the same slide, because this is something people do several times in a row.
+ */
+async function setExcluded(dimension, key, excluded) {
+  try {
+    await api("/api/exclude", { method: "POST", body: { dimension, key, excluded } });
+    await refreshState();
+    await buildDeck(true);
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
 function rangeQuery(spec) {
   const params = new URLSearchParams({ range: spec.kind });
+  if (spec.kind === "anchor") params.set("id", spec.id);
   if (spec.kind === "year") params.set("year", String(spec.year));
   if (spec.kind === "month") {
     params.set("year", String(spec.year));
@@ -274,14 +402,14 @@ function rangeQuery(spec) {
   return params.toString();
 }
 
-async function buildDeck() {
+async function buildDeck(keepPosition = false) {
   const button = $("deck-build");
   button.disabled = true;
   button.textContent = "Counting…";
 
   try {
     const { deck: built } = await api(`/api/deck?${rangeQuery(store.range)}`);
-    deck.show(built);
+    deck.show(built, { keepPosition });
     show("view-deck");
     if (built.empty) toast("Nothing was shot in that range.");
   } catch (err) {
@@ -428,6 +556,9 @@ $("nav-home").addEventListener("click", () => show("view-home"));
 $("setting-owner").addEventListener("change", () => void saveSettings());
 $("setting-merge").addEventListener("change", () => void saveSettings());
 $("setting-video").addEventListener("change", () => void saveSettings());
+$("setting-start").addEventListener("change", (event) => void saveStartDay(event.target.value));
+$("setting-start-clear").addEventListener("click", () => void saveStartDay(""));
+$("anchor-form").addEventListener("submit", (event) => void addAnchor(event));
 
 $("range-custom-go").addEventListener("click", () => {
   const from = $("range-from").value;

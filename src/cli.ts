@@ -169,8 +169,16 @@ if (args.command === "index") {
 
 if (args.command === "stats") {
   const overview = indexOverview(db);
-  const range = resolveRange(args.range, { firstDay: overview.firstDay, lastDay: overview.lastDay });
-  const deck = buildDeck(computeStats(db, range, { includeVideo: config.includeVideo }), config.ownerName);
+  const range = resolveRange(args.range, {
+    firstDay: overview.firstDay,
+    lastDay: overview.lastDay,
+    floorDay: config.startDay,
+  });
+  const stats = computeStats(db, range, {
+    includeVideo: config.includeVideo,
+    excluded: config.excluded,
+  });
+  const deck = buildDeck(stats, config.ownerName);
 
   console.log(`\n  ${deck.title}  ·  ${deck.rangeLabel}\n`);
   for (const slide of deck.slides) {

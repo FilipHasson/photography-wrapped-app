@@ -30,7 +30,7 @@ pick a range, and hit **Show me the deck**.
 ```
 npm start -- --port 8080     # a different port
 npm start -- --no-open       # don't launch a browser
-npm test                     # 74 tests, including a full index-and-count run
+npm test                     # 91 tests, including a full index-and-count run
 npm run typecheck
 ```
 
@@ -77,9 +77,26 @@ The same deck, over whatever span you ask for:
 - **A month** — the last six months are one click; any month via the dates
 - **Last 30 days**, **last 12 months**
 - **Any two dates** — from and to, inclusive
+- **Since a milestone** — see below
 
 Every range except all-time also carries the equally long window before it, so
 the opening slide can tell you whether you shot more or less than last time.
+
+### Milestones and where your library starts
+
+A catalog usually reaches back further than the photography does — phone snaps,
+scans, an old import — and one such year moves every average and every
+"favourite" in an all-time deck.
+
+Two settings deal with that, and both are saved:
+
+- **My library starts on** — a date before which nothing is counted, in *every*
+  range including all-time. Set it to the day you bought the camera and the
+  phone years stop existing as far as the deck is concerned. The opening slide
+  says so out loud whenever it is holding a range back.
+- **Milestones** — named dates worth measuring from ("Bought the a9 III",
+  "Moved to Lisbon"). Each becomes a one-click **Since …** range of its own, and
+  any of them can be promoted to the library start date with one button.
 
 ## The deck
 
@@ -98,13 +115,39 @@ orientation · where · new gear · your longest burst · a closing summary.
 | `f` | Full screen |
 | `Esc` | Back to the library |
 
+### Numbers, and hiding what skews them
+
 **Numbers** is not a fallback. Every value a slide draws is in its table, so
-nothing on a slide is reachable only by colour.
+nothing on a slide is reachable only by colour — and the table goes further than
+the chart does. Where a chart folds a tail into one "12 others" bar, the table
+lists all twelve.
 
-### Saving it
+Each row of gear also has a tick box. Untick it and that camera or lens leaves
+**every count on every slide**, not just the chart in front of you — which is
+what you want for the single iPhone frame that found its way into a catalog and
+turned into a camera. The row stays in the table, marked hidden, so you can put
+it back. The choice is saved.
 
-- **Save slide (PNG)** — the slide you are on, at 3200×1800.
-- **Save deck (PDF)** — every slide, one per page, 16:9.
+### Shapes, and saving it
+
+The deck draws itself at whatever shape you pick, and the choice sticks:
+
+| | For |
+|---|---|
+| **16:9** | Screens, projectors, the PDF |
+| **9:16** | Stories and Reels |
+| **4:5** | A feed post — the tallest the grid allows |
+| **4:3** | A grid post |
+| **1:1** | Square |
+
+It is a real re-layout rather than a crop: type is set larger relative to the
+frame in the narrow shapes, ranked bars put the lens name above its own bar
+instead of beside it, and the year calendar turns ninety degrees so weeks run
+down the frame instead of across it.
+
+- **Save slide (PNG)** — the slide you are on, at twice the format size
+  (9:16 comes out 2160×3840).
+- **Save deck (PDF)** — every slide, one page each, at the format's aspect ratio.
 
 Both are rendered from the slides themselves rather than from the screen, so
 what you save is what you saw, at full resolution, in the theme you are using.
@@ -142,6 +185,10 @@ picker. It is not a service to expose.
 - **A lens listed twice.** Two spellings that normalisation did not merge.
   `src/core/gear.ts` is where that lives, and `test/gear.test.ts` is where a
   new case goes.
+- **A camera named like a part number.** Sony writes `ILCE-7M2` where everyone
+  else writes a name; those are rewritten to `a7 II` by rule, so the whole
+  shelf reads the same way. The grouping key is still the raw model, so the
+  renaming can never merge two bodies.
 - **Everything in one year, decades ago.** A camera with a dead clock battery.
   Capture times before 1990 are treated as unknown; a stuck clock inside that
   range is believed.

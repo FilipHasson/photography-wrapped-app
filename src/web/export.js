@@ -1,5 +1,5 @@
 // @ts-check
-import { HEIGHT, WIDTH } from "./chart.js";
+import { DEFAULT_FORMAT } from "./formats.js";
 
 /**
  * Getting a slide out of the browser.
@@ -18,24 +18,26 @@ import { HEIGHT, WIDTH } from "./chart.js";
 /** Rasterising at 2× keeps text crisp on a projector and in print. */
 const SCALE = 2;
 
-function serialize(svg) {
+function serialize(svg, format) {
   const clone = /** @type {SVGElement} */ (svg.cloneNode(true));
   clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-  clone.setAttribute("width", String(WIDTH));
-  clone.setAttribute("height", String(HEIGHT));
+  // Firefox rasterises an SVG image at 0x0 unless it carries explicit
+  // dimensions, whatever its viewBox says.
+  clone.setAttribute("width", String(format.width));
+  clone.setAttribute("height", String(format.height));
   return new XMLSerializer().serializeToString(clone);
 }
 
 /** Draws one slide onto a canvas at `SCALE`, resolving when the paint is done. */
-async function rasterize(svg) {
-  const source = serialize(svg);
+async function rasterize(svg, format) {
+  const source = serialize(svg, format);
   const blob = new Blob([source], { type: "image/svg+xml;charset=utf-8" });
   const url = URL.createObjectURL(blob);
 
   try {
     const image = new Image();
-    image.width = WIDTH;
-    image.height = HEIGHT;
+    image.width = format.width;
+    image.height = format.height;
     await new Promise((resolve, reject) => {
       image.onload = () => resolve(undefined);
       image.onerror = () => reject(new Error("The slide could not be rendered to an image."));
@@ -43,8 +45,8 @@ async function rasterize(svg) {
     });
 
     const canvas = document.createElement("canvas");
-    canvas.width = WIDTH * SCALE;
-    canvas.height = HEIGHT * SCALE;
+    canvas.width = format.width * SCALE;
+    canvas.height = format.height * SCALE;
     const context = canvas.getContext("2d");
     if (!context) throw new Error("This browser would not give us a canvas to draw on.");
 
@@ -71,8 +73,8 @@ function download(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
-export async function exportSlidePng(svg, filename) {
-  const canvas = await rasterize(svg);
+export async function exportSlidePng(svg, filename, format = DEFAULT_FORMAT) {
+  const canvas = await rasterize(svg, format);
   const blob = await new Promise((resolve) => canvas.toBlob((result) => resolve(result), "image/png"));
   if (!blob) throw new Error("The slide could not be turned into a PNG.");
   download(blob, filename);
@@ -80,9 +82,20 @@ export async function exportSlidePng(svg, filename) {
 
 // ----------------------------------------------------------------- PDF -----
 
-/** Page size in points. 960×540 is a 16:9 slide at a sane physical size. */
-const PAGE_W = 960;
-const PAGE_H = 540;
+/**
+ * Page size in points. The long edge is fixed and the short one follows the
+ * format, so a 9:16 deck exports as tall pages rather than as 16:9 pages with a
+ * slide floating in the middle of them.
+ */
+const PAGE_LONG = 960;
+
+function pageSize(format) {
+  const long = Math.max(format.width, format.height);
+  const short = Math.round((PAGE_LONG * Math.min(format.width, format.height)) / long);
+  return format.width >= format.height
+    ? { w: PAGE_LONG, h: short }
+    : { w: short, h: PAGE_LONG };
+}
 
 const encoder = new TextEncoder();
 
@@ -106,7 +119,8 @@ function base64ToBytes(base64) {
  * which is why this appends to a list of chunks and tracks the length as it
  * goes rather than building one string.
  */
-export function buildPdf(images) {
+export function buildPdf(images, format = DEFAULT_FORMAT) {
+  const page = pageSize(format);
   const chunks = [];
   let length = 0;
   const offsets = [0];
@@ -147,12 +161,12 @@ export function buildPdf(images) {
   images.forEach((image, i) => {
     object(
       pageId(i),
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] ` +
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${page.w} ${page.h}] ` +
         `/Resources << /XObject << /Im0 ${imageId(i)} 0 R >> >> /Contents ${contentId(i)} 0 R >>`,
     );
 
     // Scale the unit image square up to the full page.
-    const content = `q ${PAGE_W} 0 0 ${PAGE_H} 0 0 cm /Im0 Do Q`;
+    const content = `q ${page.w} 0 0 ${page.h} 0 0 cm /Im0 Do Q`;
     object(contentId(i), `<< /Length ${content.length} >>`, content);
 
     object(
@@ -181,12 +195,12 @@ export function buildPdf(images) {
  * `render` is called per slide rather than taking live nodes, so the export
  * never depends on what happens to be on screen.
  */
-export async function exportDeckPdf(slides, render, filename, onProgress) {
+export async function exportDeckPdf(slides, render, filename, onProgress, format = DEFAULT_FORMAT) {
   const images = [];
 
   for (const [index, slide] of slides.entries()) {
     onProgress?.(index, slides.length);
-    const canvas = await rasterize(render(slide, index));
+    const canvas = await rasterize(render(slide, index), format);
     // JPEG rather than PNG: these are photographic-looking flat-colour pages
     // either way, and a 20-slide PNG deck runs to tens of megabytes.
     const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
@@ -198,7 +212,7 @@ export async function exportDeckPdf(slides, render, filename, onProgress) {
   }
 
   onProgress?.(slides.length, slides.length);
-  download(buildPdf(images), filename);
+  download(buildPdf(images, format), filename);
 }
 
 /** `filip-2025.pdf` — a name that says what it is without needing renaming. */

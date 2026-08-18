@@ -1,11 +1,19 @@
 // @ts-check
+import { DEFAULT_FORMAT, metrics } from "./formats.js";
+
 /**
  * Drawing a slide.
  *
- * Every slide is one 1600×900 SVG with no external anything: colours are
- * attributes, not CSS variables, and the only font is the system sans. That is
- * what makes export work — a serialised SVG rendered into a canvas has no page
- * around it, so anything inherited would silently disappear.
+ * Every slide is one SVG with no external anything: colours are attributes, not
+ * CSS variables, and the only font is the system sans. That is what makes
+ * export work — a serialised SVG rendered into a canvas has no page around it,
+ * so anything inherited would silently disappear.
+ *
+ * The same code draws 16:9, 9:16, 4:5, 4:3 and 1:1. Nothing is hard-coded to a
+ * canvas size: type comes from the format's metrics, every chart is handed a
+ * plot rectangle, and the two charts that genuinely need a different shape in a
+ * narrow frame — ranked bars and the calendar — switch layout rather than
+ * squeeze.
  *
  * Chart conventions, held to across every kind here:
  *
@@ -15,16 +23,11 @@
  *  - values are labelled selectively — the extreme, the leader, the axis — and
  *    every value is in the slide's table view regardless
  *  - each mark carries a `<title>`, so hovering says what it is
+ *  - nothing is placed before it is measured; a clipped label is worse than none
  */
 
 const NS = "http://www.w3.org/2000/svg";
-
-export const WIDTH = 1600;
-export const HEIGHT = 900;
-const PAD = 96;
-
-/** Plot area, below the headline block and above the note. */
-const PLOT = { x: PAD, y: 300, w: WIDTH - PAD * 2, h: 470 };
+const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 
 // ------------------------------------------------------------- elements ----
 
@@ -46,7 +49,9 @@ function text(value, x, y, options = {}) {
   const node = el("text", {
     x,
     y,
-    "font-size": size,
+    // Rounded: derived sizes otherwise come out as 30.172959999999993px, which
+    // is noise in the exported file and in every diff of it.
+    "font-size": Math.round(size * 100) / 100,
     "font-weight": weight,
     fill,
     "text-anchor": anchor,
@@ -56,8 +61,6 @@ function text(value, x, y, options = {}) {
   node.textContent = value;
   return node;
 }
-
-const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 
 /** Adds a native tooltip to a mark, which survives into the exported file. */
 function titled(node, label) {
@@ -113,10 +116,9 @@ function wrap(value, maxWidth, size, maxLines = 2, weight = 400) {
   if (lines.length < maxLines && line !== "") lines.push(line);
 
   if (lines.length === maxLines) {
-    const last = lines[maxLines - 1];
     const consumed = lines.join(" ");
     if (consumed.length < value.length) {
-      lines[maxLines - 1] = ellipsize(`${last} …`, maxWidth, size, weight);
+      lines[maxLines - 1] = ellipsize(`${lines[maxLines - 1]} …`, maxWidth, size, weight);
     }
   }
   return lines;
@@ -141,185 +143,253 @@ const fmt = (n) => nf.format(Math.round(n));
 
 /**
  * The parts every slide shares: eyebrow, headline, subtitle, note, page
- * number. Returns the root and the space left for the chart.
+ * number. Returns the root and whatever space is left for the chart.
+ *
+ * The note is laid out *before* the plot rather than after, because it is the
+ * one block whose height is unknown until its text has been wrapped — and a
+ * chart that assumed two lines and got four is a chart drawn over its own
+ * caveats.
  */
-function frame(slide, theme, position) {
+function frame(slide, theme, position, L) {
   const root = el("svg", {
     xmlns: NS,
-    viewBox: `0 0 ${WIDTH} ${HEIGHT}`,
-    width: WIDTH,
-    height: HEIGHT,
+    viewBox: `0 0 ${L.width} ${L.height}`,
+    width: L.width,
+    height: L.height,
     "font-family": FONT,
     role: "img",
     "aria-label": `${slide.title}. ${slide.headline}`,
   });
 
-  root.append(el("rect", { x: 0, y: 0, width: WIDTH, height: HEIGHT, fill: theme.surface }));
+  root.append(el("rect", { x: 0, y: 0, width: L.width, height: L.height, fill: theme.surface }));
 
+  const inner = L.width - L.pad * 2;
+  const eyebrowY = L.pad + L.eyebrow * 0.5;
   root.append(
-    text(slide.title.toUpperCase(), PAD, 96, {
-      size: 20,
+    text(slide.title.toUpperCase(), L.pad, eyebrowY, {
+      size: L.eyebrow,
       weight: 600,
       fill: theme.muted,
-      "letter-spacing": 2,
+      "letter-spacing": Math.max(1, L.eyebrow * 0.09),
     }),
   );
 
-  const headlineSize = slide.headline.length > 46 ? 50 : 62;
-  const headlineLines = wrap(slide.headline, WIDTH - PAD * 2, headlineSize, 2, 600);
-  headlineLines.forEach((line, i) => {
-    root.append(text(line, PAD, 170 + i * (headlineSize + 10), { size: headlineSize, weight: 600, fill: theme.ink }));
+  // One step down for a long headline, and only one: past that it wraps.
+  const headlineSize = slide.headline.length > 44 ? L.headlineSmall : L.headline;
+  const lines = wrap(slide.headline, inner, headlineSize, L.headlineLines, 600);
+  const lineHeight = headlineSize * 1.16;
+  const headlineTop = eyebrowY + L.eyebrow * 1.9 + headlineSize * 0.82;
+
+  lines.forEach((line, i) => {
+    root.append(
+      text(line, L.pad, headlineTop + i * lineHeight, {
+        size: headlineSize,
+        weight: 600,
+        fill: theme.ink,
+      }),
+    );
   });
 
-  let y = 170 + headlineLines.length * (headlineSize + 10) + 6;
+  let y = headlineTop + (lines.length - 1) * lineHeight;
   if (slide.subtitle) {
-    root.append(text(ellipsize(slide.subtitle, WIDTH - PAD * 2, 26), PAD, y, { size: 26, fill: theme.ink2 }));
-    y += 34;
+    // Clearance is measured off the headline, not the subtitle: the descenders
+    // that would be sat on belong to the bigger of the two.
+    y += headlineSize * 0.45 + L.subtitle * 1.1;
+    root.append(
+      text(ellipsize(slide.subtitle, inner, L.subtitle), L.pad, y, {
+        size: L.subtitle,
+        fill: theme.ink2,
+      }),
+    );
   }
 
+  const footerY = L.height - L.pad * 0.7;
+  let noteTop = footerY;
+
   if (slide.note) {
-    wrap(slide.note, WIDTH - PAD * 2 - 120, 20, 3).forEach((line, i) => {
-      root.append(text(line, PAD, HEIGHT - 96 + i * 26, { size: 20, fill: theme.muted }));
+    const noteLines = wrap(slide.note, inner - (position ? L.width * 0.09 : 0), L.note, L.noteLines);
+    noteTop = footerY - (noteLines.length - 1) * L.note * 1.35;
+    noteLines.forEach((line, i) => {
+      root.append(text(line, L.pad, noteTop + i * L.note * 1.35, { size: L.note, fill: theme.muted }));
     });
   }
 
   if (position) {
     root.append(
-      text(position, WIDTH - PAD, HEIGHT - 96, { size: 20, fill: theme.muted, anchor: "end" }),
+      text(position, L.width - L.pad, footerY, { size: L.note, fill: theme.muted, anchor: "end" }),
     );
   }
 
-  const top = Math.max(PLOT.y, y + 24);
-  return { root, plot: { x: PAD, y: top, w: WIDTH - PAD * 2, h: HEIGHT - 150 - top } };
+  const top = y + L.subtitle * 1.4;
+  return {
+    root,
+    plot: { x: L.pad, y: top, w: inner, h: Math.max(120, noteTop - L.note * 1.8 - top) },
+  };
+}
+
+// ------------------------------------------------------------- the marks ---
+
+/** A bar: rounded at the data end, square where it leaves the baseline. */
+function bar(root, x, y, width, height, fill, label, opacity = 1) {
+  const radius = Math.min(4, height / 2, width / 2);
+  root.append(titled(el("rect", { x, y, width, height, rx: radius, fill, opacity }), label));
+  if (width > radius) {
+    root.append(el("rect", { x, y, width: radius, height, fill, opacity }));
+  }
+}
+
+/** A column: the same rule, rotated. */
+function column(root, x, baseline, width, height, fill, label, opacity = 1) {
+  const radius = Math.min(4, width / 2, height / 2);
+  root.append(
+    titled(el("rect", { x, y: baseline - height, width, height, rx: radius, fill, opacity }), label),
+  );
+  if (height > radius) {
+    root.append(el("rect", { x, y: baseline - radius, width, height: radius, fill, opacity }));
+  }
 }
 
 // ----------------------------------------------------------------- kinds ---
 
-/** Ranked horizontal bars: cameras, lenses, pairings. */
-function drawBars(root, plot, slide, theme) {
+/**
+ * Ranked horizontal bars: cameras, lenses, pairings.
+ *
+ * Wide frames put the name, the bar and the number on one line. Narrow ones
+ * cannot — a lens name runs to thirty characters and 1080px has no room for it
+ * beside a bar — so there the label sits above its own bar rather than being
+ * cut down to "NIKKOR Z 24-7…".
+ */
+function drawBars(root, plot, slide, theme, L) {
   const items = slide.items.slice(0, 9);
+  if (items.length === 0) return;
   const max = Math.max(...items.map((item) => item.value), 1);
 
-  const rowHeight = Math.min(56, plot.h / items.length);
-  const thickness = Math.min(24, rowHeight - 16);
-  const labelWidth = 460;
-  const valueWidth = 190;
+  if (L.narrow) {
+    drawBarsStacked(root, plot, items, max, theme, L);
+    return;
+  }
+
+  const rowHeight = Math.min(plot.h / items.length, L.label * 2.6);
+  const thickness = Math.min(24, Math.max(6, rowHeight - L.label * 0.9));
+  const valueWidth = Math.max(...items.map((item) => measure(item.valueLabel, L.value, 600))) + 20;
+  const labelWidth = Math.min(plot.w * 0.36, 460);
   const trackX = plot.x + labelWidth + 24;
-  const trackW = plot.w - labelWidth - valueWidth - 48;
+  const trackW = Math.max(40, plot.w - labelWidth - valueWidth - 48);
 
   items.forEach((item, i) => {
-    const y = plot.y + i * rowHeight;
-    const mid = y + rowHeight / 2;
+    const mid = plot.y + i * rowHeight + rowHeight / 2;
     const width = Math.max(2, (item.value / max) * trackW);
     const fill = item.muted ? theme.axis : theme.series[0];
 
     root.append(
-      text(ellipsize(item.label, labelWidth, 24, i === 0 ? 600 : 400), plot.x, mid + 8, {
-        size: 24,
+      text(ellipsize(item.label, labelWidth, L.label, i === 0 ? 600 : 400), plot.x, mid + L.label * 0.34, {
+        size: L.label,
         weight: i === 0 ? 600 : 400,
         fill: i === 0 ? theme.ink : theme.ink2,
       }),
     );
-
+    bar(root, trackX, mid - thickness / 2, width, thickness, fill, `${item.label}: ${fmt(item.value)}`);
     root.append(
-      titled(
-        el("rect", {
-          x: trackX,
-          y: mid - thickness / 2,
-          width,
-          height: thickness,
-          // Square where it leaves the baseline, rounded at the data end.
-          rx: Math.min(4, thickness / 2),
-          fill,
-        }),
-        `${item.label}: ${fmt(item.value)}`,
-      ),
-    );
-    // The rounded corner is wanted only at the tip; this patches the root back
-    // to square without a second shape language.
-    root.append(
-      el("rect", { x: trackX, y: mid - thickness / 2, width: Math.min(4, width), height: thickness, fill }),
-    );
-
-    root.append(
-      text(item.valueLabel, trackX + trackW + 24, mid + 8, {
-        size: 22,
+      text(item.valueLabel, plot.x + plot.w, mid + L.value * 0.34, {
+        size: L.value,
         fill: theme.ink2,
         weight: i === 0 ? 600 : 400,
+        anchor: "end",
       }),
     );
   });
 }
 
+function drawBarsStacked(root, plot, items, max, theme, L) {
+  const rowHeight = Math.min(plot.h / items.length, L.label * 3.4);
+  const thickness = Math.min(22, Math.max(6, rowHeight - L.label * 1.9));
+
+  items.forEach((item, i) => {
+    const top = plot.y + i * rowHeight;
+    const fill = item.muted ? theme.axis : theme.series[0];
+    const valueWidth = measure(item.valueLabel, L.value, 600) + 16;
+
+    root.append(
+      text(ellipsize(item.label, plot.w - valueWidth, L.label, i === 0 ? 600 : 400), plot.x, top + L.label, {
+        size: L.label,
+        weight: i === 0 ? 600 : 400,
+        fill: i === 0 ? theme.ink : theme.ink2,
+      }),
+    );
+    root.append(
+      text(item.valueLabel, plot.x + plot.w, top + L.label, {
+        size: L.value,
+        fill: theme.ink2,
+        weight: i === 0 ? 600 : 400,
+        anchor: "end",
+      }),
+    );
+    bar(
+      root,
+      plot.x,
+      top + L.label * 1.5,
+      Math.max(2, (item.value / max) * plot.w),
+      thickness,
+      fill,
+      `${item.label}: ${fmt(item.value)}`,
+    );
+  });
+}
+
 /** Vertical histogram: focal length, aperture, ISO, shutter, ratings. */
-function drawColumns(root, plot, slide, theme) {
+function drawColumns(root, plot, slide, theme, L) {
   const items = slide.items;
   if (items.length === 0) return;
 
   const max = Math.max(...items.map((item) => item.value), 1);
   const ceiling = niceCeiling(max);
   const band = plot.w / items.length;
-  const thickness = Math.min(24, Math.max(6, band - 14));
-  const baseline = plot.y + plot.h - 56;
-  const height = plot.h - 90;
+  const thickness = Math.min(24, Math.max(5, band - 14));
+  const baseline = plot.y + plot.h - L.axis * 3;
+  const height = Math.max(40, baseline - plot.y - L.value * 2);
 
   // Two hairlines are enough to read a histogram against.
   for (const fraction of [0.5, 1]) {
     const y = baseline - height * fraction;
+    root.append(el("line", { x1: plot.x, y1: y, x2: plot.x + plot.w, y2: y, stroke: theme.grid }));
     root.append(
-      el("line", { x1: plot.x, y1: y, x2: plot.x + plot.w, y2: y, stroke: theme.grid, "stroke-width": 1 }),
-    );
-    root.append(
-      text(fmt(ceiling * fraction), plot.x + plot.w, y - 8, {
-        size: 18,
+      text(fmt(ceiling * fraction), plot.x + plot.w, y - L.axis * 0.5, {
+        size: L.axis,
         fill: theme.muted,
         anchor: "end",
       }),
     );
   }
 
-  // Enough room for every label, or every other one, or every fourth.
-  const widest = Math.max(...items.map((item) => measure(item.label, 18)));
-  const stride = widest + 12 <= band ? 1 : widest + 12 <= band * 2 ? 2 : Math.ceil((widest + 12) / band);
+  // Every label, or every other one, or every fourth — whatever fits.
+  const widest = Math.max(...items.map((item) => measure(item.label, L.axis)));
+  const stride = Math.max(1, Math.ceil((widest + 12) / band));
 
   items.forEach((item, i) => {
     const cx = plot.x + band * (i + 0.5);
-    const barHeight = Math.max(item.value > 0 ? 2 : 0, (item.value / ceiling) * height);
+    const barHeight = item.value > 0 ? Math.max(2, (item.value / ceiling) * height) : 0;
     const highlighted = i === slide.highlight;
+    // One series, one colour; the favourite holds full strength and the rest
+    // step back, so emphasis never doubles as a value scale.
+    const opacity = slide.highlight >= 0 && !highlighted ? 0.45 : 1;
 
     if (barHeight > 0) {
-      root.append(
-        titled(
-          el("rect", {
-            x: cx - thickness / 2,
-            y: baseline - barHeight,
-            width: thickness,
-            height: barHeight,
-            rx: Math.min(4, thickness / 2),
-            fill: theme.series[0],
-            // One series, one colour; the favourite is emphasised by holding
-            // full strength while the rest step back.
-            opacity: slide.highlight >= 0 && !highlighted ? 0.45 : 1,
-          }),
-          `${item.label}: ${fmt(item.value)}`,
-        ),
-      );
-      root.append(
-        el("rect", {
-          x: cx - thickness / 2,
-          y: baseline - Math.min(4, barHeight),
-          width: thickness,
-          height: Math.min(4, barHeight),
-          fill: theme.series[0],
-          opacity: slide.highlight >= 0 && !highlighted ? 0.45 : 1,
-        }),
+      column(
+        root,
+        cx - thickness / 2,
+        baseline,
+        thickness,
+        barHeight,
+        theme.series[0],
+        `${item.label}: ${fmt(item.value)}`,
+        opacity,
       );
     }
 
     if (highlighted) {
       root.append(
-        text(fmt(item.value), cx, baseline - barHeight - 14, {
-          size: 22,
+        text(fmt(item.value), cx, baseline - barHeight - L.value * 0.6, {
+          size: L.value,
           weight: 600,
           fill: theme.ink,
           anchor: "middle",
@@ -329,8 +399,8 @@ function drawColumns(root, plot, slide, theme) {
 
     if (i % stride === 0 || highlighted) {
       root.append(
-        text(item.label, cx, baseline + 30, {
-          size: 18,
+        text(item.label, cx, baseline + L.axis * 1.6, {
+          size: L.axis,
           fill: highlighted ? theme.ink2 : theme.muted,
           anchor: "middle",
           weight: highlighted ? 600 : 400,
@@ -340,51 +410,45 @@ function drawColumns(root, plot, slide, theme) {
   });
 
   root.append(
-    el("line", {
-      x1: plot.x,
-      y1: baseline,
-      x2: plot.x + plot.w,
-      y2: baseline,
-      stroke: theme.axis,
-      "stroke-width": 1,
-    }),
+    el("line", { x1: plot.x, y1: baseline, x2: plot.x + plot.w, y2: baseline, stroke: theme.axis }),
   );
   root.append(
-    text(slide.axisLabel, plot.x + plot.w, baseline + 54, { size: 18, fill: theme.muted, anchor: "end" }),
+    text(slide.axisLabel, plot.x + plot.w, baseline + L.axis * 3, {
+      size: L.axis,
+      fill: theme.muted,
+      anchor: "end",
+    }),
   );
 }
 
 /** Twenty-four spokes: a day, read as a clock face. */
-function drawClock(root, plot, slide, theme) {
+function drawClock(root, plot, slide, theme, L) {
   const cx = plot.x + plot.w / 2;
   const cy = plot.y + plot.h / 2;
-  const outer = Math.min(plot.h / 2 - 10, 210);
-  const inner = 74;
+  const outer = Math.max(80, Math.min(plot.h / 2 - L.axis * 2.4, plot.w / 2 - L.axis * 2.4, 300));
+  const inner = outer * 0.34;
   const max = Math.max(...slide.hours, 1);
   const peak = slide.hours.indexOf(max);
+  const thickness = Math.min(16, ((inner * 2 * Math.PI) / 24) * 0.75);
 
   for (const radius of [inner, outer]) {
-    root.append(el("circle", { cx, cy, r: radius, fill: "none", stroke: theme.grid, "stroke-width": 1 }));
+    root.append(el("circle", { cx, cy, r: radius, fill: "none", stroke: theme.grid }));
   }
 
   slide.hours.forEach((value, hour) => {
     // Midnight at the top, noon at the bottom, like a watch face.
     const angle = (hour / 24) * Math.PI * 2 - Math.PI / 2;
     const length = (value / max) * (outer - inner);
-    const x1 = cx + Math.cos(angle) * inner;
-    const y1 = cy + Math.sin(angle) * inner;
-    const x2 = cx + Math.cos(angle) * (inner + length);
-    const y2 = cy + Math.sin(angle) * (inner + length);
 
     root.append(
       titled(
         el("line", {
-          x1,
-          y1,
-          x2,
-          y2,
+          x1: cx + Math.cos(angle) * inner,
+          y1: cy + Math.sin(angle) * inner,
+          x2: cx + Math.cos(angle) * (inner + length),
+          y2: cy + Math.sin(angle) * (inner + length),
           stroke: theme.series[0],
-          "stroke-width": 14,
+          "stroke-width": thickness,
           "stroke-linecap": "round",
           opacity: hour === peak ? 1 : 0.55,
         }),
@@ -393,62 +457,69 @@ function drawClock(root, plot, slide, theme) {
     );
 
     if (hour % 3 === 0) {
-      const lx = cx + Math.cos(angle) * (outer + 30);
-      const ly = cy + Math.sin(angle) * (outer + 30);
+      const labelRadius = outer + L.axis * 1.4;
       root.append(
-        text(`${String(hour).padStart(2, "0")}`, lx, ly + 6, {
-          size: 18,
-          fill: hour === peak ? theme.ink2 : theme.muted,
-          anchor: "middle",
-          weight: hour === peak ? 600 : 400,
-        }),
+        text(
+          String(hour).padStart(2, "0"),
+          cx + Math.cos(angle) * labelRadius,
+          cy + Math.sin(angle) * labelRadius + L.axis * 0.35,
+          {
+            size: L.axis,
+            fill: hour === peak ? theme.ink2 : theme.muted,
+            anchor: "middle",
+            weight: hour === peak ? 600 : 400,
+          },
+        ),
       );
     }
   });
 
-  root.append(text(fmt(max), cx, cy - 4, { size: 30, weight: 600, fill: theme.ink, anchor: "middle" }));
-  root.append(text("busiest hour", cx, cy + 24, { size: 16, fill: theme.muted, anchor: "middle" }));
+  root.append(
+    text(fmt(max), cx, cy, { size: L.subtitle * 1.15, weight: 600, fill: theme.ink, anchor: "middle" }),
+  );
+  root.append(
+    text("busiest hour", cx, cy + L.tiny * 1.7, { size: L.tiny, fill: theme.muted, anchor: "middle" }),
+  );
 }
 
+const WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
 /** Seven columns, Monday first. */
-function drawWeek(root, plot, slide, theme) {
-  const names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+function drawWeek(root, plot, slide, theme, L) {
   const max = Math.max(...slide.days, 1);
   const band = plot.w / 7;
-  const thickness = Math.min(24, band - 40);
-  const baseline = plot.y + plot.h - 50;
-  const height = plot.h - 90;
+  const thickness = Math.min(24, band * 0.45);
+  const baseline = plot.y + plot.h - L.label * 2;
+  const height = Math.max(40, baseline - plot.y - L.value * 2);
   const busiest = slide.days.indexOf(max);
 
   slide.days.forEach((value, day) => {
     const cx = plot.x + band * (day + 0.5);
-    const barHeight = Math.max(value > 0 ? 2 : 0, (value / max) * height);
+    const barHeight = value > 0 ? Math.max(2, (value / max) * height) : 0;
 
+    if (barHeight > 0) {
+      column(
+        root,
+        cx - thickness / 2,
+        baseline,
+        thickness,
+        barHeight,
+        theme.series[0],
+        `${WEEKDAY_NAMES[day]}: ${fmt(value)}`,
+        day === busiest ? 1 : 0.5,
+      );
+    }
     root.append(
-      titled(
-        el("rect", {
-          x: cx - thickness / 2,
-          y: baseline - barHeight,
-          width: thickness,
-          height: barHeight,
-          rx: 4,
-          fill: theme.series[0],
-          opacity: day === busiest ? 1 : 0.5,
-        }),
-        `${names[day]}: ${fmt(value)}`,
-      ),
-    );
-    root.append(
-      text(fmt(value), cx, baseline - barHeight - 14, {
-        size: 20,
+      text(fmt(value), cx, baseline - barHeight - L.value * 0.6, {
+        size: L.value,
         weight: day === busiest ? 600 : 400,
         fill: day === busiest ? theme.ink : theme.muted,
         anchor: "middle",
       }),
     );
     root.append(
-      text(names[day].slice(0, 3), cx, baseline + 30, {
-        size: 20,
+      text(WEEKDAY_NAMES[day].slice(0, 3), cx, baseline + L.label * 1.4, {
+        size: L.label * 0.85,
         fill: day === busiest ? theme.ink2 : theme.muted,
         anchor: "middle",
         weight: day === busiest ? 600 : 400,
@@ -463,79 +534,6 @@ function drawWeek(root, plot, slide, theme) {
 
 const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-/** One square per day, weeks running left to right. */
-function drawCalendar(root, plot, slide, theme) {
-  const counts = new Map(slide.days.map((entry) => [entry.day, entry.shots]));
-  const max = Math.max(...slide.days.map((entry) => entry.shots), 1);
-
-  const start = toDate(slide.from);
-  const end = toDate(slide.to);
-  const totalDays = Math.round((end - start) / 86400000) + 1;
-  // Back up to the Monday on or before the first day, so columns are weeks.
-  const offset = (start.getUTCDay() + 6) % 7;
-  const columns = Math.ceil((totalDays + offset) / 7);
-
-  const cell = Math.min(22, Math.floor((plot.w - 60) / columns) - 3, Math.floor((plot.h - 90) / 7) - 3);
-  const gap = 3;
-  const gridW = columns * (cell + gap);
-  const x0 = plot.x + Math.max(0, (plot.w - gridW) / 2) + 30;
-  const y0 = plot.y + 24;
-
-  let lastMonth = -1;
-  for (let index = 0; index < totalDays; index++) {
-    const date = new Date(start.getTime() + index * 86400000);
-    const column = Math.floor((index + offset) / 7);
-    const row = (index + offset) % 7;
-    const key = toKey(date);
-    const value = counts.get(key) ?? 0;
-
-    const x = x0 + column * (cell + gap);
-    const y = y0 + row * (cell + gap);
-
-    root.append(
-      titled(
-        el("rect", {
-          x,
-          y,
-          width: cell,
-          height: cell,
-          rx: 3,
-          fill: value === 0 ? theme.rampEmpty : theme.ramp[rampStep(value, max)],
-        }),
-        `${date.getUTCDate()} ${MONTH_SHORT[date.getUTCMonth()]} ${date.getUTCFullYear()} — ${fmt(value)}`,
-      ),
-    );
-
-    if (row === 0 && date.getUTCMonth() !== lastMonth) {
-      lastMonth = date.getUTCMonth();
-      root.append(
-        text(MONTH_SHORT[lastMonth], x, y0 - 12, { size: 16, fill: theme.muted }),
-      );
-    }
-  }
-
-  ["Mon", "Wed", "Fri", "Sun"].forEach((name, i) => {
-    root.append(
-      text(name, x0 - 12, y0 + [0, 2, 4, 6][i] * (cell + gap) + cell - 4, {
-        size: 14,
-        fill: theme.muted,
-        anchor: "end",
-      }),
-    );
-  });
-
-  // Scale legend, since colour is carrying magnitude here.
-  const legendY = y0 + 7 * (cell + gap) + 34;
-  root.append(text("fewer", x0, legendY + 12, { size: 16, fill: theme.muted }));
-  theme.ramp.forEach((colour, i) => {
-    root.append(el("rect", { x: x0 + 62 + i * 22, y: legendY, width: 18, height: 18, rx: 3, fill: colour }));
-  });
-  root.append(text(`more (up to ${fmt(max)})`, x0 + 62 + theme.ramp.length * 22 + 10, legendY + 12, {
-    size: 16,
-    fill: theme.muted,
-  }));
-}
-
 function rampStep(value, max) {
   const fraction = value / max;
   if (fraction <= 0.05) return 0;
@@ -545,16 +543,128 @@ function rampStep(value, max) {
   return 4;
 }
 
-function toDate(day) {
-  return new Date(Date.UTC(Math.floor(day / 10000), (Math.floor(day / 100) % 100) - 1, day % 100));
-}
+const toDate = (day) =>
+  new Date(Date.UTC(Math.floor(day / 10000), (Math.floor(day / 100) % 100) - 1, day % 100));
 
-function toKey(date) {
-  return date.getUTCFullYear() * 10000 + (date.getUTCMonth() + 1) * 100 + date.getUTCDate();
+const toKey = (date) =>
+  date.getUTCFullYear() * 10000 + (date.getUTCMonth() + 1) * 100 + date.getUTCDate();
+
+/**
+ * One square per day.
+ *
+ * Weeks run left to right in a wide frame and top to bottom in a tall one:
+ * fifty-three columns across 900px of phone screen is a smear, while fifty-three
+ * *rows* down 1300px is a legible year.
+ */
+function drawCalendar(root, plot, slide, theme, L) {
+  const counts = new Map(slide.days.map((entry) => [entry.day, entry.shots]));
+  const max = Math.max(...slide.days.map((entry) => entry.shots), 1);
+
+  const start = toDate(slide.from);
+  const end = toDate(slide.to);
+  const totalDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+  // Back up to the Monday on or before the first day, so weeks line up.
+  const offset = (start.getUTCDay() + 6) % 7;
+  const weeks = Math.ceil((totalDays + offset) / 7);
+
+  const gap = 3;
+  const legendH = L.tiny * 3;
+  const gutter = L.tiny * 3.2;
+  const byRow = L.tall || L.narrow;
+
+  const across = byRow ? 7 : weeks;
+  const down = byRow ? weeks : 7;
+  const cell = Math.max(
+    4,
+    Math.min(
+      24,
+      Math.floor((plot.w - gutter) / across) - gap,
+      Math.floor((plot.h - legendH - gutter) / down) - gap,
+    ),
+  );
+
+  const gridW = across * (cell + gap) - gap;
+  const gridH = down * (cell + gap) - gap;
+  const x0 = plot.x + gutter + Math.max(0, (plot.w - gutter - gridW) / 2);
+  const y0 = plot.y + gutter + Math.max(0, (plot.h - legendH - gutter - gridH) / 3);
+
+  let lastMonth = -1;
+  for (let index = 0; index < totalDays; index++) {
+    const date = new Date(start.getTime() + index * 86400000);
+    const week = Math.floor((index + offset) / 7);
+    const weekday = (index + offset) % 7;
+    const value = counts.get(toKey(date)) ?? 0;
+
+    const x = x0 + (byRow ? weekday : week) * (cell + gap);
+    const y = y0 + (byRow ? week : weekday) * (cell + gap);
+
+    root.append(
+      titled(
+        el("rect", {
+          x,
+          y,
+          width: cell,
+          height: cell,
+          rx: Math.min(3, cell / 4),
+          fill: value === 0 ? theme.rampEmpty : theme.ramp[rampStep(value, max)],
+        }),
+        `${date.getUTCDate()} ${MONTH_SHORT[date.getUTCMonth()]} ${date.getUTCFullYear()} — ${fmt(value)}`,
+      ),
+    );
+
+    // A marker where each month starts, in whichever direction weeks run.
+    if (weekday === 0 && date.getUTCMonth() !== lastMonth) {
+      lastMonth = date.getUTCMonth();
+      const label = MONTH_SHORT[lastMonth];
+      root.append(
+        byRow
+          ? text(label, x0 - gap * 2, y + cell * 0.8, { size: L.tiny, fill: theme.muted, anchor: "end" })
+          : text(label, x, y0 - gap * 3, { size: L.tiny, fill: theme.muted }),
+      );
+    }
+  }
+
+  if (!byRow) {
+    ["Mon", "Wed", "Fri", "Sun"].forEach((name, i) => {
+      root.append(
+        text(name, x0 - gap * 2, y0 + [0, 2, 4, 6][i] * (cell + gap) + cell * 0.8, {
+          size: L.tiny * 0.9,
+          fill: theme.muted,
+          anchor: "end",
+        }),
+      );
+    });
+  }
+
+  // Colour is carrying magnitude here, so the scale is spelled out.
+  const legendY = y0 + gridH + L.tiny * 1.4;
+  const swatch = L.tiny * 1.1;
+  root.append(text("fewer", x0, legendY + swatch * 0.85, { size: L.tiny, fill: theme.muted }));
+  const legendX = x0 + measure("fewer", L.tiny) + 10;
+  theme.ramp.forEach((colour, i) => {
+    root.append(
+      el("rect", {
+        x: legendX + i * (swatch + 4),
+        y: legendY,
+        width: swatch,
+        height: swatch,
+        rx: 3,
+        fill: colour,
+      }),
+    );
+  });
+  root.append(
+    text(
+      `more (up to ${fmt(max)})`,
+      legendX + theme.ramp.length * (swatch + 4) + 6,
+      legendY + swatch * 0.85,
+      { size: L.tiny, fill: theme.muted },
+    ),
+  );
 }
 
 /** Monthly columns, for ranges too long to read a day at a time. */
-function drawMonths(root, plot, slide, theme) {
+function drawMonths(root, plot, slide, theme, L) {
   const months = slide.months;
   if (months.length === 0) return;
 
@@ -562,36 +672,46 @@ function drawMonths(root, plot, slide, theme) {
   const ceiling = niceCeiling(max);
   const band = plot.w / months.length;
   const thickness = Math.min(24, Math.max(3, band - 6));
-  const baseline = plot.y + plot.h - 50;
-  const height = plot.h - 80;
+  const baseline = plot.y + plot.h - L.axis * 2.4;
+  const height = Math.max(40, baseline - plot.y - L.axis * 2);
 
-  const y = baseline - height;
-  root.append(el("line", { x1: plot.x, y1: y, x2: plot.x + plot.w, y2: y, stroke: theme.grid }));
-  root.append(text(fmt(ceiling), plot.x + plot.w, y - 8, { size: 18, fill: theme.muted, anchor: "end" }));
+  const gridY = baseline - height;
+  root.append(el("line", { x1: plot.x, y1: gridY, x2: plot.x + plot.w, y2: gridY, stroke: theme.grid }));
+  root.append(
+    text(fmt(ceiling), plot.x + plot.w, gridY - L.axis * 0.5, {
+      size: L.axis,
+      fill: theme.muted,
+      anchor: "end",
+    }),
+  );
 
   let lastYear = -1;
   months.forEach((entry, i) => {
     const cx = plot.x + band * (i + 0.5);
-    const barHeight = Math.max(entry.shots > 0 ? 2 : 0, (entry.shots / ceiling) * height);
+    const barHeight = entry.shots > 0 ? Math.max(2, (entry.shots / ceiling) * height) : 0;
     const year = Math.floor(entry.ym / 100);
 
-    root.append(
-      titled(
-        el("rect", {
-          x: cx - thickness / 2,
-          y: baseline - barHeight,
-          width: thickness,
-          height: barHeight,
-          rx: Math.min(4, thickness / 2),
-          fill: theme.series[0],
-        }),
+    if (barHeight > 0) {
+      column(
+        root,
+        cx - thickness / 2,
+        baseline,
+        thickness,
+        barHeight,
+        theme.series[0],
         `${MONTH_SHORT[(entry.ym % 100) - 1]} ${year} — ${fmt(entry.shots)}`,
-      ),
-    );
+      );
+    }
 
-    if (year !== lastYear && band > 14) {
+    if (year !== lastYear && band > L.axis) {
       lastYear = year;
-      root.append(text(String(year), cx, baseline + 30, { size: 18, fill: theme.muted, anchor: "middle" }));
+      root.append(
+        text(String(year), cx, baseline + L.axis * 1.6, {
+          size: L.axis,
+          fill: theme.muted,
+          anchor: "middle",
+        }),
+      );
     }
   });
 
@@ -608,17 +728,42 @@ function stackColour(series, index, theme) {
   return series.label === "Everything else" ? theme.axis : theme.series[index % theme.series.length];
 }
 
+/** Flows legend entries across as many rows as they need. */
+function layoutLegend(series, width, L) {
+  const entries = [];
+  let x = 0;
+  let row = 0;
+
+  series.forEach((s, index) => {
+    const label = ellipsize(s.label, width * (L.narrow ? 0.8 : 0.4), L.axis);
+    const entryWidth = L.axis + measure(label, L.axis) + L.axis * 1.6;
+    if (x > 0 && x + entryWidth > width) {
+      row++;
+      x = 0;
+    }
+    entries.push({ series: s, index, label, x, row });
+    x += entryWidth;
+  });
+
+  return { entries, rows: row + 1 };
+}
+
 /** Stacked columns: which lens was on the camera, month by month. */
-function drawStack(root, plot, slide, theme) {
+function drawStack(root, plot, slide, theme, L) {
   const { months, series } = slide;
+  if (months.length === 0 || series.length === 0) return;
+
   const totals = months.map((_, i) => series.reduce((sum, s) => sum + (s.values[i] ?? 0), 0));
   const ceiling = niceCeiling(Math.max(...totals, 1));
 
   const band = plot.w / months.length;
   const thickness = Math.min(24, Math.max(4, band - 8));
-  const legendHeight = 40;
-  const baseline = plot.y + plot.h - 50 - legendHeight;
-  const height = plot.h - 70 - legendHeight;
+  // The legend is laid out first: it is the part that must not be squeezed.
+  const legend = layoutLegend(series, plot.w, L);
+  const legendH = legend.rows * L.axis * 1.9;
+  const baseline = plot.y + plot.h - legendH - L.axis * 3;
+  const height = Math.max(40, baseline - plot.y);
+  const stride = Math.max(1, Math.ceil(months.length / (L.narrow ? 6 : 12)));
 
   months.forEach((ym, i) => {
     const cx = plot.x + band * (i + 0.5);
@@ -628,17 +773,15 @@ function drawStack(root, plot, slide, theme) {
       const value = s.values[i] ?? 0;
       if (value <= 0) return;
       const segment = (value / ceiling) * height;
-      // A 2px gap in the surface colour is what separates the segments.
-      const drawn = Math.max(1, segment - 2);
       top -= segment;
-
+      // A 2px gap in the surface colour is what separates the segments.
       root.append(
         titled(
           el("rect", {
             x: cx - thickness / 2,
             y: top,
             width: thickness,
-            height: drawn,
+            height: Math.max(1, segment - 2),
             fill: stackColour(s, index, theme),
           }),
           `${MONTH_SHORT[(ym % 100) - 1]} ${Math.floor(ym / 100)} · ${s.label}: ${fmt(value)}`,
@@ -646,17 +789,17 @@ function drawStack(root, plot, slide, theme) {
       );
     });
 
-    if (i % Math.ceil(months.length / 12) === 0) {
+    if (i % stride === 0) {
       root.append(
-        text(`${MONTH_SHORT[(ym % 100) - 1]}`, cx, baseline + 26, {
-          size: 16,
+        text(MONTH_SHORT[(ym % 100) - 1], cx, baseline + L.axis * 1.4, {
+          size: L.tiny,
           fill: theme.muted,
           anchor: "middle",
         }),
       );
       root.append(
-        text(`${Math.floor(ym / 100)}`, cx, baseline + 46, {
-          size: 14,
+        text(String(Math.floor(ym / 100)), cx, baseline + L.axis * 2.5, {
+          size: L.tiny * 0.9,
           fill: theme.muted,
           anchor: "middle",
         }),
@@ -669,20 +812,33 @@ function drawStack(root, plot, slide, theme) {
   );
 
   // A legend is not optional once there is more than one series.
-  let x = plot.x;
-  const legendY = plot.y + plot.h - 6;
-  series.forEach((s, index) => {
-    const colour = stackColour(s, index, theme);
-    const label = ellipsize(s.label, 260, 18);
-    root.append(el("rect", { x, y: legendY - 12, width: 12, height: 12, rx: 3, fill: colour }));
-    root.append(text(label, x + 20, legendY, { size: 18, fill: theme.ink2 }));
-    x += 20 + measure(label, 18) + 34;
+  const legendTop = plot.y + plot.h - legendH + L.axis;
+  legend.entries.forEach((entry) => {
+    const y = legendTop + entry.row * L.axis * 1.9;
+    root.append(
+      el("rect", {
+        x: plot.x + entry.x,
+        y: y - L.axis * 0.75,
+        width: L.axis * 0.7,
+        height: L.axis * 0.7,
+        rx: 3,
+        fill: stackColour(entry.series, entry.index, theme),
+      }),
+    );
+    root.append(text(entry.label, plot.x + entry.x + L.axis, y, { size: L.axis, fill: theme.ink2 }));
   });
 }
 
 /** Latitude and longitude, plotted flat. No coastline is claimed. */
-function drawMap(root, plot, slide, theme) {
-  const box = { x: plot.x, y: plot.y, w: plot.w, h: Math.min(plot.h - 30, plot.w / 2) };
+function drawMap(root, plot, slide, theme, L) {
+  const boxH = Math.min(plot.h - L.tiny * 2.5, plot.w / 2);
+  const box = {
+    x: plot.x,
+    y: plot.y + Math.max(0, (plot.h - L.tiny * 2.5 - boxH) / 2),
+    w: plot.w,
+    h: boxH,
+  };
+
   const project = (lat, lon) => ({
     x: box.x + ((lon + 180) / 360) * box.w,
     y: box.y + ((90 - lat) / 180) * box.h,
@@ -705,13 +861,12 @@ function drawMap(root, plot, slide, theme) {
   const max = Math.max(...slide.points.map((point) => point.shots), 1);
   for (const point of slide.points) {
     const { x, y } = project(point.lat, point.lon);
-    const radius = 4 + Math.sqrt(point.shots / max) * 14;
     root.append(
       titled(
         el("circle", {
           cx: x,
           cy: y,
-          r: radius,
+          r: 4 + Math.sqrt(point.shots / max) * 14,
           fill: theme.series[0],
           "fill-opacity": 0.75,
           // The surface ring keeps overlapping dots legible.
@@ -723,74 +878,170 @@ function drawMap(root, plot, slide, theme) {
     );
   }
 
-  root.append(text("180°W", box.x, box.y + box.h + 24, { size: 16, fill: theme.muted }));
-  root.append(text("0°", box.x + box.w / 2, box.y + box.h + 24, { size: 16, fill: theme.muted, anchor: "middle" }));
-  root.append(text("180°E", box.x + box.w, box.y + box.h + 24, { size: 16, fill: theme.muted, anchor: "end" }));
+  const labelY = box.y + box.h + L.tiny * 1.5;
+  root.append(text("180°W", box.x, labelY, { size: L.tiny, fill: theme.muted }));
+  root.append(
+    text("0°", box.x + box.w / 2, labelY, { size: L.tiny, fill: theme.muted, anchor: "middle" }),
+  );
+  root.append(text("180°E", box.x + box.w, labelY, { size: L.tiny, fill: theme.muted, anchor: "end" }));
 }
 
-/** A grid of stat tiles — the form for numbers that are not a distribution. */
-function drawTiles(root, plot, slide, theme) {
+/**
+ * How many tiles fit across, and how tall each row gets.
+ *
+ * A wide frame puts up to four across, which keeps them on one row and leaves
+ * height for the note under each value; a narrow one manages two. Row height is
+ * capped so four tiles in a 1920px-tall frame sit together as a block rather
+ * than drifting six hundred pixels apart.
+ */
+function tileLayout(count, plot, L) {
+  const columns = L.narrow ? Math.min(2, count) : Math.min(4, count);
+  const rows = Math.ceil(count / columns);
+  const rowH = Math.min(plot.h / rows, L.tileValue * 3.4);
+  return { columns, rows, cellW: plot.w / columns, rowH, height: rowH * rows };
+}
+
+/**
+ * A grid of stat tiles.
+ *
+ * Every size here is derived from the row height rather than fixed, because the
+ * row height is whatever the slide has left over — and a tile laid out for more
+ * space than it got is exactly how a value ends up sitting on the label
+ * underneath it.
+ */
+function drawTiles(root, plot, slide, theme, L) {
   const tiles = slide.tiles.slice(0, 6);
   if (tiles.length === 0) return;
 
-  const columns = tiles.length <= 2 ? tiles.length : tiles.length <= 4 ? 2 : 3;
-  const rows = Math.ceil(tiles.length / columns);
-  const cellW = plot.w / columns;
-  const cellH = Math.min(plot.h / rows, 190);
+  const { columns, rows, cellW, rowH, height } = tileLayout(tiles.length, plot, L);
+  const top = plot.y + Math.max(0, (plot.h - height) / 2);
+
+  const labelSize = Math.min(L.tileLabel, rowH * 0.17);
+  const valueSize = Math.min(L.tileValue, rowH * 0.4, cellW * 0.24);
+  const noteSize = Math.min(L.note, rowH * 0.15);
+  // The note is drawn only when all three fit with room to breathe.
+  const showNote = rowH >= labelSize * 1.6 + valueSize * 1.3 + noteSize * 2.4;
 
   tiles.forEach((tile, i) => {
     const x = plot.x + (i % columns) * cellW;
-    const y = plot.y + Math.floor(i / columns) * cellH;
+    const y = top + Math.floor(i / columns) * rowH;
+    const width = cellW - L.tiny;
 
-    root.append(text(tile.label.toUpperCase(), x, y + 22, { size: 17, weight: 600, fill: theme.muted }));
-
-    const size = measure(tile.value, 46, 600) > cellW - 40 ? 30 : 46;
     root.append(
-      text(ellipsize(tile.value, cellW - 32, size, 600), x, y + 78, { size, weight: 600, fill: theme.ink }),
+      text(ellipsize(tile.label.toUpperCase(), width, labelSize, 600), x, y + labelSize, {
+        size: labelSize,
+        weight: 600,
+        fill: theme.muted,
+        "letter-spacing": 0.6,
+      }),
     );
 
-    if (tile.note) {
-      root.append(text(ellipsize(tile.note, cellW - 32, 20), x, y + 110, { size: 20, fill: theme.ink2 }));
-    }
-  });
-}
-
-/** One enormous number. */
-function drawHero(root, plot, slide, theme) {
-  const size = slide.value.length > 7 ? 150 : 210;
-  root.append(text(slide.value, plot.x, plot.y + 150, { size, weight: 600, fill: theme.series[0] }));
-
-  if (slide.caption) {
+    const valueY = y + labelSize * 1.6 + valueSize * 0.86;
+    const fitted = measure(tile.value, valueSize, 600) > width ? valueSize * 0.68 : valueSize;
     root.append(
-      text(ellipsize(slide.caption, plot.w, 30), plot.x, plot.y + 200, { size: 30, fill: theme.ink2 }),
-    );
-  }
-
-  if (slide.tiles?.length) {
-    drawTiles(root, { ...plot, y: plot.y + 250, h: plot.h - 250 }, slide, theme);
-  }
-}
-
-/** Rows of label, meta and value — gear debuts and anything else list-shaped. */
-function drawList(root, plot, slide, theme) {
-  const items = slide.items.slice(0, 7);
-  const rowHeight = Math.min(64, plot.h / Math.max(items.length, 1));
-
-  items.forEach((item, i) => {
-    const y = plot.y + i * rowHeight;
-    root.append(
-      el("line", { x1: plot.x, y1: y, x2: plot.x + plot.w, y2: y, stroke: theme.grid }),
-    );
-    root.append(
-      text(ellipsize(item.label, plot.w - 420, 26, 600), plot.x, y + 34, {
-        size: 26,
+      text(ellipsize(tile.value, width, fitted, 600), x, valueY, {
+        size: fitted,
         weight: 600,
         fill: theme.ink,
       }),
     );
-    root.append(text(item.meta, plot.x, y + 58, { size: 18, fill: theme.muted }));
+
+    if (showNote && tile.note) {
+      root.append(
+        text(ellipsize(tile.note, width, noteSize), x, valueY + noteSize * 1.9, {
+          size: noteSize,
+          fill: theme.ink2,
+        }),
+      );
+    }
+  });
+}
+
+/**
+ * One enormous number, with the supporting tiles below a rule.
+ *
+ * The rule is not decoration: it is the line the tiles are laid out beneath, in
+ * the space that is actually left, rather than in the space the hero number
+ * hoped to leave them.
+ */
+function drawHero(root, plot, slide, theme, L) {
+  const heroSize = Math.min(
+    L.hero,
+    plot.h * 0.42,
+    // Big numbers get wide; the frame wins over the drama.
+    (plot.w / Math.max(3, slide.value.length)) * 1.75,
+  );
+
+  let y = plot.y + heroSize * 0.8;
+  root.append(text(slide.value, plot.x, y, { size: heroSize, weight: 600, fill: theme.series[0] }));
+
+  if (slide.caption) {
+    // Same rule as the headline: clearance scales with the bigger of the two.
+    y += Math.max(L.subtitle * 1.5, heroSize * 0.3);
     root.append(
-      text(item.value, plot.x + plot.w, y + 40, { size: 22, fill: theme.ink2, anchor: "end" }),
+      text(ellipsize(slide.caption, plot.w, L.subtitle), plot.x, y, {
+        size: L.subtitle,
+        fill: theme.ink2,
+      }),
+    );
+  }
+
+  const tiles = slide.tiles ?? [];
+  if (tiles.length === 0) return;
+
+  const available = plot.y + plot.h - (y + L.subtitle * 1.6);
+  // Below this there is no honest way to draw a tile, so none are drawn.
+  if (available < L.tileValue * 1.6) return;
+
+  // The tiles sit at the foot of the slide and the rule sits on top of them,
+  // so a tall frame reads as a headline and a footer rather than as two things
+  // separated by an accident of arithmetic.
+  const block = tileLayout(tiles.length, { w: plot.w, h: available }, L);
+  const blockTop = plot.y + plot.h - block.height;
+
+  root.append(
+    el("line", {
+      x1: plot.x,
+      y1: blockTop - L.tiny * 1.8,
+      x2: plot.x + plot.w,
+      y2: blockTop - L.tiny * 1.8,
+      stroke: theme.grid,
+    }),
+  );
+  drawTiles(root, { x: plot.x, y: blockTop, w: plot.w, h: block.height }, slide, theme, L);
+}
+
+/** Rows of label, meta and value — gear debuts and anything else list-shaped. */
+function drawList(root, plot, slide, theme, L) {
+  const rowHeight = Math.max(L.label * 2.2, Math.min(L.label * 2.8, plot.h / Math.max(slide.items.length, 1)));
+  const fit = Math.max(1, Math.floor(plot.h / rowHeight));
+  const items = slide.items.slice(0, fit);
+  const valueWidth = Math.max(...items.map((item) => measure(item.value, L.value))) + L.tiny;
+
+  items.forEach((item, i) => {
+    const y = plot.y + i * rowHeight;
+    root.append(el("line", { x1: plot.x, y1: y, x2: plot.x + plot.w, y2: y, stroke: theme.grid }));
+    root.append(
+      text(ellipsize(item.label, plot.w - valueWidth - L.tiny, L.label, 600), plot.x, y + L.label * 1.3, {
+        size: L.label,
+        weight: 600,
+        fill: theme.ink,
+      }),
+    );
+    root.append(
+      text(
+        ellipsize(item.meta, plot.w - valueWidth - L.tiny, L.tiny),
+        plot.x,
+        y + L.label * 1.3 + L.tiny * 1.6,
+        { size: L.tiny, fill: theme.muted },
+      ),
+    );
+    root.append(
+      text(item.value, plot.x + plot.w, y + L.label * 1.4, {
+        size: L.value,
+        fill: theme.ink2,
+        anchor: "end",
+      }),
     );
   });
 }
@@ -810,12 +1061,13 @@ const RENDERERS = {
 };
 
 /**
- * Renders one slide. `position` is the "3 / 14" marker, and is left off when a
- * slide is being drawn on its own.
+ * Renders one slide. `position` is the "3 / 14" marker, left off when a slide
+ * is drawn on its own; `format` decides the shape of the canvas.
  */
-export function renderSlide(slide, theme, position = "") {
-  const { root, plot } = frame(slide, theme, position);
+export function renderSlide(slide, theme, position = "", format = DEFAULT_FORMAT) {
+  const L = metrics(format);
+  const { root, plot } = frame(slide, theme, position, L);
   const draw = RENDERERS[slide.kind];
-  if (draw) draw(root, plot, slide, theme);
+  if (draw) draw(root, plot, slide, theme, L);
   return root;
 }

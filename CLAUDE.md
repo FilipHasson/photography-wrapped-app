@@ -26,7 +26,8 @@ src/core/      config, SQLite wrapper, EXIF and QuickTime reading, gear naming,
 src/index/     walking sources into the index, and deciding what is a duplicate
 src/stats/     ranges, the aggregation queries, and the slide copy
 src/server/    HTTP API, job runner, static hosting
-src/web/       the UI — plain HTML/CSS/ES modules, no framework
+src/web/       the UI — plain HTML/CSS/ES modules, no framework;
+               formats.js is the posting shapes, chart.js draws into them
 tools/         fixture generators: an EXIF/MP4 writer and a Lightroom catalog
 ```
 
@@ -64,10 +65,19 @@ gives the same answer.
 `idx_photo_day` indexes. Values are bucketed in JS rather than SQL because the
 scales are logarithmic and irregular.
 
-**`web/chart.js`** — slides are 1600×900 SVG with every colour written on as an
-attribute and no stylesheet. That is not a style choice: export rasterises the
-serialised SVG through an `<img>`, which renders in isolation, so anything
-inherited from the page would silently disappear from the PNG and the PDF.
+**`web/chart.js`** — slides are SVG with every colour written on as an attribute
+and no stylesheet. That is not a style choice: export rasterises the serialised
+SVG through an `<img>`, which renders in isolation, so anything inherited from
+the page would silently disappear from the PNG and the PDF.
+
+Nothing in it is hard-coded to a canvas size. `web/formats.js` holds the five
+posting shapes and their type scales; the narrow ones set type *larger* relative
+to their width, not smaller, because the frame is read at thumbnail size on a
+phone. Two charts change shape rather than squeeze: ranked bars put the label
+above its own bar below ~1200px wide, and the calendar runs weeks down the frame
+instead of across it. Vertical spacing is always measured off the *larger* of two
+adjacent type sizes — that is what the overlap check in `test/render.test.ts`
+enforces, and what it caught when it was not.
 
 **`web/export.js`** — the PDF is written by hand: one JPEG XObject per page plus
 a cross-reference table. Byte offsets are tracked as chunks are appended;
@@ -90,11 +100,22 @@ wrong one produces a blank document rather than an error.
   reachable only by colour is a defect.
 - `buildDeck` drops slides with nothing to say rather than rendering them empty,
   and returns a one-slide "nothing here yet" deck for an empty range.
+- **A chart may summarise; a table may not.** `stats/aggregate.ts` returns full
+  lists and `stats/slides.ts` does the top-N-plus-"others" folding for the bars
+  only. The table carries every row, including hidden gear, with a `RowKey` so
+  it can be switched back on.
+- Hiding a camera or lens removes its frames from *every* query, via `scope()`.
+  The one exception is the pair of queries that list the hidden gear itself,
+  which pass `hideGear: false` — a hidden row nobody can see is a hidden row
+  nobody can restore.
+- `config.startDay` is applied in `resolveRange`, not in the SQL, so one place
+  decides what a range means. `Range.clipped` is how the opening slide knows to
+  say the start date is holding it back.
 
 ## Testing
 
 ```bash
-npm test          # 74 tests
+npm test          # 91 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```
@@ -108,9 +129,10 @@ metadata is a `moov`, and a shoot in the previous year. Check `EXPECTED` in
 `tools/make-fixtures.ts` still describes reality before editing a test to agree
 with new output.
 
-`test/render.test.ts` runs the drawing code against a DOM shim and checks for
-`NaN` coordinates and marks outside the frame — both of which are invisible
-failures in a browser.
+`test/render.test.ts` runs the drawing code against a DOM shim, in every format,
+and checks for `NaN` coordinates, marks outside the frame, and text baselines
+too close together — all three are invisible failures in a browser, and the last
+one is the bug that produced the first round of feedback on this tool.
 
 ## Gotchas
 

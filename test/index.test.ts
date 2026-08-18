@@ -208,6 +208,48 @@ describe("time", () => {
   });
 });
 
+describe("hiding gear that skews the numbers", () => {
+  // The case: one iPhone frame imported into a catalog is a whole camera as
+  // far as the data is concerned. Here it is the Fuji standing in for it.
+  const hidden = { includeVideo: true, excluded: { cameras: ["xt5"], lenses: [] } };
+
+  test("its frames leave every count", () => {
+    const before = statsFor(db);
+    const after = computeStats(db, allTime(db), hidden);
+
+    assert.equal(after.totals.shots, before.totals.shots - 8);
+    assert.equal(after.totals.cameras, before.totals.cameras - 1);
+    // And it is gone from the lens counts too, not only from its own slide.
+    assert.equal(after.lenses.length, before.lenses.length - 1);
+  });
+
+  test("but it stays listed, so it can come back", () => {
+    const after = computeStats(db, allTime(db), hidden);
+
+    assert.equal(after.cameras.length, 1);
+    assert.equal(after.hiddenCameras.length, 1);
+    assert.equal(after.hiddenCameras[0]?.label, "Fujifilm X-T5");
+    assert.equal(after.hiddenCameras[0]?.shots, 8, "counted as if it were not hidden");
+    assert.equal(after.hiddenCameras[0]?.excluded, true);
+  });
+
+  test("hiding something absent changes nothing", () => {
+    const after = computeStats(db, allTime(db), {
+      includeVideo: true,
+      excluded: { cameras: ["no-such-camera"], lenses: [] },
+    });
+    assert.equal(after.totals.shots, EXPECTED.shots);
+    assert.equal(after.hiddenCameras.length, 0);
+  });
+
+  test("frames with no camera recorded are not swept up with it", () => {
+    // Excluding a camera must not also exclude everything unattributed.
+    const after = computeStats(db, allTime(db), hidden);
+    const attributed = after.cameras.reduce((sum, row) => sum + row.shots, 0);
+    assert.equal(attributed, after.totals.shots);
+  });
+});
+
 describe("the rest of it", () => {
   test("reads GPS from the frames that carry it", () => {
     const stats = statsFor(db);

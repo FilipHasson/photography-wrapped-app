@@ -74,6 +74,50 @@ describe("ranges", () => {
   });
 });
 
+describe("a library that starts later than the catalog does", () => {
+  // The case this exists for: a camera bought on 24 August 2023, and a catalog
+  // that reaches back years earlier to phone snaps nobody is reporting on.
+  const FLOOR = { ...LIBRARY, floorDay: 20230824 };
+
+  test("all time starts at the start date", () => {
+    const range = resolveRange({ kind: "all" }, FLOOR, NOW);
+    assert.equal(range.from, 20230824);
+    assert.equal(range.to, 20250801);
+    assert.equal(range.clipped, true);
+  });
+
+  test("a year before the start date collapses to nothing much", () => {
+    const range = resolveRange({ kind: "year", year: 2023 }, FLOOR, NOW);
+    assert.equal(range.from, 20230824);
+    assert.equal(range.to, 20231231);
+    assert.equal(range.clipped, true);
+    // Comparing against a period the start date excludes would be comparing
+    // against the phone snaps, so there is nothing to compare with.
+    assert.equal(range.previous, null);
+  });
+
+  test("a range that is already inside the start date is left alone", () => {
+    const range = resolveRange({ kind: "year", year: 2024 }, FLOOR, NOW);
+    assert.equal(range.from, 20240101);
+    assert.equal(range.clipped, false);
+    assert.equal(range.previous?.from, 20230101);
+  });
+
+  test("a milestone becomes a range of its own", () => {
+    const range = resolveRange({ kind: "since", day: 20230824, label: "the a9 III" }, LIBRARY, NOW);
+    assert.equal(range.from, 20230824);
+    assert.equal(range.to, 20250801);
+    assert.equal(range.label, "Since the a9 III");
+    // Compared against the equally long stretch before it.
+    assert.equal(range.previous?.to, 20230823);
+  });
+
+  test("an unnamed milestone says its date instead", () => {
+    const range = resolveRange({ kind: "since", day: 20230824 }, LIBRARY, NOW);
+    assert.equal(range.label, "Since 24 Aug 2023");
+  });
+});
+
 describe("ranges in a URL", () => {
   const parse = (query: string) => parseRangeSpec(new URLSearchParams(query));
 
@@ -84,6 +128,7 @@ describe("ranges in a URL", () => {
       { kind: "month" as const, year: 2025, month: 3 },
       { kind: "last" as const, days: 30 },
       { kind: "custom" as const, from: 20250301, to: 20250331 },
+      { kind: "since" as const, day: 20230824, label: "the a9 III" },
     ]) {
       assert.deepEqual(parse(rangeQuery(spec)), spec);
     }

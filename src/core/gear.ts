@@ -38,28 +38,46 @@ function keyOf(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
+const ROMAN = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
+
 /**
- * Sony names every body `ILCE-…`, which nobody says out loud. Display only —
- * the grouping key stays the raw model, so an unmapped body is never merged
- * with a mapped one.
+ * Sony writes internal product codes where every other maker writes a name:
+ * `ILCE-7M2` for an a7 II, `ILCE-9M3` for an a9 III, `DSC-RX100M7` for an
+ * RX100 VII. Left alone, one shelf of Sony bodies reads as three different
+ * naming schemes on the same slide.
+ *
+ * This is a rule rather than a lookup table on purpose — a table only fixes
+ * the bodies someone remembered to add, which is exactly how `a9 III` and
+ * `ILCE-7M2` ended up side by side. The `M<n>` suffix is the generation, and
+ * Sony says those out loud in roman numerals.
+ *
+ * Display only. The grouping key stays the raw model, so this can never merge
+ * two bodies that the camera itself considers different.
  */
-const CAMERA_ALIASES = new Map<string, string>(
-  Object.entries({
-    "ilce-1": "a1",
-    "ilce-1m2": "a1 II",
-    "ilce-6700": "a6700",
-    "ilce-7cm2": "a7C II",
-    "ilce-7m3": "a7 III",
-    "ilce-7m4": "a7 IV",
-    "ilce-7m5": "a7 V",
-    "ilce-7rm3": "a7R III",
-    "ilce-7rm4": "a7R IV",
-    "ilce-7rm5": "a7R V",
-    "ilce-7sm3": "a7S III",
-    "ilce-9m2": "a9 II",
-    "ilce-9m3": "a9 III",
-  }),
-);
+function sonyModelName(model: string): string | null {
+  const match = model.match(/^(ILCE|ILME|DSC|ZV)-(.+)$/i);
+  if (!match) return null;
+
+  const [, family = "", codeRaw = ""] = match;
+  const generation = codeRaw.match(/^(.*?)M(\d{1,2})$/i);
+  const code = generation
+    ? `${generation[1]} ${ROMAN[Number(generation[2])] ?? generation[2]}`.trim()
+    : codeRaw;
+
+  switch (family.toUpperCase()) {
+    // The Alpha line, which everyone writes with a leading "a".
+    case "ILCE":
+      return `a${code}`;
+    // Cinema bodies and compacts are said as written.
+    case "ILME":
+    case "DSC":
+      return code;
+    case "ZV":
+      return `ZV-${code}`;
+    default:
+      return null;
+  }
+}
 
 function titleCase(value: string): string {
   return value
@@ -96,8 +114,7 @@ export function normalizeCamera(makeRaw: unknown, modelRaw: unknown): GearName |
   if (isPlaceholder(trimmedModel)) trimmedModel = model;
 
   const displayMake = make === "" ? "" : tidyMake(make);
-  const alias = CAMERA_ALIASES.get(trimmedModel.toLowerCase());
-  let displayModel = alias ?? trimmedModel;
+  let displayModel = sonyModelName(trimmedModel) ?? trimmedModel;
 
   // `NIKON Z 8` with make `Nikon` should read `Nikon Z 8`, not keep shouting.
   if (displayMake !== "" && displayModel.toLowerCase().startsWith(displayMake.toLowerCase())) {

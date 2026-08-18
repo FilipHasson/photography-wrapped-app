@@ -27,7 +27,9 @@ export type RangeSpec =
   | { kind: "year"; year: number }
   | { kind: "month"; year: number; month: number }
   | { kind: "last"; days: number }
-  | { kind: "custom"; from: number; to: number };
+  | { kind: "custom"; from: number; to: number }
+  /** Everything since a day worth naming — the day a camera arrived, usually. */
+  | { kind: "since"; day: number; label?: string };
 
 export interface Window {
   from: number;
@@ -41,11 +43,22 @@ export interface Range extends Window {
   days: number;
   /** The equally long window ending the day before `from`. */
   previous: Window | null;
+  /** True when the start date pulled `from` forward. */
+  clipped: boolean;
 }
 
 export interface RangeBounds {
   firstDay: number | null;
   lastDay: number | null;
+  /**
+   * The day the library is considered to begin.
+   *
+   * A catalog usually reaches back further than the photography does — phone
+   * snaps, scans, someone else's import. Everything before this day is left out
+   * of every range, including all-time, so one bad decade cannot drag the
+   * averages around.
+   */
+  floorDay?: number | null;
 }
 
 /** Longest span a custom range may cover, as a guard against silly input. */
@@ -72,13 +85,39 @@ function previousWindow(from: number, to: number): Window {
 }
 
 /**
- * Turns a spec into concrete days.
+ * Turns a spec into concrete days, then applies the library start date.
  *
  * `bounds` is what the index actually holds, and it only matters for "all
  * time" — every other range means what it says whether or not there are
  * photographs in it, because "you shot nothing last month" is a real answer.
  */
 export function resolveRange(spec: RangeSpec, bounds: RangeBounds, now = new Date()): Range {
+  return applyFloor(resolveSpec(spec, bounds, now), bounds.floorDay ?? null);
+}
+
+/**
+ * Pulls a range forward to the library start date.
+ *
+ * The comparison window moves with it: an all-time deck that starts the day a
+ * camera was bought should not be compared against the phone snaps that start
+ * date exists to exclude.
+ */
+function applyFloor(range: Range, floor: number | null): Range {
+  if (floor === null || range.from >= floor) return range;
+
+  const from = Math.min(floor, range.to);
+  const previous = range.previous === null ? null : previousWindow(from, range.to);
+
+  return {
+    ...range,
+    from,
+    days: daysBetween(from, range.to) + 1,
+    previous: previous && previous.to >= floor ? previous : null,
+    clipped: true,
+  };
+}
+
+function resolveSpec(spec: RangeSpec, bounds: RangeBounds, now: Date): Range {
   const today = todayDay(now);
 
   switch (spec.kind) {
@@ -93,6 +132,21 @@ export function resolveRange(spec: RangeSpec, bounds: RangeBounds, now = new Dat
         days: daysBetween(from, to) + 1,
         // Nothing precedes everything.
         previous: null,
+        clipped: false,
+      };
+    }
+
+    case "since": {
+      const from = Math.min(spec.day, today);
+      const to = Math.max(bounds.lastDay ?? today, from);
+      return {
+        spec,
+        from,
+        to,
+        label: spec.label ? `Since ${spec.label}` : `Since ${formatDay(from)}`,
+        days: daysBetween(from, to) + 1,
+        previous: previousWindow(from, to),
+        clipped: false,
       };
     }
 
@@ -110,6 +164,7 @@ export function resolveRange(spec: RangeSpec, bounds: RangeBounds, now = new Dat
           to: makeDay(spec.year - 1, 12, 31),
           label: String(spec.year - 1),
         },
+        clipped: false,
       };
     }
 
@@ -129,6 +184,7 @@ export function resolveRange(spec: RangeSpec, bounds: RangeBounds, now = new Dat
           to: makeDay(prevYear, prevMonth, daysInMonth(prevYear, prevMonth)),
           label: `${monthName(prevMonth)} ${prevYear}`,
         },
+        clipped: false,
       };
     }
 
@@ -142,6 +198,7 @@ export function resolveRange(spec: RangeSpec, bounds: RangeBounds, now = new Dat
         label: days === 1 ? "Today" : `Last ${days} days`,
         days,
         previous: previousWindow(from, today),
+        clipped: false,
       };
     }
 
@@ -155,6 +212,7 @@ export function resolveRange(spec: RangeSpec, bounds: RangeBounds, now = new Dat
         label: spanLabel(from, to),
         days: daysBetween(from, to) + 1,
         previous: previousWindow(from, to),
+        clipped: false,
       };
     }
   }
@@ -196,6 +254,14 @@ export function parseRangeSpec(params: URLSearchParams): RangeSpec {
     }
   }
 
+  if (kind === "since") {
+    const day = parseIsoDay(params.get("day") ?? "");
+    if (day !== null) {
+      const label = (params.get("label") ?? "").trim().slice(0, 60);
+      return label === "" ? { kind: "since", day } : { kind: "since", day, label };
+    }
+  }
+
   return { kind: "all" };
 }
 
@@ -211,6 +277,10 @@ export function rangeQuery(spec: RangeSpec): string {
   if (spec.kind === "custom") {
     params.set("from", formatIsoDay(spec.from));
     params.set("to", formatIsoDay(spec.to));
+  }
+  if (spec.kind === "since") {
+    params.set("day", formatIsoDay(spec.day));
+    if (spec.label) params.set("label", spec.label);
   }
   return params.toString();
 }

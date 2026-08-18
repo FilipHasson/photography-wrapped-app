@@ -42,6 +42,8 @@ export interface Tally {
   share: number;
   firstDay: number | null;
   lastDay: number | null;
+  /** Hidden from the deck by a setting. Listed, and counted, but not drawn. */
+  excluded: boolean;
 }
 
 export interface Bucket {
@@ -128,9 +130,13 @@ export interface Burst {
 export interface DeckStats {
   range: Range;
   totals: Totals;
+  /** Full lists, longest first. The slides decide what to draw of them. */
   cameras: Tally[];
   lenses: Tally[];
   combos: Tally[];
+  /** Gear left out of every count, so the tables can offer it back. */
+  hiddenCameras: Tally[];
+  hiddenLenses: Tally[];
   focal: Distribution;
   focalClasses: Array<{ label: FocalClass; shots: number }>;
   aperture: Distribution;
@@ -154,17 +160,42 @@ export interface DeckStats {
 
 export interface StatsOptions {
   includeVideo: boolean;
-  topN?: number;
+  /** Camera and lens keys to leave out of every count. */
+  excluded?: { cameras: string[]; lenses: string[] };
 }
 
 /**
  * The predicate every slide shares. Built as a string with bound parameters
  * rather than interpolated values so the query plan is reused between ranges.
+ *
+ * `hideGear: false` drops the exclusions, which is how the tables list a hidden
+ * camera alongside everything else — it has to be visible to be un-hidden.
  */
-function scope(range: Range, options: StatsOptions): { where: string; params: number[] } {
+function scope(
+  range: Range,
+  options: StatsOptions,
+  hideGear = true,
+): { where: string; params: Array<number | string> } {
   const clauses = ["p.is_primary = 1", "p.present = 1", "p.day BETWEEN ? AND ?"];
+  const params: Array<number | string> = [range.from, range.to];
+
   if (!options.includeVideo) clauses.push("p.kind <> 'video'");
-  return { where: clauses.join(" AND "), params: [range.from, range.to] };
+
+  if (hideGear) {
+    for (const [table, column, keys] of [
+      ["camera", "camera_id", options.excluded?.cameras ?? []],
+      ["lens", "lens_id", options.excluded?.lenses ?? []],
+    ] as const) {
+      if (keys.length === 0) continue;
+      // A frame with no camera recorded is not the excluded camera, so it stays.
+      clauses.push(
+        `(p.${column} IS NULL OR p.${column} NOT IN (SELECT id FROM ${table} WHERE key IN (${keys.map(() => "?").join(", ")})))`,
+      );
+      params.push(...keys);
+    }
+  }
+
+  return { where: clauses.join(" AND "), params };
 }
 
 function num(value: unknown): number {
@@ -216,38 +247,30 @@ function distribute(
   return { buckets, known, favourite, median };
 }
 
+/**
+ * The whole list, never a truncated one.
+ *
+ * Collapsing a tail into "12 others" is a *drawing* decision — nine bars is a
+ * chart and forty is a wall — so it happens in `stats/slides.ts`, against this
+ * full list, which stays available for the table behind the slide.
+ */
 function tallies(
   rows: Array<{ key: string; label: string; n: number; first: number | null; last: number | null }>,
   known: number,
-  topN: number,
+  excluded = false,
 ): Tally[] {
-  const top = rows.slice(0, topN).map((row) => ({
+  return rows.map((row) => ({
     key: row.key,
     label: row.label,
     shots: row.n,
     share: known > 0 ? row.n / known : 0,
     firstDay: row.first,
     lastDay: row.last,
+    excluded,
   }));
-
-  const rest = rows.slice(topN);
-  if (rest.length > 0) {
-    const shots = rest.reduce((sum, row) => sum + row.n, 0);
-    top.push({
-      key: "other",
-      label: rest.length === 1 ? (rest[0] as { label: string }).label : `${rest.length} others`,
-      shots,
-      share: known > 0 ? shots / known : 0,
-      firstDay: null,
-      lastDay: null,
-    });
-  }
-
-  return top;
 }
 
 export function computeStats(db: Db, range: Range, options: StatsOptions): DeckStats {
-  const topN = options.topN ?? TOP_N;
   const { where, params: args } = scope(range, options);
 
   const totalsRow = db.getAs<Record<string, number | null>>(
@@ -337,6 +360,29 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
     ...args,
   );
   const comboKnown = comboRows.reduce((sum, row) => sum + row.n, 0);
+
+  /**
+   * Hidden gear, counted as if it were not hidden.
+   *
+   * These rows never reach a chart; they exist so the table behind the slide
+   * can show what is being left out, and offer it back. A hidden camera you
+   * cannot see is a hidden camera you cannot un-hide.
+   */
+  const hidden = (table: "camera" | "lens", keys: readonly string[]) => {
+    if (keys.length === 0) return [];
+    const open = scope(range, options, false);
+    return db.allAs<{ key: string; label: string; n: number; first: number; last: number }>(
+      `SELECT g.key AS key, g.label AS label, COUNT(*) AS n, MIN(p.day) AS first, MAX(p.day) AS last
+       FROM photo p JOIN ${table} g ON g.id = p.${table}_id
+       WHERE ${open.where} AND g.key IN (${keys.map(() => "?").join(", ")})
+       GROUP BY g.id ORDER BY n DESC, g.label`,
+      ...open.params,
+      ...keys,
+    );
+  };
+
+  const hiddenCameras = hidden("camera", options.excluded?.cameras ?? []);
+  const hiddenLenses = hidden("lens", options.excluded?.lenses ?? []);
 
   // ----------------------------------------------------- distributions ----
 
@@ -509,9 +555,11 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
   return {
     range,
     totals,
-    cameras: tallies(cameraRows, cameraKnown, topN),
-    lenses: tallies(lensRows, lensKnown, topN),
-    combos: tallies(comboRows, comboKnown, topN),
+    cameras: tallies(cameraRows, cameraKnown),
+    lenses: tallies(lensRows, lensKnown),
+    combos: tallies(comboRows, comboKnown),
+    hiddenCameras: tallies(hiddenCameras, cameraKnown, true),
+    hiddenLenses: tallies(hiddenLenses, lensKnown, true),
     focal: distribute(focalRows, focalBucket, formatFocal),
     focalClasses: [...classCounts.entries()]
       .map(([label, shots]) => ({ label, shots }))
@@ -618,21 +666,36 @@ function findLongestBurst(db: Db, range: Range, options: StatsOptions): Burst | 
   return { frames: row.frames, seconds: row.seconds, day: row.day, camera: row.camera };
 }
 
-/** Years that hold at least one photograph, newest first. */
-export function availableYears(db: Db): Array<{ year: number; shots: number }> {
+/**
+ * Years that hold at least one photograph, newest first.
+ *
+ * The floor is the library start date. A year entirely before it holds nothing
+ * this tool will report on, so offering it as a range would be a button that
+ * produces an empty deck.
+ */
+export function availableYears(
+  db: Db,
+  floorDay: number | null = null,
+): Array<{ year: number; shots: number }> {
   return db.allAs<{ year: number; shots: number }>(
     `SELECT year, COUNT(*) AS shots FROM photo
-     WHERE is_primary = 1 AND present = 1 AND year IS NOT NULL
+     WHERE is_primary = 1 AND present = 1 AND year IS NOT NULL AND day >= ?
      GROUP BY year ORDER BY year DESC`,
+    floorDay ?? 0,
   );
 }
 
 /** Months that hold at least one photograph, newest first. */
-export function availableMonths(db: Db, limit = 24): Array<{ ym: number; shots: number }> {
+export function availableMonths(
+  db: Db,
+  floorDay: number | null = null,
+  limit = 24,
+): Array<{ ym: number; shots: number }> {
   return db.allAs<{ ym: number; shots: number }>(
     `SELECT ym, COUNT(*) AS shots FROM photo
-     WHERE is_primary = 1 AND present = 1 AND ym IS NOT NULL
+     WHERE is_primary = 1 AND present = 1 AND ym IS NOT NULL AND day >= ?
      GROUP BY ym ORDER BY ym DESC LIMIT ?`,
+    floorDay ?? 0,
     limit,
   );
 }

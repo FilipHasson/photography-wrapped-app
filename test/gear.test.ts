@@ -26,10 +26,25 @@ describe("cameras", () => {
     assert.equal(canon?.label, "Canon EOS R5");
   });
 
-  test("says what a Sony body is actually called", () => {
-    assert.equal(normalizeCamera("SONY", "ILCE-7RM5")?.label, "Sony a7R V");
-    // The alias is cosmetic; an unmapped body keeps its own name.
-    assert.equal(normalizeCamera("SONY", "ILCE-0000")?.label, "Sony ILCE-0000");
+  test("says what a Sony body is actually called, consistently", () => {
+    // A rule rather than a lookup table, so every body in the line comes out in
+    // the same shape — including the ones nobody thought to add.
+    const label = (model: string) => normalizeCamera("SONY", model)?.label;
+    assert.equal(label("ILCE-7M2"), "Sony a7 II");
+    assert.equal(label("ILCE-7RM5"), "Sony a7R V");
+    assert.equal(label("ILCE-7SM3"), "Sony a7S III");
+    assert.equal(label("ILCE-9M3"), "Sony a9 III");
+    assert.equal(label("ILCE-1"), "Sony a1");
+    assert.equal(label("ILCE-6700"), "Sony a6700");
+    assert.equal(label("ILME-FX3"), "Sony FX3");
+    assert.equal(label("DSC-RX100M7"), "Sony RX100 VII");
+    assert.equal(label("ZV-E10"), "Sony ZV-E10");
+  });
+
+  test("the Sony renaming never merges two bodies", () => {
+    // It is a display rule; the key is still the model the camera wrote.
+    assert.notEqual(normalizeCamera("SONY", "ILCE-7M2")?.key, normalizeCamera("SONY", "ILCE-7M3")?.key);
+    assert.equal(normalizeCamera("SONY", "ILCE-7M2")?.key, normalizeCamera(null, "ILCE-7M2")?.key);
   });
 
   test("gives up rather than inventing a camera", () => {

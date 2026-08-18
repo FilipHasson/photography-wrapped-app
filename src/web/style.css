@@ -352,14 +352,37 @@ main {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
+}
+.deck-actions .chips {
+  gap: 4px;
+  padding-right: 8px;
+  border-right: 1px solid var(--border);
+  margin-right: 4px;
+}
+.deck-actions .chip {
+  padding: 5px 10px;
+  font-size: 0.85rem;
 }
 
+/*
+ * The stage holds whatever shape the slide is. A 9:16 slide at full page width
+ * would be two screens tall, so the height is capped and the SVG is centred in
+ * whatever is left — the same rule then covers 4:5, 1:1 and 4:3 without a case
+ * for each.
+ */
 .stage {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.stage[data-orientation="portrait"] {
+  background: var(--plane);
 }
 .stage:focus-visible {
   outline: 2px solid var(--accent);
@@ -367,8 +390,10 @@ main {
 }
 .stage svg {
   display: block;
-  width: 100%;
+  width: auto;
   height: auto;
+  max-width: 100%;
+  max-height: min(72vh, 900px);
 }
 
 .deck-nav {
@@ -430,6 +455,23 @@ main {
   font-variant-numeric: tabular-nums;
   text-align: right;
   padding-right: 24px;
+}
+.deck-table th.tick,
+.deck-table td.tick {
+  width: 62px;
+  padding-right: 12px;
+  text-align: left;
+}
+.deck-table td.tick input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+/* A hidden row stays legible — it has to be readable to be brought back. */
+.deck-table tr.is-excluded td {
+  opacity: 0.55;
+  font-style: italic;
 }
 
 /* Full screen: the slide is the only thing left. */
@@ -598,5 +640,65 @@ main {
   }
   .deck-actions {
     width: 100%;
+  }
+}
+
+/* ---------------------------------------------------------- milestones --- */
+
+.milestones {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.start-day {
+  display: grid;
+  grid-template-columns: auto auto auto 1fr;
+  gap: 10px;
+  align-items: center;
+}
+.start-day .hint {
+  grid-column: 1 / -1;
+  max-width: 62ch;
+}
+.anchor-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.anchor {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--plane);
+}
+.anchor-label {
+  font-weight: 600;
+}
+.anchor-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.anchor-form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.anchor-form input[type="text"] {
+  flex: 1;
+  min-width: 220px;
+}
+
+@media (max-width: 720px) {
+  .anchor {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .start-day {
+    grid-template-columns: 1fr;
   }
 }
