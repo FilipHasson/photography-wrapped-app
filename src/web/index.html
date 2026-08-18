@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>What did I shoot?</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%93%B7%3C/text%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">📷</span>
+        <h1>What did I shoot?</h1>
+      </div>
+      <div class="topbar-right">
+        <button id="nav-home" class="ghost" type="button" hidden>← Library</button>
+        <button id="theme-toggle" class="ghost" type="button" title="Switch between light and dark">
+          Theme
+        </button>
+      </div>
+    </header>
+
+    <div id="job-banner" class="job-banner" hidden>
+      <div class="job-text">
+        <strong id="job-label"></strong>
+        <span id="job-message"></span>
+      </div>
+      <div class="job-bar"><div id="job-fill"></div></div>
+      <button id="job-cancel" class="ghost" type="button">Cancel</button>
+    </div>
+
+    <main>
+      <!-- First run -->
+      <section id="view-setup" class="view" hidden>
+        <div class="hero">
+          <h2>Point me at your photographs</h2>
+          <p>
+            Add the folders your photographs live in, or your Lightroom catalog — both, if you have
+            both. Everything is read where it sits: nothing is copied, moved, or written to.
+          </p>
+          <button id="setup-add" class="primary" type="button">Add a source</button>
+        </div>
+      </section>
+
+      <!-- Sources and range picking -->
+      <section id="view-home" class="view" hidden>
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Build a deck</h2>
+            <div class="panel-actions">
+              <span id="library-summary" class="hint"></span>
+            </div>
+          </div>
+
+          <div class="range-block">
+            <div id="range-presets" class="chips"></div>
+
+            <div class="range-custom">
+              <label for="range-from">From</label>
+              <input id="range-from" type="date" />
+              <label for="range-to">to</label>
+              <input id="range-to" type="date" />
+              <button id="range-custom-go" class="ghost" type="button">Use these dates</button>
+            </div>
+
+            <div class="range-go">
+              <button id="deck-build" class="primary" type="button">Show me the deck</button>
+              <span id="range-current" class="hint"></span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Sources</h2>
+            <div class="panel-actions">
+              <button id="source-add" class="ghost" type="button">Add source</button>
+              <button id="index-all" class="ghost" type="button">Re-index everything</button>
+            </div>
+          </div>
+          <div id="sources" class="source-list"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Settings</h2></div>
+          <div class="settings">
+            <label class="setting">
+              <span class="setting-label">Your name</span>
+              <input id="setting-owner" type="text" maxlength="60" placeholder="on the title slide" />
+            </label>
+            <label class="setting checkbox">
+              <input id="setting-merge" type="checkbox" />
+              <span>
+                <span class="setting-label">Count raw + JPEG as one photograph</span>
+                <span class="hint">One press of the shutter is one photograph, however many files it wrote.</span>
+              </span>
+            </label>
+            <label class="setting checkbox">
+              <input id="setting-video" type="checkbox" />
+              <span>
+                <span class="setting-label">Include video clips</span>
+                <span class="hint">Clips count towards totals and the calendar; they carry no exposure data.</span>
+              </span>
+            </label>
+          </div>
+        </section>
+      </section>
+
+      <!-- The deck -->
+      <section id="view-deck" class="view deck" hidden>
+        <div class="deck-bar">
+          <div class="deck-title">
+            <strong id="deck-name"></strong>
+            <span id="deck-range" class="hint"></span>
+          </div>
+          <div class="deck-actions">
+            <button id="deck-table-toggle" class="ghost" type="button" title="Show the numbers (t)">
+              Numbers
+            </button>
+            <button id="deck-png" class="ghost" type="button">Save slide (PNG)</button>
+            <button id="deck-pdf" class="ghost" type="button">Save deck (PDF)</button>
+            <button id="deck-full" class="ghost" type="button" title="Full screen (f)">Full screen</button>
+          </div>
+        </div>
+
+        <div id="stage" class="stage" tabindex="0" aria-live="polite"></div>
+
+        <div id="deck-table" class="deck-table" hidden></div>
+
+        <div class="deck-nav">
+          <button id="deck-prev" class="ghost" type="button" aria-label="Previous slide">←</button>
+          <div id="deck-dots" class="deck-dots"></div>
+          <button id="deck-next" class="ghost" type="button" aria-label="Next slide">→</button>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="picker" class="picker">
+      <form method="dialog" class="picker-form">
+        <header class="picker-head">
+          <h3 id="picker-title">Choose a folder or a .lrcat file</h3>
+          <button value="cancel" class="ghost" type="submit">Close</button>
+        </header>
+        <div class="picker-path">
+          <button id="picker-up" class="ghost" type="button">↑ Up</button>
+          <input id="picker-input" type="text" spellcheck="false" autocomplete="off" />
+          <button id="picker-go" class="ghost" type="button">Go</button>
+        </div>
+        <div id="picker-shortcuts" class="picker-shortcuts"></div>
+        <ul id="picker-list" class="picker-list"></ul>
+        <footer class="picker-foot">
+          <span id="picker-hint" class="hint"></span>
+          <button id="picker-choose" class="primary" type="button">Use this</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" hidden></div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

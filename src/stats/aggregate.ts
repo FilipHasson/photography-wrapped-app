@@ -1,0 +1,643 @@
+import type { Db } from "../core/db.ts";
+import type { Range } from "./range.ts";
+import {
+  apertureBucket,
+  focalBucket,
+  focalClass,
+  formatAperture,
+  formatFocal,
+  formatIso,
+  formatShutter,
+  isoBucket,
+  shutterBucket,
+  type FocalClass,
+} from "../core/units.ts";
+import { daysBetween, formatDay } from "../core/time.ts";
+
+/**
+ * Every number a deck can show, in one pass over the index.
+ *
+ * Two rules hold throughout:
+ *
+ *  - **Count photographs, not files.** Every query filters on `is_primary`,
+ *    which `index/dedupe.ts` has already worked out. A raw and its JPEG are one
+ *    photograph; a folder and the catalog pointing at it are one library.
+ *  - **Never invent a denominator.** Share of shots on a lens is share of the
+ *    shots whose lens is *known*, and each distribution reports how many rows
+ *    it actually had. Half a library with no lens recorded should read as "we
+ *    know about 8,000 of your 16,000 frames", never as "50% unknown lens".
+ */
+
+/** Rows returned for the ranked lists. The tail folds into "Other". */
+const TOP_N = 8;
+
+/** Below this the calendar heatmap gives way to a monthly timeline. */
+export const HEATMAP_MAX_DAYS = 400;
+
+export interface Tally {
+  key: string;
+  label: string;
+  shots: number;
+  /** Fraction of the shots where this dimension was known, 0–1. */
+  share: number;
+  firstDay: number | null;
+  lastDay: number | null;
+}
+
+export interface Bucket {
+  value: number;
+  label: string;
+  shots: number;
+}
+
+export interface Distribution {
+  buckets: Bucket[];
+  /** Shots that carried this field at all. */
+  known: number;
+  /** The bucket with the most shots. */
+  favourite: Bucket | null;
+  /** Value at the halfway point, by shot count. */
+  median: number | null;
+}
+
+export interface Totals {
+  shots: number;
+  files: number;
+  stills: number;
+  videos: number;
+  raws: number;
+  jpegs: number;
+  bytes: number;
+  videoSeconds: number;
+  daysShot: number;
+  daysInRange: number;
+  cameras: number;
+  lenses: number;
+  bodies: number;
+  firstDay: number | null;
+  lastDay: number | null;
+  withGps: number;
+  withFlash: number;
+  rated: number;
+  keepers: number;
+  /** Same count over the equally long window before this one. */
+  previousShots: number | null;
+}
+
+export interface DayCount {
+  day: number;
+  shots: number;
+}
+
+export interface MonthCount {
+  ym: number;
+  shots: number;
+}
+
+export interface Streak {
+  days: number;
+  from: number;
+  to: number;
+}
+
+export interface Series {
+  label: string;
+  values: number[];
+}
+
+export interface Place {
+  lat: number;
+  lon: number;
+  shots: number;
+}
+
+export interface Debut {
+  kind: "camera" | "lens";
+  label: string;
+  day: number;
+  shots: number;
+}
+
+export interface Burst {
+  frames: number;
+  seconds: number;
+  day: number;
+  camera: string | null;
+}
+
+export interface DeckStats {
+  range: Range;
+  totals: Totals;
+  cameras: Tally[];
+  lenses: Tally[];
+  combos: Tally[];
+  focal: Distribution;
+  focalClasses: Array<{ label: FocalClass; shots: number }>;
+  aperture: Distribution;
+  iso: Distribution;
+  shutter: Distribution;
+  hours: number[];
+  weekdays: number[];
+  daily: DayCount[];
+  monthly: MonthCount[];
+  timeline: { months: number[]; series: Series[] };
+  ratings: number[];
+  orientation: { landscape: number; portrait: number; square: number };
+  busiestDay: DayCount | null;
+  longestStreak: Streak | null;
+  longestGap: Streak | null;
+  places: Place[];
+  placesKnown: number;
+  debuts: Debut[];
+  burst: Burst | null;
+}
+
+export interface StatsOptions {
+  includeVideo: boolean;
+  topN?: number;
+}
+
+/**
+ * The predicate every slide shares. Built as a string with bound parameters
+ * rather than interpolated values so the query plan is reused between ranges.
+ */
+function scope(range: Range, options: StatsOptions): { where: string; params: number[] } {
+  const clauses = ["p.is_primary = 1", "p.present = 1", "p.day BETWEEN ? AND ?"];
+  if (!options.includeVideo) clauses.push("p.kind <> 'video'");
+  return { where: clauses.join(" AND "), params: [range.from, range.to] };
+}
+
+function num(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+/**
+ * Snaps raw values onto a standard scale and adds them up.
+ *
+ * The database groups by the value the camera wrote, which is f/7.1 and ISO 320
+ * and 1/320s; a histogram of those is unreadable. Bucketing happens here rather
+ * than in SQL because the scales are logarithmic and irregular.
+ */
+function distribute(
+  rows: Array<{ value: number | null; n: number }>,
+  bucketOf: (value: number | null) => number | null,
+  labelOf: (value: number) => string,
+  sort: "asc" | "desc" = "asc",
+): Distribution {
+  const counts = new Map<number, number>();
+  let known = 0;
+
+  for (const row of rows) {
+    const bucket = bucketOf(row.value);
+    if (bucket === null) continue;
+    counts.set(bucket, (counts.get(bucket) ?? 0) + row.n);
+    known += row.n;
+  }
+
+  const buckets: Bucket[] = [...counts.entries()]
+    .map(([value, shots]) => ({ value, label: labelOf(value), shots }))
+    .sort((a, b) => (sort === "asc" ? a.value - b.value : b.value - a.value));
+
+  let favourite: Bucket | null = null;
+  for (const bucket of buckets) {
+    if (!favourite || bucket.shots > favourite.shots) favourite = bucket;
+  }
+
+  let median: number | null = null;
+  let seen = 0;
+  for (const bucket of buckets) {
+    seen += bucket.shots;
+    if (seen >= known / 2) {
+      median = bucket.value;
+      break;
+    }
+  }
+
+  return { buckets, known, favourite, median };
+}
+
+function tallies(
+  rows: Array<{ key: string; label: string; n: number; first: number | null; last: number | null }>,
+  known: number,
+  topN: number,
+): Tally[] {
+  const top = rows.slice(0, topN).map((row) => ({
+    key: row.key,
+    label: row.label,
+    shots: row.n,
+    share: known > 0 ? row.n / known : 0,
+    firstDay: row.first,
+    lastDay: row.last,
+  }));
+
+  const rest = rows.slice(topN);
+  if (rest.length > 0) {
+    const shots = rest.reduce((sum, row) => sum + row.n, 0);
+    top.push({
+      key: "other",
+      label: rest.length === 1 ? (rest[0] as { label: string }).label : `${rest.length} others`,
+      shots,
+      share: known > 0 ? shots / known : 0,
+      firstDay: null,
+      lastDay: null,
+    });
+  }
+
+  return top;
+}
+
+export function computeStats(db: Db, range: Range, options: StatsOptions): DeckStats {
+  const topN = options.topN ?? TOP_N;
+  const { where, params: args } = scope(range, options);
+
+  const totalsRow = db.getAs<Record<string, number | null>>(
+    `SELECT
+       COUNT(*) AS shots,
+       SUM(p.kind = 'video') AS videos,
+       SUM(p.kind = 'raw') AS raws,
+       SUM(p.kind = 'photo') AS jpegs,
+       SUM(CASE WHEN p.size > 0 THEN p.size ELSE 0 END) AS bytes,
+       SUM(COALESCE(p.duration, 0)) AS videoSeconds,
+       COUNT(DISTINCT p.day) AS daysShot,
+       COUNT(DISTINCT p.camera_id) AS cameras,
+       COUNT(DISTINCT p.lens_id) AS lenses,
+       COUNT(DISTINCT p.body_serial) AS bodies,
+       MIN(p.day) AS firstDay,
+       MAX(p.day) AS lastDay,
+       SUM(p.lat IS NOT NULL) AS withGps,
+       SUM(p.flash = 1) AS withFlash,
+       SUM(p.rating > 0) AS rated,
+       SUM(p.rating >= 4 OR p.pick = 1) AS keepers
+     FROM photo p WHERE ${where}`,
+    ...args,
+  );
+
+  const filesRow = db.getAs<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM photo p
+     WHERE p.present = 1 AND p.day BETWEEN ? AND ?${options.includeVideo ? "" : " AND p.kind <> 'video'"}`,
+    range.from,
+    range.to,
+  );
+
+  const previousShots =
+    range.previous === null
+      ? null
+      : db.getAs<{ n: number }>(
+          `SELECT COUNT(*) AS n FROM photo p WHERE ${where}`,
+          range.previous.from,
+          range.previous.to,
+        )?.n ?? 0;
+
+  const totals: Totals = {
+    shots: num(totalsRow?.shots),
+    files: num(filesRow?.n),
+    stills: num(totalsRow?.shots) - num(totalsRow?.videos),
+    videos: num(totalsRow?.videos),
+    raws: num(totalsRow?.raws),
+    jpegs: num(totalsRow?.jpegs),
+    bytes: num(totalsRow?.bytes),
+    videoSeconds: Math.round(num(totalsRow?.videoSeconds)),
+    daysShot: num(totalsRow?.daysShot),
+    daysInRange: range.days,
+    cameras: num(totalsRow?.cameras),
+    lenses: num(totalsRow?.lenses),
+    bodies: num(totalsRow?.bodies),
+    firstDay: totalsRow?.firstDay ?? null,
+    lastDay: totalsRow?.lastDay ?? null,
+    withGps: num(totalsRow?.withGps),
+    withFlash: num(totalsRow?.withFlash),
+    rated: num(totalsRow?.rated),
+    keepers: num(totalsRow?.keepers),
+    previousShots,
+  };
+
+  // ------------------------------------------------------------- gear ----
+
+  const cameraRows = db.allAs<{ key: string; label: string; n: number; first: number; last: number }>(
+    `SELECT c.key AS key, c.label AS label, COUNT(*) AS n, MIN(p.day) AS first, MAX(p.day) AS last
+     FROM photo p JOIN camera c ON c.id = p.camera_id
+     WHERE ${where} GROUP BY c.id ORDER BY n DESC, c.label`,
+    ...args,
+  );
+  const cameraKnown = cameraRows.reduce((sum, row) => sum + row.n, 0);
+
+  const lensRows = db.allAs<{ key: string; label: string; n: number; first: number; last: number }>(
+    `SELECT l.key AS key, l.label AS label, COUNT(*) AS n, MIN(p.day) AS first, MAX(p.day) AS last
+     FROM photo p JOIN lens l ON l.id = p.lens_id
+     WHERE ${where} GROUP BY l.id ORDER BY n DESC, l.label`,
+    ...args,
+  );
+  const lensKnown = lensRows.reduce((sum, row) => sum + row.n, 0);
+
+  const comboRows = db.allAs<{ key: string; label: string; n: number; first: number; last: number }>(
+    `SELECT c.key || '+' || l.key AS key, c.label || ' + ' || l.label AS label,
+            COUNT(*) AS n, MIN(p.day) AS first, MAX(p.day) AS last
+     FROM photo p JOIN camera c ON c.id = p.camera_id JOIN lens l ON l.id = p.lens_id
+     WHERE ${where} GROUP BY c.id, l.id ORDER BY n DESC, label`,
+    ...args,
+  );
+  const comboKnown = comboRows.reduce((sum, row) => sum + row.n, 0);
+
+  // ----------------------------------------------------- distributions ----
+
+  // The barrel figure, not the 35mm equivalent: a photographer who owns one
+  // system thinks in the numbers printed on the lens. The equivalent is used
+  // for the angle-of-view split below, where comparing systems is the point.
+  const focalRows = db.allAs<{ value: number; n: number }>(
+    `SELECT ROUND(p.focal, 1) AS value, COUNT(*) AS n FROM photo p
+     WHERE ${where} AND p.focal IS NOT NULL GROUP BY 1`,
+    ...args,
+  );
+
+  const apertureRows = db.allAs<{ value: number; n: number }>(
+    `SELECT ROUND(p.aperture, 2) AS value, COUNT(*) AS n FROM photo p
+     WHERE ${where} AND p.aperture IS NOT NULL GROUP BY 1`,
+    ...args,
+  );
+
+  const isoRows = db.allAs<{ value: number; n: number }>(
+    `SELECT p.iso AS value, COUNT(*) AS n FROM photo p
+     WHERE ${where} AND p.iso IS NOT NULL GROUP BY 1`,
+    ...args,
+  );
+
+  const shutterRows = db.allAs<{ value: number; n: number }>(
+    `SELECT p.shutter AS value, COUNT(*) AS n FROM photo p
+     WHERE ${where} AND p.shutter IS NOT NULL GROUP BY 1`,
+    ...args,
+  );
+
+  const classRows = db.allAs<{ value: number; n: number }>(
+    `SELECT ROUND(COALESCE(p.focal35, p.focal), 1) AS value, COUNT(*) AS n FROM photo p
+     WHERE ${where} AND (p.focal IS NOT NULL OR p.focal35 IS NOT NULL) GROUP BY 1`,
+    ...args,
+  );
+  const classCounts = new Map<FocalClass, number>();
+  for (const row of classRows) {
+    const family = focalClass(row.value);
+    if (family === null) continue;
+    classCounts.set(family, (classCounts.get(family) ?? 0) + row.n);
+  }
+
+  // ------------------------------------------------------------ rhythm ----
+
+  const hours = new Array<number>(24).fill(0);
+  for (const row of db.allAs<{ hour: number; n: number }>(
+    `SELECT p.hour AS hour, COUNT(*) AS n FROM photo p WHERE ${where} AND p.hour IS NOT NULL GROUP BY 1`,
+    ...args,
+  )) {
+    if (row.hour >= 0 && row.hour < 24) hours[row.hour] = row.n;
+  }
+
+  const weekdays = new Array<number>(7).fill(0);
+  for (const row of db.allAs<{ weekday: number; n: number }>(
+    `SELECT p.weekday AS weekday, COUNT(*) AS n FROM photo p WHERE ${where} AND p.weekday IS NOT NULL GROUP BY 1`,
+    ...args,
+  )) {
+    if (row.weekday >= 0 && row.weekday < 7) weekdays[row.weekday] = row.n;
+  }
+
+  const daily = db.allAs<{ day: number; shots: number }>(
+    `SELECT p.day AS day, COUNT(*) AS shots FROM photo p WHERE ${where} GROUP BY p.day ORDER BY p.day`,
+    ...args,
+  );
+
+  const monthly = db.allAs<{ ym: number; shots: number }>(
+    `SELECT p.ym AS ym, COUNT(*) AS shots FROM photo p WHERE ${where} AND p.ym IS NOT NULL GROUP BY p.ym ORDER BY p.ym`,
+    ...args,
+  );
+
+  const busiestDay = daily.reduce<DayCount | null>(
+    (best, day) => (best === null || day.shots > best.shots ? day : best),
+    null,
+  );
+
+  // ---------------------------------------------------- gear over time ----
+
+  const topLensKeys = lensRows.slice(0, 5).map((row) => row.key);
+  const months = monthly.map((row) => row.ym);
+  const monthIndex = new Map(months.map((ym, i) => [ym, i]));
+  const series: Series[] = [];
+
+  if (topLensKeys.length > 0 && months.length > 1) {
+    const byLens = new Map<string, number[]>();
+    for (const row of db.allAs<{ ym: number; key: string; n: number }>(
+      `SELECT p.ym AS ym, l.key AS key, COUNT(*) AS n
+       FROM photo p JOIN lens l ON l.id = p.lens_id
+       WHERE ${where} AND p.ym IS NOT NULL GROUP BY p.ym, l.id`,
+      ...args,
+    )) {
+      const index = monthIndex.get(row.ym);
+      if (index === undefined) continue;
+      const key = topLensKeys.includes(row.key) ? row.key : "other";
+      let values = byLens.get(key);
+      if (!values) {
+        values = new Array<number>(months.length).fill(0);
+        byLens.set(key, values);
+      }
+      values[index] = (values[index] ?? 0) + row.n;
+    }
+
+    for (const key of topLensKeys) {
+      const values = byLens.get(key);
+      if (!values) continue;
+      const label = lensRows.find((row) => row.key === key)?.label ?? key;
+      series.push({ label, values });
+    }
+    const other = byLens.get("other");
+    if (other) series.push({ label: "Everything else", values: other });
+  }
+
+  // ----------------------------------------------------------- keepers ----
+
+  const ratings = new Array<number>(6).fill(0);
+  for (const row of db.allAs<{ rating: number; n: number }>(
+    `SELECT p.rating AS rating, COUNT(*) AS n FROM photo p WHERE ${where} AND p.rating IS NOT NULL GROUP BY 1`,
+    ...args,
+  )) {
+    if (row.rating >= 0 && row.rating <= 5) ratings[row.rating] = row.n;
+  }
+
+  // Which way round a frame reads depends on the orientation flag as well as
+  // the stored pixels — a portrait shot is a landscape file plus a rotation.
+  const shape = db.getAs<{ landscape: number; portrait: number; square: number }>(
+    `SELECT
+       SUM(CASE WHEN p.width IS NULL OR p.height IS NULL OR p.width = p.height THEN 0
+                WHEN p.orientation IN (5,6,7,8) THEN p.height > p.width
+                ELSE p.width > p.height END) AS landscape,
+       SUM(CASE WHEN p.width IS NULL OR p.height IS NULL OR p.width = p.height THEN 0
+                WHEN p.orientation IN (5,6,7,8) THEN p.width > p.height
+                ELSE p.height > p.width END) AS portrait,
+       SUM(CASE WHEN p.width IS NOT NULL AND p.height IS NOT NULL AND p.width = p.height THEN 1 ELSE 0 END) AS square
+     FROM photo p WHERE ${where}`,
+    ...args,
+  );
+
+  // ------------------------------------------------------------ places ----
+
+  // Rounded to a tenth of a degree — about 11km, which is a place rather than
+  // an address, and keeps a scatter of a million frames to a few thousand dots.
+  const places = db.allAs<{ lat: number; lon: number; shots: number }>(
+    `SELECT ROUND(p.lat, 1) AS lat, ROUND(p.lon, 1) AS lon, COUNT(*) AS shots
+     FROM photo p WHERE ${where} AND p.lat IS NOT NULL AND p.lon IS NOT NULL
+     GROUP BY 1, 2 ORDER BY shots DESC LIMIT 4000`,
+    ...args,
+  );
+
+  // ------------------------------------------------------------ debuts ----
+
+  // First use ever, not first use in range: the point of the slide is "this is
+  // the day you picked it up", which only reads right if it is actually true.
+  const debuts: Debut[] = [];
+  for (const [kind, table] of [
+    ["camera", "camera"],
+    ["lens", "lens"],
+  ] as const) {
+    for (const row of db.allAs<{ label: string; day: number; n: number }>(
+      `SELECT g.label AS label, MIN(p.day) AS day, COUNT(*) AS n
+       FROM photo p JOIN ${table} g ON g.id = p.${kind}_id
+       WHERE p.is_primary = 1 AND p.present = 1 AND p.day IS NOT NULL
+       GROUP BY g.id HAVING day BETWEEN ? AND ?`,
+      range.from,
+      range.to,
+    )) {
+      debuts.push({ kind, label: row.label, day: row.day, shots: row.n });
+    }
+  }
+  debuts.sort((a, b) => a.day - b.day || a.label.localeCompare(b.label));
+
+  return {
+    range,
+    totals,
+    cameras: tallies(cameraRows, cameraKnown, topN),
+    lenses: tallies(lensRows, lensKnown, topN),
+    combos: tallies(comboRows, comboKnown, topN),
+    focal: distribute(focalRows, focalBucket, formatFocal),
+    focalClasses: [...classCounts.entries()]
+      .map(([label, shots]) => ({ label, shots }))
+      .sort((a, b) => b.shots - a.shots),
+    aperture: distribute(apertureRows, apertureBucket, formatAperture),
+    iso: distribute(isoRows, isoBucket, formatIso),
+    // Ascending seconds, so the axis reads fast to slow left to right.
+    shutter: distribute(shutterRows, shutterBucket, formatShutter),
+    hours,
+    weekdays,
+    daily: range.days <= HEATMAP_MAX_DAYS ? daily : [],
+    monthly,
+    timeline: { months, series },
+    ratings,
+    orientation: {
+      landscape: num(shape?.landscape),
+      portrait: num(shape?.portrait),
+      square: num(shape?.square),
+    },
+    busiestDay,
+    longestStreak: longestRun(daily),
+    longestGap: longestGap(daily),
+    places,
+    placesKnown: totals.withGps,
+    debuts,
+    burst: findLongestBurst(db, range, options),
+  };
+}
+
+/** The longest unbroken run of days with at least one photograph. */
+export function longestRun(daily: DayCount[]): Streak | null {
+  if (daily.length === 0) return null;
+
+  let best: Streak | null = null;
+  let start = (daily[0] as DayCount).day;
+  let previous = start;
+
+  const close = (end: number) => {
+    const days = daysBetween(start, end) + 1;
+    if (best === null || days > best.days) best = { days, from: start, to: end };
+  };
+
+  for (const entry of daily.slice(1)) {
+    if (daysBetween(previous, entry.day) === 1) {
+      previous = entry.day;
+      continue;
+    }
+    close(previous);
+    start = entry.day;
+    previous = entry.day;
+  }
+  close(previous);
+
+  return best;
+}
+
+/** The longest stretch between two shooting days — the camera in the cupboard. */
+export function longestGap(daily: DayCount[]): Streak | null {
+  let best: Streak | null = null;
+
+  for (let i = 1; i < daily.length; i++) {
+    const from = (daily[i - 1] as DayCount).day;
+    const to = (daily[i] as DayCount).day;
+    const days = daysBetween(from, to) - 1;
+    if (days > 0 && (best === null || days > best.days)) best = { days, from, to };
+  }
+
+  return best;
+}
+
+/**
+ * The longest run of frames with no more than two seconds between them.
+ *
+ * Done in SQL because the alternative is pulling every capture time in the
+ * range into memory. The window functions group consecutive rows per body: a
+ * gap over the threshold starts a new group, and the running sum of those
+ * marks is the group number.
+ */
+function findLongestBurst(db: Db, range: Range, options: StatsOptions): Burst | null {
+  const { where, params } = scope(range, options);
+
+  const row = db.getAs<{ frames: number; seconds: number; day: number; camera: string | null }>(
+    `WITH ordered AS (
+       SELECT p.epoch_sec AS t, p.day AS day, p.camera_id AS camera_id,
+              LAG(p.epoch_sec) OVER (PARTITION BY p.camera_id ORDER BY p.epoch_sec) AS prev
+       FROM photo p WHERE ${where} AND p.epoch_sec IS NOT NULL
+     ),
+     marked AS (
+       SELECT t, day, camera_id, CASE WHEN prev IS NULL OR t - prev > 2 THEN 1 ELSE 0 END AS starts
+       FROM ordered
+     ),
+     grouped AS (
+       SELECT t, day, camera_id,
+              SUM(starts) OVER (PARTITION BY camera_id ORDER BY t ROWS UNBOUNDED PRECEDING) AS burst
+       FROM marked
+     )
+     SELECT COUNT(*) AS frames, MAX(t) - MIN(t) AS seconds, MIN(day) AS day,
+            (SELECT c.label FROM camera c WHERE c.id = grouped.camera_id) AS camera
+     FROM grouped GROUP BY camera_id, burst ORDER BY frames DESC, seconds LIMIT 1`,
+    ...params,
+  );
+
+  if (!row || row.frames < 3) return null;
+  return { frames: row.frames, seconds: row.seconds, day: row.day, camera: row.camera };
+}
+
+/** Years that hold at least one photograph, newest first. */
+export function availableYears(db: Db): Array<{ year: number; shots: number }> {
+  return db.allAs<{ year: number; shots: number }>(
+    `SELECT year, COUNT(*) AS shots FROM photo
+     WHERE is_primary = 1 AND present = 1 AND year IS NOT NULL
+     GROUP BY year ORDER BY year DESC`,
+  );
+}
+
+/** Months that hold at least one photograph, newest first. */
+export function availableMonths(db: Db, limit = 24): Array<{ ym: number; shots: number }> {
+  return db.allAs<{ ym: number; shots: number }>(
+    `SELECT ym, COUNT(*) AS shots FROM photo
+     WHERE is_primary = 1 AND present = 1 AND ym IS NOT NULL
+     GROUP BY ym ORDER BY ym DESC LIMIT ?`,
+    limit,
+  );
+}
+
+/** Used by the day-detail line under a heatmap cell. */
+export function describeDay(day: number): string {
+  return formatDay(day);
+}

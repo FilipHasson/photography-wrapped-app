@@ -1,0 +1,299 @@
+import { DatabaseSync } from "node:sqlite";
+import type { StatementSync } from "node:sqlite";
+import fs from "node:fs";
+import path from "node:path";
+import { dbFile } from "./paths.ts";
+import type { GearName } from "./gear.ts";
+
+/**
+ * One SQLite file holding every source's photographs, flattened for counting.
+ *
+ * The schema is shaped by what a slide asks for. Everything a query groups by —
+ * day, year, month, weekday, hour — is stored as its own integer column rather
+ * than derived at query time, because `GROUP BY` over a computed expression
+ * cannot use an index and these decks group over a million rows.
+ *
+ * Camera and lens names are interned into their own tables: the same forty
+ * strings repeat across every row, and joining two small tables costs less than
+ * comparing text a million times.
+ */
+
+const SCHEMA = `
+CREATE TABLE IF NOT EXISTS meta (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS source (
+  id              INTEGER PRIMARY KEY,
+  key             TEXT NOT NULL UNIQUE,
+  label           TEXT NOT NULL,
+  kind            TEXT NOT NULL,
+  root            TEXT NOT NULL,
+  run             INTEGER NOT NULL DEFAULT 0,
+  last_indexed_at INTEGER,
+  stats           TEXT
+);
+
+CREATE TABLE IF NOT EXISTS directory (
+  id          INTEGER PRIMARY KEY,
+  source_id   INTEGER NOT NULL REFERENCES source(id) ON DELETE CASCADE,
+  path        TEXT NOT NULL,
+  path_key    TEXT NOT NULL,
+  mtime_ms    INTEGER NOT NULL DEFAULT 0,
+  entry_count INTEGER NOT NULL DEFAULT 0,
+  seen_run    INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (source_id, path_key)
+);
+
+CREATE TABLE IF NOT EXISTS camera (
+  id    INTEGER PRIMARY KEY,
+  key   TEXT NOT NULL UNIQUE,
+  label TEXT NOT NULL,
+  make  TEXT NOT NULL DEFAULT '',
+  model TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS lens (
+  id    INTEGER PRIMARY KEY,
+  key   TEXT NOT NULL UNIQUE,
+  label TEXT NOT NULL,
+  make  TEXT NOT NULL DEFAULT '',
+  model TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS photo (
+  id          INTEGER PRIMARY KEY,
+  source_id   INTEGER NOT NULL REFERENCES source(id) ON DELETE CASCADE,
+  dir_id      INTEGER NOT NULL REFERENCES directory(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
+  name_key    TEXT NOT NULL,
+  stem        TEXT NOT NULL,
+  ext         TEXT NOT NULL,
+  kind        TEXT NOT NULL,
+  size        INTEGER NOT NULL,
+  mtime_ms    INTEGER NOT NULL,
+  present     INTEGER NOT NULL DEFAULT 1,
+  seen_run    INTEGER NOT NULL,
+  -- Set on insert and never updated, so a run can tell new files from ones it
+  -- merely re-confirmed.
+  created_run INTEGER NOT NULL DEFAULT 0,
+  meta_state  TEXT NOT NULL DEFAULT 'pending',
+
+  -- Naive wall clock, split out for grouping. See core/time.ts.
+  captured_at INTEGER,
+  -- The same instant as seconds, so gaps between frames are arithmetic.
+  epoch_sec   INTEGER,
+  day         INTEGER,
+  year        INTEGER,
+  ym          INTEGER,
+  weekday     INTEGER,
+  hour        INTEGER,
+  sub_sec     INTEGER,
+
+  camera_id   INTEGER REFERENCES camera(id),
+  lens_id     INTEGER REFERENCES lens(id),
+  body_serial TEXT,
+
+  focal       REAL,
+  focal35     REAL,
+  aperture    REAL,
+  shutter     REAL,
+  iso         INTEGER,
+  flash       INTEGER,
+  width       INTEGER,
+  height      INTEGER,
+  orientation INTEGER,
+  lat         REAL,
+  lon         REAL,
+  duration    REAL,
+  rating      INTEGER,
+  pick        INTEGER,
+  color_label TEXT,
+
+  -- Identity of the *frame*, not the file: a raw and its out-of-camera JPEG
+  -- share one. See index/dedupe.ts for why counting files would be wrong.
+  shot_key    TEXT,
+  is_primary  INTEGER NOT NULL DEFAULT 1,
+
+  UNIQUE (dir_id, name_key)
+);
+
+-- Every slide filters on exactly this predicate, so the index carries it.
+CREATE INDEX IF NOT EXISTS idx_photo_day    ON photo (day) WHERE is_primary = 1 AND present = 1 AND day IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_photo_sweep  ON photo (source_id, seen_run);
+CREATE INDEX IF NOT EXISTS idx_photo_shot   ON photo (shot_key) WHERE shot_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_photo_meta   ON photo (source_id, meta_state);
+`;
+
+export interface SourceRow {
+  id: number;
+  key: string;
+  label: string;
+  kind: string;
+  root: string;
+  run: number;
+  last_indexed_at: number | null;
+  stats: string | null;
+}
+
+/** What SQLite will accept as a bound parameter. */
+export type Param = null | number | bigint | string | Uint8Array;
+
+export class Db {
+  readonly raw: DatabaseSync;
+  #stmts = new Map<string, StatementSync>();
+  #cameras = new Map<string, number>();
+  #lenses = new Map<string, number>();
+
+  constructor(file: string) {
+    if (file !== ":memory:") {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+    }
+    this.raw = new DatabaseSync(file);
+
+    // WAL keeps the deck readable while a long index run writes.
+    this.raw.exec("PRAGMA journal_mode = WAL");
+    this.raw.exec("PRAGMA synchronous = NORMAL");
+    this.raw.exec("PRAGMA foreign_keys = ON");
+    this.raw.exec("PRAGMA temp_store = MEMORY");
+    this.raw.exec("PRAGMA cache_size = -65536"); // ~64 MiB
+    this.raw.exec("PRAGMA busy_timeout = 5000");
+    this.raw.exec(SCHEMA);
+  }
+
+  /** Prepared statements are cached — an index run reuses the same few. */
+  prep(sql: string): StatementSync {
+    let stmt = this.#stmts.get(sql);
+    if (!stmt) {
+      stmt = this.raw.prepare(sql);
+      this.#stmts.set(sql, stmt);
+    }
+    return stmt;
+  }
+
+  /**
+   * Typed row access. `node:sqlite` returns `Record<string, SQLOutputValue>`,
+   * which TypeScript will not narrow to a row interface — these two keep the
+   * cast in one place instead of at every call site.
+   */
+  allAs<T>(sql: string, ...params: Param[]): T[] {
+    return this.prep(sql).all(...(params as never[])) as unknown as T[];
+  }
+
+  getAs<T>(sql: string, ...params: Param[]): T | undefined {
+    return this.prep(sql).get(...(params as never[])) as unknown as T | undefined;
+  }
+
+  /** Runs `fn` inside a transaction, rolling back if it throws. */
+  tx<T>(fn: () => T): T {
+    this.raw.exec("BEGIN");
+    try {
+      const out = fn();
+      this.raw.exec("COMMIT");
+      return out;
+    } catch (err) {
+      try {
+        this.raw.exec("ROLLBACK");
+      } catch {
+        // A failed rollback means the tx already ended; the original error wins.
+      }
+      throw err;
+    }
+  }
+
+  getMeta(key: string): string | null {
+    return this.getAs<{ value: string }>("SELECT value FROM meta WHERE key = ?", key)?.value ?? null;
+  }
+
+  setMeta(key: string, value: string): void {
+    this.prep(
+      "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    ).run(key, value);
+  }
+
+  // ------------------------------------------------------------ sources ----
+
+  upsertSource(key: string, label: string, kind: string, root: string): SourceRow {
+    this.prep(
+      `INSERT INTO source (key, label, kind, root) VALUES (?, ?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET label = excluded.label, kind = excluded.kind, root = excluded.root`,
+    ).run(key, label, kind, root);
+    return this.getSource(key) as SourceRow;
+  }
+
+  getSource(key: string): SourceRow | undefined {
+    return this.getAs<SourceRow>("SELECT * FROM source WHERE key = ?", key);
+  }
+
+  listSources(): SourceRow[] {
+    return this.allAs<SourceRow>("SELECT * FROM source ORDER BY key");
+  }
+
+  /** Drops a source and, by cascade, every directory and photo under it. */
+  deleteSource(key: string): void {
+    this.prep("DELETE FROM source WHERE key = ?").run(key);
+    this.#cameras.clear();
+    this.#lenses.clear();
+  }
+
+  countPhotos(sourceId: number): number {
+    return (
+      this.getAs<{ n: number }>(
+        "SELECT COUNT(*) AS n FROM photo WHERE source_id = ? AND present = 1",
+        sourceId,
+      )?.n ?? 0
+    );
+  }
+
+  // ------------------------------------------------------------- gear -----
+
+  /**
+   * Interning is memoized per process because an index run calls it once per
+   * file and the answer is the same forty rows over and over.
+   *
+   * The label is refreshed on conflict: two sources spell the same lens
+   * differently, and the last one indexed wins the display name. The key is
+   * what holds the grouping together, so this only ever changes cosmetics.
+   */
+  internCamera(name: GearName): number {
+    return this.#intern("camera", this.#cameras, name);
+  }
+
+  internLens(name: GearName): number {
+    return this.#intern("lens", this.#lenses, name);
+  }
+
+  #intern(table: "camera" | "lens", cache: Map<string, number>, name: GearName): number {
+    const hit = cache.get(name.key);
+    if (hit !== undefined) return hit;
+
+    const row = this.prep(
+      `INSERT INTO ${table} (key, label, make, model) VALUES (?, ?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET label = excluded.label, make = excluded.make, model = excluded.model
+       RETURNING id`,
+    ).get(name.key, name.label, name.make, name.model) as { id: number };
+
+    cache.set(name.key, row.id);
+    return row.id;
+  }
+
+  close(): void {
+    this.#stmts.clear();
+    this.#cameras.clear();
+    this.#lenses.clear();
+    this.raw.close();
+  }
+}
+
+let shared: Db | null = null;
+
+export function openDb(file = dbFile()): Db {
+  if (!shared) shared = new Db(file);
+  return shared;
+}
+
+export function closeDb(): void {
+  shared?.close();
+  shared = null;
+}

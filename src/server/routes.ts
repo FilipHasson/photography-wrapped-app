@@ -1,0 +1,280 @@
+import type { IncomingMessage, ServerResponse } from "node:http";
+import fs from "node:fs/promises";
+import type { Db } from "../core/db.ts";
+import {
+  defaultSource,
+  makeKey,
+  validateConfig,
+  type AppConfig,
+  type SourceConfig,
+} from "../core/config.ts";
+import { normPath } from "../core/paths.ts";
+import { indexSource, indexOverview, summarizeSources } from "../index/source.ts";
+import { rebuildPrimaries } from "../index/dedupe.ts";
+import { availableMonths, availableYears, computeStats } from "../stats/aggregate.ts";
+import { buildDeck } from "../stats/slides.ts";
+import { parseRangeSpec, resolveRange } from "../stats/range.ts";
+import { browse } from "./browse.ts";
+import type { JobManager } from "./jobs.ts";
+
+export interface AppContext {
+  db: Db;
+  jobs: JobManager;
+  config: AppConfig;
+  saveConfig: (config: AppConfig) => Promise<void>;
+}
+
+class HttpError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+function json(res: ServerResponse, status: number, body: unknown): void {
+  const payload = JSON.stringify(body);
+  res.writeHead(status, {
+    "content-type": "application/json; charset=utf-8",
+    "content-length": Buffer.byteLength(payload),
+    "cache-control": "no-store",
+  });
+  res.end(payload);
+}
+
+async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length;
+    if (size > 1024 * 1024) throw new HttpError(413, "Request body too large.");
+    chunks.push(chunk as Buffer);
+  }
+  if (chunks.length === 0) return {};
+  try {
+    const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    if (typeof parsed !== "object" || parsed === null) throw new Error("expected an object");
+    return parsed as Record<string, unknown>;
+  } catch (err) {
+    throw new HttpError(400, `Invalid JSON body: ${(err as Error).message}`);
+  }
+}
+
+/** Everything the page needs to render its chrome, in one round trip. */
+function appState(ctx: AppContext) {
+  const problems = validateConfig(ctx.config);
+  const overview = indexOverview(ctx.db);
+
+  return {
+    config: ctx.config,
+    sources: summarizeSources(ctx.db).map((summary) => {
+      const configured = ctx.config.sources.find((s) => s.key === summary.key);
+      return { ...summary, configured: configured ?? null };
+    }),
+    /** Configured but never indexed — the page nudges these. */
+    unindexed: ctx.config.sources.filter((s) => !ctx.db.getSource(s.key)).map((s) => s.key),
+    overview,
+    years: availableYears(ctx.db),
+    months: availableMonths(ctx.db),
+    problems,
+    ready: overview.shots > 0,
+    activeJob: ctx.jobs.active,
+    platform: process.platform,
+  };
+}
+
+async function addSource(ctx: AppContext, body: Record<string, unknown>): Promise<void> {
+  const target = typeof body.path === "string" ? body.path.trim() : "";
+  if (target === "") throw new HttpError(400, "A path is required.");
+
+  const resolved = normPath(target);
+  const stat = await fs.stat(resolved).catch(() => null);
+  if (!stat) throw new HttpError(400, `${resolved} does not exist.`);
+
+  const isCatalog = resolved.toLowerCase().endsWith(".lrcat");
+  if (isCatalog ? !stat.isFile() : !stat.isDirectory()) {
+    throw new HttpError(400, isCatalog ? `${resolved} is not a file.` : `${resolved} is not a folder.`);
+  }
+
+  if (ctx.config.sources.some((s) => s.path === resolved)) {
+    throw new HttpError(409, "That location is already one of your sources.");
+  }
+
+  const label = typeof body.label === "string" && body.label.trim() !== "" ? body.label.trim() : undefined;
+  const taken = ctx.config.sources.map((s) => s.key);
+
+  const source = defaultSource({
+    path: resolved,
+    ...(label ? { label } : {}),
+  });
+  source.key = makeKey(source.label, taken);
+
+  ctx.config.sources.push(source);
+  await ctx.saveConfig(ctx.config);
+}
+
+function requireSource(ctx: AppContext, key: string): SourceConfig {
+  const source = ctx.config.sources.find((s) => s.key === key);
+  if (!source) throw new HttpError(404, `No source called "${key}".`);
+  return source;
+}
+
+async function applyConfigPatch(ctx: AppContext, body: Record<string, unknown>): Promise<boolean> {
+  const next: AppConfig = { ...ctx.config };
+  let dedupeChanged = false;
+
+  if (typeof body.ownerName === "string") next.ownerName = body.ownerName.trim().slice(0, 60);
+  if (typeof body.includeVideo === "boolean") next.includeVideo = body.includeVideo;
+  if (typeof body.mergeRawJpegPairs === "boolean" && body.mergeRawJpegPairs !== next.mergeRawJpegPairs) {
+    next.mergeRawJpegPairs = body.mergeRawJpegPairs;
+    dedupeChanged = true;
+  }
+  if (typeof body.port === "number" && Number.isFinite(body.port)) next.port = body.port;
+
+  const problems = validateConfig(next);
+  if (problems.length > 0) throw new HttpError(400, problems[0]?.message ?? "Invalid settings.");
+
+  await ctx.saveConfig(next);
+  return dedupeChanged;
+}
+
+function startIndexJob(ctx: AppContext, sources: SourceConfig[], mode: "incremental" | "full") {
+  const label =
+    sources.length === 1 ? `Indexing ${sources[0]?.label}` : `Indexing ${sources.length} sources`;
+
+  return ctx.jobs.start("index", label, async (report, signal) => {
+    const results: Record<string, unknown> = {};
+
+    for (const source of sources) {
+      if (signal.aborted) break;
+      report({ message: `Indexing ${source.label}`, done: 0, total: 0 });
+
+      results[source.key] = await indexSource(ctx.db, source, ctx.config, {
+        mode,
+        signal,
+        onProgress: (progress) => {
+          const detail =
+            progress.total > 0
+              ? `${progress.message ?? progress.phase} — ${progress.done.toLocaleString()} of ${progress.total.toLocaleString()}`
+              : `${progress.message ?? progress.phase} — ${progress.files.toLocaleString()} files`;
+          report({ message: `${source.label}: ${detail}`, done: progress.done, total: progress.total });
+        },
+      });
+    }
+
+    return results;
+  });
+}
+
+export async function handleApi(
+  ctx: AppContext,
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+): Promise<boolean> {
+  if (!url.pathname.startsWith("/api/")) return false;
+
+  try {
+    const route = `${req.method} ${url.pathname}`;
+
+    if (route === "GET /api/state") {
+      json(res, 200, appState(ctx));
+      return true;
+    }
+
+    if (route === "GET /api/deck") {
+      const overview = indexOverview(ctx.db);
+      const range = resolveRange(parseRangeSpec(url.searchParams), {
+        firstDay: overview.firstDay,
+        lastDay: overview.lastDay,
+      });
+      const stats = computeStats(ctx.db, range, { includeVideo: ctx.config.includeVideo });
+      json(res, 200, { range, deck: buildDeck(stats, ctx.config.ownerName) });
+      return true;
+    }
+
+    if (route === "GET /api/browse") {
+      json(res, 200, await browse(url.searchParams.get("path") ?? undefined));
+      return true;
+    }
+
+    if (route === "POST /api/sources") {
+      await addSource(ctx, await readJson(req));
+      json(res, 200, appState(ctx));
+      return true;
+    }
+
+    if (route === "POST /api/config") {
+      const dedupeChanged = await applyConfigPatch(ctx, await readJson(req));
+      if (dedupeChanged) {
+        rebuildPrimaries(ctx.db, { mergeRawJpegPairs: ctx.config.mergeRawJpegPairs });
+      }
+      json(res, 200, appState(ctx));
+      return true;
+    }
+
+    if (route === "POST /api/index") {
+      const body = await readJson(req);
+      const mode = body.mode === "full" ? "full" : "incremental";
+      const keys = Array.isArray(body.sources)
+        ? body.sources.filter((k): k is string => typeof k === "string")
+        : null;
+
+      const sources = keys
+        ? keys.map((key) => requireSource(ctx, key))
+        : ctx.config.sources.filter((s) => s.enabled);
+
+      if (sources.length === 0) throw new HttpError(400, "No sources to index.");
+      json(res, 200, { job: startIndexJob(ctx, sources, mode) });
+      return true;
+    }
+
+    const sourceMatch = url.pathname.match(/^\/api\/sources\/([^/]+)$/);
+    if (sourceMatch && req.method === "DELETE") {
+      const key = decodeURIComponent(sourceMatch[1] as string);
+      requireSource(ctx, key);
+      ctx.config.sources = ctx.config.sources.filter((s) => s.key !== key);
+      await ctx.saveConfig(ctx.config);
+      ctx.db.deleteSource(key);
+      // Removing a source can promote rows that were duplicates of its files.
+      rebuildPrimaries(ctx.db, { mergeRawJpegPairs: ctx.config.mergeRawJpegPairs });
+      json(res, 200, appState(ctx));
+      return true;
+    }
+
+    if (sourceMatch && req.method === "PATCH") {
+      const key = decodeURIComponent(sourceMatch[1] as string);
+      const source = requireSource(ctx, key);
+      const body = await readJson(req);
+
+      if (typeof body.label === "string" && body.label.trim() !== "") source.label = body.label.trim();
+      if (typeof body.enabled === "boolean") source.enabled = body.enabled;
+      if (Array.isArray(body.excludes)) {
+        source.excludes = body.excludes.filter((e): e is string => typeof e === "string");
+      }
+
+      await ctx.saveConfig(ctx.config);
+      json(res, 200, appState(ctx));
+      return true;
+    }
+
+    const cancelMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/cancel$/);
+    if (cancelMatch && req.method === "POST") {
+      const cancelled = ctx.jobs.cancel(decodeURIComponent(cancelMatch[1] as string));
+      json(res, cancelled ? 200 : 404, { cancelled });
+      return true;
+    }
+
+    if (route === "GET /api/jobs") {
+      json(res, 200, { jobs: ctx.jobs.list(), active: ctx.jobs.active });
+      return true;
+    }
+
+    json(res, 404, { error: `No such endpoint: ${url.pathname}` });
+    return true;
+  } catch (err) {
+    const status = err instanceof HttpError ? err.status : 500;
+    json(res, status, { error: err instanceof Error ? err.message : String(err) });
+    return true;
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "what-did-i-shoot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Scan a photography library and turn it into a deck of stats slides — favourite lens, favourite body, favourite camera+lens combo, and the rest of the year in frames.",
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "bin": {
+    "what-did-i-shoot": "src/cli.ts",
+    "wdis": "src/cli.ts"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/cli.ts",
+    "test": "node --disable-warning=ExperimentalWarning --test \"test/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "fixtures": "node tools/make-fixtures.ts"
+  },
+  "dependencies": {
+    "exifr": "^7.1.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.7.0"
+  }
+}
