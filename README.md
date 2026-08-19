@@ -30,7 +30,7 @@ pick a range, and hit **Show me the deck**.
 ```
 npm start -- --port 8080     # a different port
 npm start -- --no-open       # don't launch a browser
-npm test                     # 141 tests, including a full index-and-count run
+npm test                     # 144 tests, including a full index-and-count run
 npm run typecheck
 ```
 
@@ -134,9 +134,10 @@ A few things the slides do rather than say:
   slide says which hours it used, and a setting beside it offers fixed windows
   instead. Your own position, not the GPS in your photographs — a fortnight
   abroad should not decide what "after dark" means for a year shot at home.
-- **Runs and quiet spells is a wall of days**, one square each, every day in the
-  range: blue where you shot, blank where you did not, a lighter blue through
-  your longest run and red through the longest silence.
+- **Streaks is a wall of days**, one square each, a row of weeks per year: blue
+  where you shot, blank where you did not, a lighter blue through your longest
+  run and red through the longest silence. A setting decides whether those rows
+  are calendar years or years from the day your library starts.
 - **Day of the week starts where you do** — Monday, Sunday or Saturday — and the
   weekend can be given a colour of its own.
 - **A lens used with a teleconverter is one row, not three.** The bar splits
@@ -154,6 +155,13 @@ A few things the slides do rather than say:
 | `t` | **Data** — the table behind the slide you are looking at |
 | `f` | Full screen |
 | `Esc` | Back to the library |
+
+### Where you are
+
+**Settings → Where you are** takes one click of **Use my location** (or typed
+coordinates), and names the position from a table of cities compiled in — no
+request is made, here or anywhere else. It starts on Toronto. Sunrise and sunset
+on the time-of-day slide come from it.
 
 ### Settings that belong to one slide
 

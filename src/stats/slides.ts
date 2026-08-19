@@ -61,6 +61,12 @@ export interface SlideSetting {
   label: string;
   value: string;
   options: Array<{ value: string; label: string; note?: string }>;
+  /**
+   * Two clock pickers under the options, for a choice a row of chips cannot
+   * make: "daylight is these hours" needs the hours themselves. Shown only when
+   * the option that wants them is the one selected.
+   */
+  hours?: { shownWhen: string; fromId: string; from: number; toId: string; to: number };
 }
 
 interface Common {
@@ -113,6 +119,8 @@ export type Slide =
       to: number;
       streak: Streak | null;
       gap: Streak | null;
+      /** One row of weeks per year, labelled — the shape the wall is read in. */
+      bands: Array<{ label: string; from: number; to: number }>;
     })
   | (Common & {
       kind: "years";
@@ -372,13 +380,15 @@ function runningNote(years: YearBucket[]): string | undefined {
   return `${fmtInt(running.remaining)} days left in ${running.label}`;
 }
 
-function yearsSlide(stats: DeckStats): Slide | null {
-  const years = stats.years.filter((year) => year.shots > 0);
-  // One year is the opening slide with extra steps.
-  if (years.length < 2) return null;
-
-  const busiest = years.reduce((best, year) => (year.shots > best.shots ? year : best));
-  const setting: SlideSetting = {
+/**
+ * Whether a year runs from January or from the day the library starts.
+ *
+ * Shared by the two slides that split a range into years, so answering it on
+ * one answers it on both: they would look absurd disagreeing with each other.
+ */
+function yearBasisSetting(stats: DeckStats): SlideSetting {
+  const first = stats.years[0];
+  return {
     id: "yearBasis",
     label: "A year runs",
     value: stats.yearBasis,
@@ -386,11 +396,19 @@ function yearsSlide(stats: DeckStats): Slide | null {
       {
         value: "anchor",
         label: "From my start date",
-        note: years[0] ? `${formatDay(years[0].from)} onwards` : undefined,
+        note: first ? `${formatDay(first.from)} onwards` : undefined,
       },
       { value: "calendar", label: "January to December" },
     ],
   };
+}
+
+function yearsSlide(stats: DeckStats): Slide | null {
+  const years = stats.years.filter((year) => year.shots > 0);
+  // One year is the opening slide with extra steps.
+  if (years.length < 2) return null;
+
+  const busiest = years.reduce((best, year) => (year.shots > best.shots ? year : best));
 
   return {
     kind: "years",
@@ -402,7 +420,7 @@ function yearsSlide(stats: DeckStats): Slide | null {
         ? `${busiest.label} was your busiest year — ${shotsPhrase(busiest.shots)}`
         : "Year by year",
     note: runningNote(years),
-    settings: [setting],
+    settings: [yearBasisSetting(stats)],
     years,
     table: tableOf(
       ["Year", "From", "To", "Photographs", "Cameras", "Lenses"],
@@ -717,7 +735,20 @@ function clockSlide(stats: DeckStats): Slide | null {
       { value: "06-18", label: "06:00 to 18:00" },
       { value: "07-19", label: "07:00 to 19:00" },
       { value: "05-21", label: "05:00 to 21:00" },
+      {
+        value: "custom",
+        label: "Hours I choose",
+        note: `${clock(stats.daylightHours.sunrise)} to ${clock(stats.daylightHours.sunset)}`,
+      },
     ],
+    // Only meaningful under the last option, so it is only shown there.
+    hours: {
+      shownWhen: "custom",
+      fromId: "dayFrom",
+      from: stats.daylightHours.sunrise,
+      toId: "dayTo",
+      to: stats.daylightHours.sunset,
+    },
   };
 
   return {
@@ -736,6 +767,20 @@ function clockSlide(stats: DeckStats): Slide | null {
       stats.hours.map((shots, hour) => [hourLabel(hour), shots]),
     ),
   };
+}
+
+/** "You were out on 383 days, 14% of the period" — never "383 of 2,798". */
+function daysOutNote(stats: DeckStats): string {
+  const out = stats.totals.daysShot;
+  const across = stats.totals.daysInRange;
+  return `You were out on ${fmtInt(out)} days, ${fmtPct(across > 0 ? out / across : 0)} of the period`;
+}
+
+/** `06:30` — an hour as a clock reads it. */
+function clock(hour: number): string {
+  const whole = Math.floor(hour);
+  const minutes = Math.round((hour - whole) * 60);
+  return `${String(whole % 24).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
 
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -815,7 +860,7 @@ function calendarSlide(stats: DeckStats): Slide | null {
       title: "Every day",
       subtitle: "One square per day",
       headline,
-      note: `${fmtInt(stats.totals.daysShot)} days out of ${fmtInt(stats.totals.daysInRange)}`,
+      note: daysOutNote(stats),
       days: stats.daily,
       from: range.from,
       to: range.to,
@@ -833,7 +878,7 @@ function calendarSlide(stats: DeckStats): Slide | null {
     title: "Month by month",
     subtitle: "The long view",
     headline,
-    note: `${fmtInt(stats.totals.daysShot)} days out of ${fmtInt(stats.totals.daysInRange)}`,
+    note: daysOutNote(stats),
     months: stats.monthly,
     table: tableOf(
       ["Month", "Photographs"],
@@ -864,18 +909,34 @@ function streaksSlide(stats: DeckStats): Slide | null {
       ? `${run} days in a row`
       : `${fmtInt(quiet)} days without picking it up`;
 
+  // A row of weeks per year, on whichever kind of year the reader is thinking
+  // in. With less than two, the whole range is one band and there is nothing to
+  // choose between — so the setting is not offered.
+  const years = stats.years.filter((year) => year.to >= range.from && year.from <= range.to);
+  const bands =
+    years.length > 1
+      ? years.map((year) => ({
+          label: year.label,
+          from: Math.max(year.from, range.from),
+          to: Math.min(year.to, range.to),
+        }))
+      : [{ label: "", from: range.from, to: range.to }];
+
   return {
     kind: "strip",
     id: "streaks",
-    title: "Runs and quiet spells",
+    title: "Streaks",
     subtitle: "Every day in the range, shot or not",
     headline,
-    note: `${fmtInt(stats.totals.daysShot)} of ${fmtInt(stats.totals.daysInRange)} days`,
+    // "330 of 1,090 days" said nothing about which number was which.
+    note: daysOutNote(stats),
+    ...(years.length > 1 ? { settings: [yearBasisSetting(stats)] } : {}),
     days: daily,
     from: range.from,
     to: range.to,
     streak: longestStreak,
     gap: longestGap,
+    bands,
     table: tableOf(
       ["Measure", "Days", "From", "To"],
       [

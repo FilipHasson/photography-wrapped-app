@@ -48,6 +48,7 @@ function statsWith(overrides: Partial<DeckStats>): DeckStats {
     years: [], yearBasis: "anchor", location: null, home: null,
     weekStart: "mon", markWeekend: false,
     daylight: { mode: "06-18", sunrise: 6, sunset: 18, source: "06:00 to 18:00" },
+    daylightHours: { sunrise: 6, sunset: 18 },
     limits: resolveLimits(),
     ...overrides,
   };
@@ -271,5 +272,67 @@ describe("the week", () => {
       slide?.settings?.map((setting) => setting.id),
       ["weekStart", "weekend"],
     );
+  });
+});
+
+describe("streaks", () => {
+  const daily = Array.from({ length: 40 }, (_, i) => ({ day: 20250101 + i, shots: 5 }));
+
+  test("is banded by year, on whichever kind of year is chosen", () => {
+    const slide = findSlide(
+      buildDeck(
+        statsWith({
+          daily,
+          longestStreak: { days: 40, from: 20250101, to: 20250209 },
+          longestGap: { days: 12, from: 20250210, to: 20250222 },
+          years: YEARS,
+        }),
+      ).slides,
+      "streaks",
+    );
+    assert.ok(slide && slide.kind === "strip");
+    assert.equal(slide.title, "Streaks");
+    // The stats stub covers 2025, so the year that ended in August 2024 is not
+    // part of this range and gets no band.
+    assert.deepEqual(
+      slide.bands.map((band) => band.label),
+      ["2024–25", "2025–26"],
+    );
+    assert.deepEqual(
+      slide.settings?.map((setting) => setting.id),
+      ["yearBasis"],
+    );
+  });
+
+  test("one year is one band, and nothing to choose between", () => {
+    const slide = findSlide(
+      buildDeck(
+        statsWith({
+          daily,
+          longestStreak: { days: 40, from: 20250101, to: 20250209 },
+          longestGap: { days: 12, from: 20250210, to: 20250222 },
+          years: YEARS.slice(0, 1),
+        }),
+      ).slides,
+      "streaks",
+    );
+    assert.ok(slide && slide.kind === "strip");
+    assert.equal(slide.bands.length, 1);
+    assert.equal(slide.settings, undefined);
+  });
+
+  test("says which number is the days out and which is the period", () => {
+    const slide = findSlide(
+      buildDeck(
+        statsWith({
+          daily,
+          longestStreak: { days: 40, from: 20250101, to: 20250209 },
+          longestGap: { days: 12, from: 20250210, to: 20250222 },
+        }),
+      ).slides,
+      "streaks",
+    );
+    // The old note read "20 of 365 days", which said neither.
+    assert.equal(slide?.note, "You were out on 20 days, 5% of the period");
   });
 });

@@ -119,13 +119,27 @@ one grid, and its column count is computed against the window so the sheet fits
 in a single screenshot — which is the only thing it is for. It renders through
 `renderSlide` like everything else, so it is the deck rather than a preview of it.
 
+**`server/freshness.ts`** answers the question that has cost more time here than
+any real bug: *is the running server still the code on disk?* Node reads this
+project's TypeScript once at startup, so editing a file while the server is up
+changes nothing until it is restarted — and the page then shows an old deck with
+no clue why. The newest mtime under `src/` is recorded at boot, re-checked on
+every `/api/state`, and the page puts a banner up when they differ.
+
+**`core/cities.ts`** puts a name to a pair of coordinates without a network
+request — a short table, nearest match, and nothing at all past 120km. It also
+holds `DEFAULT_CITY`, which is where a fresh config starts.
+
 **Slide settings.** A choice that changes one slide travels with that slide:
 `stats/slides.ts` attaches a `SlideSetting`, the deck renders it beside the
 frame, and picking an option puts it in the `/api/deck` query and rebuilds. The
 ids are the query parameter names — `yearBasis`, `daylight`, `rows.lenses` — so
 adding a setting is a matter of emitting one and parsing it in `server/routes.ts`.
 Row limits are resolved in exactly one place, `resolveLimits`, and ride on
-`DeckStats.limits` so the slide and the chips beside it cannot disagree.
+`DeckStats.limits` so the slide and the chips beside it cannot disagree. A
+setting shared by two slides is built by one function — `yearBasisSetting` — for
+the same reason: the years slide and the streaks wall would look absurd
+disagreeing about what a year is.
 
 **`web/export.js`** — the PDF and the ZIP are both written by hand: one JPEG
 XObject per page for the first, stored (never deflated) PNG entries for the
@@ -190,7 +204,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 141 tests
+npm test          # 144 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```

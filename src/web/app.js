@@ -96,6 +96,9 @@ function show(view) {
 
 async function refreshState() {
   store.state = await api("/api/state");
+  // Nothing else on the page is worth reading if the server is serving code
+  // that no longer exists on disk, so this is checked before anything renders.
+  $("stale-banner").hidden = !store.state.sourceChanged;
   renderSources();
   renderRanges();
   renderMilestones();
@@ -388,7 +391,15 @@ async function saveLocation(location) {
     await api("/api/config", { method: "POST", body: { location } });
     await refreshState();
     if (!$("view-deck").hidden) await buildDeck(true);
-    toast(location === null ? "Location cleared." : "Location saved.");
+
+    // Says back what was stored, name included: the server puts a city to a
+    // pair of coordinates, and seeing it appear is how you know it took.
+    const saved = store.state.config.location;
+    toast(
+      saved
+        ? `Saved: ${saved.label || "your position"} (${saved.lat.toFixed(2)}, ${saved.lon.toFixed(2)})`
+        : "Location cleared.",
+    );
   } catch (err) {
     toast(err.message, true);
   }

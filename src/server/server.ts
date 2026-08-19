@@ -7,6 +7,7 @@ import type { AppConfig } from "../core/config.ts";
 import { saveConfig } from "../core/config.ts";
 import { JobManager, type JobEvent } from "./jobs.ts";
 import { handleApi, type AppContext } from "./routes.ts";
+import { recordBootState } from "./freshness.ts";
 
 const WEB_ROOT = path.join(import.meta.dirname, "..", "web");
 
@@ -99,6 +100,7 @@ export interface StartedServer {
 }
 
 export async function startServer(db: Db, config: AppConfig): Promise<StartedServer> {
+  await recordBootState();
   const jobs = new JobManager();
   const ctx: AppContext = {
     db,

@@ -770,92 +770,86 @@ function drawColumns(root, plot, slide, theme, L) {
  */
 function drawStrip(root, plot, slide, theme, L) {
   const counts = new Map(slide.days.map((entry) => [entry.day, entry.shots]));
-  const first = toDate(slide.from);
-  const last = toDate(slide.to);
-  const total = Math.round((last.getTime() - first.getTime()) / 86400000) + 1;
-  if (total <= 0) return;
-
-  // Columns are weeks, so the grid starts on the Monday on or before day one.
-  const lead = (first.getUTCDay() + 6) % 7;
-  const weeks = Math.ceil((lead + total) / 7);
+  const bands = slide.bands?.length ? slide.bands : [{ label: "", from: slide.from, to: slide.to }];
 
   const legendH = L.axis * 2.8;
   const usable = plot.h - legendH;
 
-  // Try every band count and keep the one with the biggest square.
-  let best = { bands: 1, cell: 0, perBand: weeks };
-  for (let bands = 1; bands <= Math.min(8, weeks); bands++) {
-    const perBand = Math.ceil(weeks / bands);
-    const labelH = L.tiny * 1.6;
-    const cell = Math.min(
-      plot.w / perBand,
-      (usable - bands * labelH - (bands - 1) * L.tiny * 1.2) / (bands * 7),
-    );
-    if (cell > best.cell) best = { bands, cell, perBand };
-  }
+  // The year labels take a share of each band rather than a fixed height: with
+  // eight bands on a 16:9 slide a fixed one ate most of the squares.
+  const perBand = usable / bands.length;
+  const labelH = bands.some((band) => band.label !== "") ? Math.min(L.tiny * 1.7, perBand * 0.18) : 0;
+  const gap = Math.min(L.tiny * 0.9, perBand * 0.08);
 
-  const { bands, perBand } = best;
-  const cell = Math.max(2, best.cell);
+  // Every band is a year, so the widest one decides the square: a leap year is
+  // 53 weeks wide and the rest have to line up under it.
+  const weeksIn = (band) => {
+    const first = toDate(band.from);
+    const days = Math.round((toDate(band.to).getTime() - first.getTime()) / 86400000) + 1;
+    return Math.ceil((((first.getUTCDay() + 6) % 7) + days) / 7);
+  };
+  const widest = Math.max(...bands.map(weeksIn), 1);
+
+  const cell = Math.max(2, Math.min(plot.w / widest, (perBand - labelH - gap) / 7));
   const size = Math.max(1, cell - (cell > 5 ? 1.5 : 0.4));
-  const labelH = L.tiny * 1.6;
-  const bandH = 7 * cell + labelH + L.tiny * 1.2;
-  const top0 = plot.y + Math.max(0, (usable - bands * bandH) / 2);
-  const left0 = plot.x + Math.max(0, (plot.w - perBand * cell) / 2);
+  const bandH = 7 * cell + labelH + gap;
+
+  const top0 = plot.y + Math.max(0, (usable - bands.length * bandH) / 2);
+  const left0 = plot.x + Math.max(0, (plot.w - widest * cell) / 2);
 
   const within = (span, key) => span && key >= span.from && key <= span.to;
   // A quiet spell is bounded by the two days either side of it, and those two
   // are days the camera did come out — the silence is what lies between them.
   const inside = (span, key) => span && key > span.from && key < span.to;
 
-  for (let i = 0; i < weeks * 7; i++) {
-    const date = new Date(first.getTime() + (i - lead) * 86400000);
-    const week = Math.floor(i / 7);
-    const band = Math.floor(week / perBand);
-    if (band >= bands) break;
+  bands.forEach((band, index) => {
+    const first = toDate(band.from);
+    // Columns are weeks, so a band starts on the Monday on or before its first
+    // day and the weekday rows line up down the whole wall.
+    const lead = (first.getUTCDay() + 6) % 7;
+    const top = top0 + index * bandH + labelH;
 
-    const key = toKey(date);
-    // Days outside the range are not drawn at all — an empty square there would
-    // read as "nothing shot" rather than "not asked about".
-    if (key < slide.from || key > slide.to) continue;
-
-    const value = counts.get(key) ?? 0;
-    const x = left0 + (week - band * perBand) * cell;
-    const y = top0 + band * bandH + labelH + (i % 7) * cell;
-
-    let fill = theme.blank;
-    let what = "nothing";
-    if (value === 0 && inside(slide.gap, key)) {
-      fill = theme.series[7];
-      what = "the longest quiet spell";
-    } else if (value > 0 && within(slide.streak, key)) {
-      fill = mix(theme.series[0], theme.surface, 0.45);
-      what = `${fmt(value)} — the longest run`;
-    } else if (value > 0) {
-      fill = theme.series[0];
-      what = fmt(value);
+    if (band.label !== "") {
+      root.append(
+        text(band.label, left0, top - gap * 0.6, {
+          size: Math.min(L.tiny, labelH * 0.85),
+          fill: theme.muted,
+        }),
+      );
     }
 
-    root.append(
-      titled(
-        el("rect", { x, y, width: size, height: size, rx: Math.min(2, size / 3), fill }),
-        `${date.getUTCDate()} ${MONTH_SHORT[date.getUTCMonth()]} ${date.getUTCFullYear()} — ${what}`,
-      ),
-    );
-  }
+    for (let i = 0; i < weeksIn(band) * 7; i++) {
+      const date = new Date(first.getTime() + (i - lead) * 86400000);
+      const key = toKey(date);
+      // Days outside the band are not drawn at all — an empty square there
+      // would read as "nothing shot" rather than "not part of this year".
+      if (key < band.from || key > band.to) continue;
 
-  // Each band says where it starts, which is all the axis a wall of days needs.
-  for (let band = 0; band < bands; band++) {
-    const at = new Date(first.getTime() + (band * perBand * 7 - lead) * 86400000);
-    const shown = at.getTime() < first.getTime() ? first : at;
-    root.append(
-      text(
-        `${MONTH_SHORT[shown.getUTCMonth()]} ${shown.getUTCFullYear()}`,
-        left0,
-        top0 + band * bandH + L.tiny,
-        { size: L.tiny, fill: theme.muted },
-      ),
-    );
-  }
+      const value = counts.get(key) ?? 0;
+      const x = left0 + Math.floor(i / 7) * cell;
+      const y = top + (i % 7) * cell;
+
+      let fill = theme.blank;
+      let what = "nothing";
+      if (value === 0 && inside(slide.gap, key)) {
+        fill = theme.series[7];
+        what = "the longest quiet spell";
+      } else if (value > 0 && within(slide.streak, key)) {
+        fill = mix(theme.series[0], theme.surface, 0.45);
+        what = `${fmt(value)} — the longest run`;
+      } else if (value > 0) {
+        fill = theme.series[0];
+        what = fmt(value);
+      }
+
+      root.append(
+        titled(
+          el("rect", { x, y, width: size, height: size, rx: Math.min(2, size / 3), fill }),
+          `${date.getUTCDate()} ${MONTH_SHORT[date.getUTCMonth()]} ${date.getUTCFullYear()} — ${what}`,
+        ),
+      );
+    }
+  });
 
   const key = [
     { label: "You shot", colour: theme.series[0] },

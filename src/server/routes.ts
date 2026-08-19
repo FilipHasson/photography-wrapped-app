@@ -11,6 +11,7 @@ import {
   type SourceConfig,
 } from "../core/config.ts";
 import { normPath } from "../core/paths.ts";
+import { nearestCity } from "../core/cities.ts";
 import { parseIsoDay } from "../core/time.ts";
 import { indexSource, indexOverview, summarizeSources, INDEX_VERSION } from "../index/source.ts";
 import { rebuildPrimaries } from "../index/dedupe.ts";
@@ -25,6 +26,7 @@ import {
 import { buildDeck } from "../stats/slides.ts";
 import { parseRangeSpec, resolveRange, type RangeSpec } from "../stats/range.ts";
 import { browse } from "./browse.ts";
+import { sourceHasChanged } from "./freshness.ts";
 import type { JobManager } from "./jobs.ts";
 
 export interface AppContext {
@@ -172,7 +174,10 @@ async function applyConfigPatch(ctx: AppContext, body: Record<string, unknown>):
   else if (body.location !== undefined) {
     const place = coercePlace(body.location);
     if (!place) throw new HttpError(400, "That is not a position on Earth.");
-    next.location = place;
+    // A position the browser handed over arrives without a name. Naming it here
+    // — from a table compiled in, never a request — is what makes a saved
+    // location recognisable as saved rather than as two numbers.
+    next.location = place.label === "" ? { ...place, label: nearestCity(place.lat, place.lon) ?? "" } : place;
   }
   if (typeof body.port === "number" && Number.isFinite(body.port)) next.port = body.port;
 
@@ -223,7 +228,11 @@ export async function handleApi(
     const route = `${req.method} ${url.pathname}`;
 
     if (route === "GET /api/state") {
-      json(res, 200, appState(ctx));
+      // Whether this process is still the code on disk. Editing a file while
+      // the server is up changes nothing until it is restarted, and silently
+      // serving the old build is the single most confusing thing this tool can
+      // do — so the page is told, and says so.
+      json(res, 200, { ...appState(ctx), sourceChanged: await sourceHasChanged() });
       return true;
     }
 
@@ -238,9 +247,17 @@ export async function handleApi(
       // the deck says, so they belong to the request rather than to the config.
       const yearBasis = url.searchParams.get("yearBasis") === "calendar" ? "calendar" : "anchor";
       const asked = url.searchParams.get("daylight") ?? "sun";
-      const daylight: DaylightMode = ["sun", "06-18", "07-19", "05-21"].includes(asked)
+      const daylight: DaylightMode = ["sun", "06-18", "07-19", "05-21", "custom"].includes(asked)
         ? (asked as DaylightMode)
         : "sun";
+
+      // The hours behind "custom", as fractions of a day. Clamped again in
+      // `resolveDaylight`, so a hand-typed query cannot invent a 30th hour.
+      const hour = (name: string, fallback: number) => {
+        const value = Number(url.searchParams.get(name));
+        return Number.isFinite(value) ? Math.min(24, Math.max(0, value)) : fallback;
+      };
+      const daylightHours = { sunrise: hour("dayFrom", 6), sunset: hour("dayTo", 18) };
       // `rows.lenses=20`: how many bars a slide draws before pooling the tail.
       // Nonsense is dropped here and clamped again in `resolveLimits`, so a
       // hand-typed query cannot ask for four hundred bars.
@@ -260,6 +277,7 @@ export async function handleApi(
         naming: ctx.config.naming,
         yearBasis,
         daylight,
+        daylightHours,
         limits,
         // Where the reader is beats any GPS in the photographs: a trip abroad
         // should not decide what "after dark" means for a year shot at home.

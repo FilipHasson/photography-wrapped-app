@@ -3,6 +3,7 @@ import path from "node:path";
 import { configDir, configFile, normPath } from "./paths.ts";
 import { isValidDay } from "./time.ts";
 import { DEFAULT_NAMING, type NamingOptions } from "./gear.ts";
+import { DEFAULT_CITY } from "./cities.ts";
 
 export type SourceKind = "folder" | "lightroom";
 
@@ -80,6 +81,10 @@ export interface AppConfig {
    * trip was, and a fortnight in Iceland should not decide what "after dark"
    * means for a year shot at home. The browser can fill this in from the device
    * with one click, or it can be typed.
+   *
+   * `null` means the reader cleared it and wants no location at all, which is
+   * different from never having had one — a config written before this existed
+   * gets the default rather than nothing.
    */
   location: Place | null;
   /** Port for the local UI. 0 picks a free one. */
@@ -106,7 +111,7 @@ export function defaultConfig(): AppConfig {
     mergeRawJpegPairs: true,
     includeVideo: true,
     ownerName: "",
-    location: null,
+    location: { ...DEFAULT_CITY },
     port: 4112,
   };
 }
@@ -220,7 +225,9 @@ function coerce(raw: unknown): AppConfig {
     mergeRawJpegPairs: r.mergeRawJpegPairs !== false,
     includeVideo: r.includeVideo !== false,
     ownerName: typeof r.ownerName === "string" ? r.ownerName.trim().slice(0, 60) : "",
-    location: coercePlace(r.location),
+    // A config from before locations existed has no key at all; that is not the
+    // same as `null`, which is somebody having pressed Clear.
+    location: "location" in r ? coercePlace(r.location) : { ...DEFAULT_CITY },
     port: typeof r.port === "number" && Number.isFinite(r.port) ? r.port : base.port,
   };
 }

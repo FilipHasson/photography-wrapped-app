@@ -128,9 +128,48 @@ export function createDeck({ onExit, onToast, onExclude, onSetting }) {
           list.append(button);
         }
 
-        return [heading, list];
+        // A choice a row of chips cannot make: the hours themselves. Shown
+        // under the options, and only while the option that wants them is on.
+        const parts = [heading, list];
+        if (setting.hours && setting.hours.shownWhen === setting.value) {
+          parts.push(hourPickers(setting.hours));
+        }
+        return parts;
       }),
     );
+  }
+
+  /** Two clocks, side by side, that rebuild the deck when either moves. */
+  function hourPickers(hours) {
+    const row = document.createElement("div");
+    row.className = "setting-hours";
+
+    for (const [id, value, label] of [
+      [hours.fromId, hours.from, "from"],
+      [hours.toId, hours.to, "to"],
+    ]) {
+      const field = document.createElement("label");
+      field.className = "setting-hour";
+
+      const name = document.createElement("span");
+      name.textContent = label;
+
+      const input = document.createElement("input");
+      input.type = "time";
+      const whole = Math.floor(value);
+      const minutes = Math.round((value - whole) * 60);
+      input.value = `${String(whole % 24).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+      input.addEventListener("change", () => {
+        const [h, m] = input.value.split(":").map(Number);
+        if (!Number.isFinite(h)) return;
+        onSetting(id, String(h + (Number.isFinite(m) ? m : 0) / 60));
+      });
+
+      field.append(name, input);
+      row.append(field);
+    }
+
+    return row;
   }
 
   /**

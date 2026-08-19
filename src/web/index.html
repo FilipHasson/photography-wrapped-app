@@ -24,6 +24,14 @@
       </div>
     </header>
 
+    <div id="stale-banner" class="stale-banner" hidden>
+      <strong>This server is running older code.</strong>
+      <span>
+        Files changed after it started, and Node only reads them once. Stop it and run
+        <code>npm start</code> again to see the current build.
+      </span>
+    </div>
+
     <div id="job-banner" class="job-banner" hidden>
       <div class="job-text">
         <strong id="job-label"></strong>

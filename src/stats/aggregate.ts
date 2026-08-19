@@ -224,7 +224,7 @@ export type WeekStart = "mon" | "sun" | "sat";
  * others are fixed windows for anyone whose library has no GPS in it, or who
  * would rather draw the line themselves.
  */
-export type DaylightMode = "sun" | "06-18" | "07-19" | "05-21";
+export type DaylightMode = "sun" | "06-18" | "07-19" | "05-21" | "custom";
 
 export interface Daylight {
   mode: DaylightMode;
@@ -289,6 +289,8 @@ export interface DeckStats {
   location: Location | null;
   /** Where the reader said they are, if they have. */
   home: Location | null;
+  /** The hours "custom" currently means, so the pickers can show them. */
+  daylightHours: { sunrise: number; sunset: number };
   /** How the week slide is laid out and coloured. */
   weekStart: WeekStart;
   markWeekend: boolean;
@@ -316,6 +318,8 @@ export interface StatsOptions {
   daylight?: DaylightMode;
   /** Where the reader is, which beats any GPS in the photographs. */
   location?: Location | null;
+  /** The hours "custom" means, as fractions: 6.5 is half past six. */
+  daylightHours?: { sunrise: number; sunset: number };
   /** Which day the day-of-the-week slide starts on. */
   weekStart?: WeekStart;
   /** Colour Saturday and Sunday differently from the working week. */
@@ -435,6 +439,11 @@ export function yearPeriods(
   return periods;
 }
 
+/** An hour of the day, or the default when it is not one. */
+function clampHour(value: number | undefined, fallback: number): number {
+  return value === undefined || !Number.isFinite(value) ? fallback : Math.min(24, Math.max(0, value));
+}
+
 /** Fixed windows, for a library with no GPS or a reader who prefers one. */
 const FIXED_DAYLIGHT: Record<string, { sunrise: number; sunset: number }> = {
   "06-18": { sunrise: 6, sunset: 18 },
@@ -465,9 +474,19 @@ function resolveDaylight(
   home: Location | null,
   fromFrames: Location | null,
   range: Range,
+  hours?: { sunrise: number; sunset: number },
 ): Daylight {
   const fallback = { mode: "06-18" as DaylightMode, ...FIXED_DAYLIGHT["06-18"]!, source: "06:00 to 18:00" };
   const chosen = mode ?? "sun";
+
+  if (chosen === "custom") {
+    const window = { sunrise: clampHour(hours?.sunrise, 6), sunset: clampHour(hours?.sunset, 18) };
+    return {
+      mode: "custom",
+      ...window,
+      source: `${formatHour(window.sunrise)} to ${formatHour(window.sunset)}`,
+    };
+  }
 
   if (chosen !== "sun") {
     const fixed = FIXED_DAYLIGHT[chosen];
@@ -1038,9 +1057,19 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
     // and honest: it is where most of these photographs were taken.
     location: places[0] ?? null,
     home: options.location ?? null,
+    daylightHours: {
+      sunrise: clampHour(options.daylightHours?.sunrise, 6),
+      sunset: clampHour(options.daylightHours?.sunset, 18),
+    },
     weekStart: options.weekStart ?? "mon",
     markWeekend: options.markWeekend ?? false,
-    daylight: resolveDaylight(options.daylight, options.location ?? null, places[0] ?? null, range),
+    daylight: resolveDaylight(
+      options.daylight,
+      options.location ?? null,
+      places[0] ?? null,
+      range,
+      options.daylightHours,
+    ),
   };
 }
 
