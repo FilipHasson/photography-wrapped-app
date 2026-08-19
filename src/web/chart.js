@@ -1,5 +1,6 @@
 // @ts-check
 import { DEFAULT_FORMAT, metrics } from "./formats.js";
+import { seriesColour } from "./theme.js";
 
 /**
  * Drawing a slide.
@@ -462,23 +463,33 @@ function segmentedColumn(root, x, baseline, width, height, item, theme) {
 
 /** Names the shades inside a segmented bar. */
 function drawShadeLegend(root, plot, labels, theme, L) {
-  let x = plot.x;
-  const y = plot.y + plot.h - L.axis;
+  drawKeyLegend(
+    root,
+    { x: plot.x, y: plot.y + plot.h - L.axis },
+    labels.map((label, index) => ({ label, colour: shadeOf(index, labels.length, theme) })),
+    theme,
+    L,
+  );
+}
 
-  labels.forEach((label, index) => {
+/** A row of swatches with names beside them, from a given point. */
+function drawKeyLegend(root, at, items, theme, L) {
+  let x = at.x;
+
+  for (const item of items) {
     root.append(
       el("rect", {
         x,
-        y: y - L.axis * 0.75,
+        y: at.y - L.axis * 0.75,
         width: L.axis * 0.7,
         height: L.axis * 0.7,
         rx: 3,
-        fill: shadeOf(index, labels.length, theme),
+        fill: item.colour,
       }),
     );
-    root.append(text(label, x + L.axis, y, { size: L.axis, fill: theme.ink2 }));
-    x += L.axis + measure(label, L.axis) + L.axis * 1.6;
-  });
+    root.append(text(item.label, x + L.axis, at.y, { size: L.axis, fill: theme.ink2 }));
+    x += L.axis + measure(item.label, L.axis) + L.axis * 1.6;
+  }
 }
 
 /**
@@ -593,7 +604,11 @@ function drawColumns(root, plot, slide, theme, L) {
   const ceiling = niceCeiling(max);
   const band = plot.w / items.length;
   const thickness = Math.min(24, Math.max(5, band - 14));
-  const baseline = plot.y + plot.h - L.axis * 3;
+  // The card under the chart gets its space reserved before anything is drawn,
+  // rather than being fitted into whatever happens to be left: it used to be
+  // dropped silently on the shapes where it did not fit.
+  const cardH = slide.figure ? Math.min(plot.h * 0.28, L.tileValue * 2.4 + L.value * 2.2) : 0;
+  const baseline = plot.y + plot.h - L.axis * 3 - cardH;
   const height = Math.max(40, baseline - plot.y - L.value * 2);
 
   // Two hairlines are enough to read a histogram against.
@@ -705,98 +720,156 @@ function drawColumns(root, plot, slide, theme, L) {
 
   // A number the columns cannot show — the frames that were never rated at all,
   // which dwarf the rated ones and would flatten the chart into a single spike
-  // if they were given a column of their own.
-  if (slide.figure) {
-    const size = Math.min(L.tileValue * 1.6, plot.w * 0.3);
-    const y = baseline + L.axis * 5.4 + size * 0.8;
-    if (y + L.value < plot.y + plot.h + L.axis * 4) {
-      root.append(
-        text(slide.figure.value, plot.x, y, { size, weight: 600, fill: theme.ink }),
-      );
-      root.append(
-        text(ellipsize(slide.figure.label, plot.w, L.value), plot.x, y + L.value * 1.6, {
-          size: L.value,
-          fill: theme.ink2,
-        }),
-      );
-    }
+  // if they were given a column of their own. It gets a card so it reads as a
+  // fact beside the chart rather than as a stray caption under it.
+  if (slide.figure && cardH > 0) {
+    const top = plot.y + plot.h - cardH;
+    const size = Math.min(L.tileValue * 1.5, cardH * 0.52, plot.w * 0.32);
+
+    root.append(
+      el("rect", {
+        x: plot.x,
+        y: top,
+        width: plot.w,
+        height: cardH - L.value * 0.4,
+        rx: 12,
+        fill: theme.plane,
+        stroke: theme.grid,
+      }),
+    );
+    root.append(
+      text(slide.figure.value, plot.x + L.value, top + size * 1.05, {
+        size,
+        weight: 600,
+        fill: theme.series[0],
+      }),
+    );
+    root.append(
+      text(
+        ellipsize(slide.figure.label, plot.w - L.value * 2, L.value),
+        plot.x + L.value,
+        top + size * 1.05 + L.value * 1.5,
+        { size: L.value, fill: theme.ink2 },
+      ),
+    );
   }
 }
 
 /**
- * A line of days, one mark each, with the longest run and the longest silence
- * picked out of it.
+ * Every day in the range as a square, a week to a column.
  *
- * The calendar answers "when"; this answers "how steadily", which is a shape
- * rather than a number — and it used to be two sentences of footnote.
+ * The calendar answers "when"; this answers "how steadily". A day is a day
+ * whether it held four frames or four hundred — the question here is whether
+ * the camera came out at all — so the fill is presence, not volume, and the two
+ * spans worth naming carry their own colours: the longest run and the longest
+ * silence.
+ *
+ * Multi-year libraries would be four hundred columns of two pixels, so the
+ * weeks wrap into as many stacked bands as make the squares biggest, the same
+ * trick the month grid uses. Every day in the period is drawn either way.
  */
 function drawStrip(root, plot, slide, theme, L) {
   const counts = new Map(slide.days.map((entry) => [entry.day, entry.shots]));
-  const total = Math.round((toDate(slide.to).getTime() - toDate(slide.from).getTime()) / 86400000) + 1;
+  const first = toDate(slide.from);
+  const last = toDate(slide.to);
+  const total = Math.round((last.getTime() - first.getTime()) / 86400000) + 1;
   if (total <= 0) return;
 
-  const cell = plot.w / total;
-  const width = Math.max(1, cell - (cell > 6 ? 1.5 : 0));
-  const bandH = Math.min(plot.h * 0.5, L.tileValue * (L.tall ? 5 : 2.6));
-  const top = plot.y + Math.max(0, (plot.h - bandH) / 2) - L.value * 2;
-  const max = Math.max(...slide.days.map((entry) => entry.shots), 1);
+  // Columns are weeks, so the grid starts on the Monday on or before day one.
+  const lead = (first.getUTCDay() + 6) % 7;
+  const weeks = Math.ceil((lead + total) / 7);
 
-  const xOf = (day) =>
-    plot.x + (Math.round((toDate(day).getTime() - toDate(slide.from).getTime()) / 86400000) * plot.w) / total;
+  const legendH = L.axis * 2.8;
+  const usable = plot.h - legendH;
 
-  root.append(
-    el("rect", { x: plot.x, y: top, width: plot.w, height: bandH, fill: theme.rampEmpty, rx: 4 }),
-  );
+  // Try every band count and keep the one with the biggest square.
+  let best = { bands: 1, cell: 0, perBand: weeks };
+  for (let bands = 1; bands <= Math.min(8, weeks); bands++) {
+    const perBand = Math.ceil(weeks / bands);
+    const labelH = L.tiny * 1.6;
+    const cell = Math.min(
+      plot.w / perBand,
+      (usable - bands * labelH - (bands - 1) * L.tiny * 1.2) / (bands * 7),
+    );
+    if (cell > best.cell) best = { bands, cell, perBand };
+  }
 
-  for (let i = 0; i < total; i++) {
-    const date = new Date(toDate(slide.from).getTime() + i * 86400000);
-    const value = counts.get(toKey(date)) ?? 0;
-    if (value === 0) continue;
-    // A day is a day whether it held four frames or four hundred, so height
-    // carries the count and presence carries the fact.
-    const height = bandH * (0.35 + 0.65 * Math.sqrt(value / max));
+  const { bands, perBand } = best;
+  const cell = Math.max(2, best.cell);
+  const size = Math.max(1, cell - (cell > 5 ? 1.5 : 0.4));
+  const labelH = L.tiny * 1.6;
+  const bandH = 7 * cell + labelH + L.tiny * 1.2;
+  const top0 = plot.y + Math.max(0, (usable - bands * bandH) / 2);
+  const left0 = plot.x + Math.max(0, (plot.w - perBand * cell) / 2);
+
+  const within = (span, key) => span && key >= span.from && key <= span.to;
+  // A quiet spell is bounded by the two days either side of it, and those two
+  // are days the camera did come out — the silence is what lies between them.
+  const inside = (span, key) => span && key > span.from && key < span.to;
+
+  for (let i = 0; i < weeks * 7; i++) {
+    const date = new Date(first.getTime() + (i - lead) * 86400000);
+    const week = Math.floor(i / 7);
+    const band = Math.floor(week / perBand);
+    if (band >= bands) break;
+
+    const key = toKey(date);
+    // Days outside the range are not drawn at all — an empty square there would
+    // read as "nothing shot" rather than "not asked about".
+    if (key < slide.from || key > slide.to) continue;
+
+    const value = counts.get(key) ?? 0;
+    const x = left0 + (week - band * perBand) * cell;
+    const y = top0 + band * bandH + labelH + (i % 7) * cell;
+
+    let fill = theme.blank;
+    let what = "nothing";
+    if (value === 0 && inside(slide.gap, key)) {
+      fill = theme.series[7];
+      what = "the longest quiet spell";
+    } else if (value > 0 && within(slide.streak, key)) {
+      fill = mix(theme.series[0], theme.surface, 0.45);
+      what = `${fmt(value)} — the longest run`;
+    } else if (value > 0) {
+      fill = theme.series[0];
+      what = fmt(value);
+    }
+
     root.append(
       titled(
-        el("rect", {
-          x: plot.x + i * cell,
-          y: top + bandH - height,
-          width,
-          height,
-          fill: theme.series[0],
-        }),
-        `${date.getUTCDate()} ${MONTH_SHORT[date.getUTCMonth()]} ${date.getUTCFullYear()} — ${fmt(value)}`,
+        el("rect", { x, y, width: size, height: size, rx: Math.min(2, size / 3), fill }),
+        `${date.getUTCDate()} ${MONTH_SHORT[date.getUTCMonth()]} ${date.getUTCFullYear()} — ${what}`,
       ),
     );
   }
 
-  const spans = [
-    slide.streak ? { ...slide.streak, label: "longest run", colour: theme.series[0] } : null,
-    slide.gap ? { ...slide.gap, label: "quiet spell", colour: theme.axis } : null,
-  ].filter(Boolean);
-
-  spans.forEach((span, index) => {
-    const from = xOf(span.from);
-    const to = xOf(span.to) + cell;
-    const y = top + bandH + L.value * (1.4 + index * 2.6);
-
+  // Each band says where it starts, which is all the axis a wall of days needs.
+  for (let band = 0; band < bands; band++) {
+    const at = new Date(first.getTime() + (band * perBand * 7 - lead) * 86400000);
+    const shown = at.getTime() < first.getTime() ? first : at;
     root.append(
-      el("line", { x1: from, y1: y, x2: to, y2: y, stroke: span.colour, "stroke-width": 3 }),
+      text(
+        `${MONTH_SHORT[shown.getUTCMonth()]} ${shown.getUTCFullYear()}`,
+        left0,
+        top0 + band * bandH + L.tiny,
+        { size: L.tiny, fill: theme.muted },
+      ),
     );
-    for (const x of [from, to]) {
-      root.append(
-        el("line", { x1: x, y1: y - L.tiny * 0.5, x2: x, y2: y + L.tiny * 0.5, stroke: span.colour, "stroke-width": 3 }),
-      );
-    }
+  }
 
-    const caption = `${fmt(span.days)} days ${span.label}`;
-    const centre = Math.min(
-      Math.max(plot.x + measure(caption, L.value) / 2, (from + to) / 2),
-      plot.x + plot.w - measure(caption, L.value) / 2,
-    );
-    root.append(
-      text(caption, centre, y + L.value * 1.5, { size: L.value, fill: theme.ink2, anchor: "middle" }),
-    );
-  });
+  const key = [
+    { label: "You shot", colour: theme.series[0] },
+    {
+      label: slide.streak ? `Longest run · ${fmt(slide.streak.days)} days` : "Longest run",
+      colour: mix(theme.series[0], theme.surface, 0.45),
+    },
+    {
+      label: slide.gap ? `Longest quiet spell · ${fmt(slide.gap.days)} days` : "Longest quiet spell",
+      colour: theme.series[7],
+    },
+    { label: "Nothing", colour: theme.blank },
+  ];
+  drawKeyLegend(root, { x: plot.x, y: plot.y + plot.h - L.axis }, key, theme, L);
 }
 
 /** Twenty-four spokes: a day, read as a clock face. */
@@ -902,16 +975,22 @@ const WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "
 
 /** Seven columns, Monday first. */
 function drawWeek(root, plot, slide, theme, L) {
+  const names = slide.labels?.length === 7 ? slide.labels : WEEKDAY_NAMES;
+  const weekend = new Set(slide.weekend ?? []);
+
   const max = Math.max(...slide.days, 1);
   const band = plot.w / 7;
   const thickness = Math.min(24, band * 0.45);
-  const baseline = plot.y + plot.h - L.label * 2;
+  // Two colours mean two things, so they are named under the chart.
+  const legendH = weekend.size > 0 ? L.axis * 2.6 : 0;
+  const baseline = plot.y + plot.h - L.label * 2 - legendH;
   const height = Math.max(40, baseline - plot.y - L.value * 2);
   const busiest = slide.days.indexOf(max);
 
   slide.days.forEach((value, day) => {
     const cx = plot.x + band * (day + 0.5);
     const barHeight = value > 0 ? Math.max(2, (value / max) * height) : 0;
+    const colour = weekend.has(day) ? theme.series[1] : theme.series[0];
 
     if (barHeight > 0) {
       column(
@@ -920,8 +999,8 @@ function drawWeek(root, plot, slide, theme, L) {
         baseline,
         thickness,
         barHeight,
-        theme.series[0],
-        `${WEEKDAY_NAMES[day]}: ${fmt(value)}`,
+        colour,
+        `${names[day]}: ${fmt(value)}`,
         day === busiest ? 1 : 0.5,
       );
     }
@@ -934,7 +1013,7 @@ function drawWeek(root, plot, slide, theme, L) {
       }),
     );
     root.append(
-      text(WEEKDAY_NAMES[day].slice(0, 3), cx, baseline + L.label * 1.4, {
+      text(names[day].slice(0, 3), cx, baseline + L.label * 1.4, {
         size: L.label * 0.85,
         fill: day === busiest ? theme.ink2 : theme.muted,
         anchor: "middle",
@@ -946,6 +1025,19 @@ function drawWeek(root, plot, slide, theme, L) {
   root.append(
     el("line", { x1: plot.x, y1: baseline, x2: plot.x + plot.w, y2: baseline, stroke: theme.axis }),
   );
+
+  if (weekend.size > 0) {
+    drawKeyLegend(
+      root,
+      { x: plot.x, y: plot.y + plot.h - L.axis },
+      [
+        { label: "The working week", colour: theme.series[0] },
+        { label: "The weekend", colour: theme.series[1] },
+      ],
+      theme,
+      L,
+    );
+  }
 }
 
 const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -1193,11 +1285,12 @@ function drawMonths(root, plot, slide, theme, L) {
 }
 
 /**
- * The pooled tail is grey rather than a sixth hue: it is not an entity, and
- * spending a categorical slot on it would push a real lens out.
+ * The pooled tail is grey rather than a hue of its own: it is not an entity,
+ * and spending a slot on it would push a real lens out. Everything else takes
+ * its colour from the palette, which generates past its eighth slot.
  */
 function stackColour(series, index, theme) {
-  return series.label === "Everything else" ? theme.axis : theme.series[index % theme.series.length];
+  return series.label === "Everything else" ? theme.axis : seriesColour(index, theme);
 }
 
 /** Flows legend entries across as many rows as they need. */
@@ -1234,17 +1327,24 @@ function drawStack(root, plot, slide, theme, L) {
   // converted lens is a shade of its own colour rather than a colour of its
   // own, so it takes one entry at the end however many lenses have one.
   const converted = series.some((s) => (s.converted ?? []).some((n) => n > 0));
-  const legend = layoutLegend(
-    [
-      ...series.map((s, index) => ({ label: s.label, colour: stackColour(s, index, theme) })),
-      ...(converted
-        ? [{ label: "with a teleconverter", colour: mix(theme.series[0], theme.surface, 0.55) }]
-        : []),
-    ],
-    plot.w,
-    L,
-  );
-  const legendH = legend.rows * L.axis * 1.9;
+  const entries = [
+    ...series.map((s, index) => ({ label: s.label, colour: stackColour(s, index, theme) })),
+    ...(converted
+      ? [{ label: "with a teleconverter", colour: mix(theme.series[0], theme.surface, 0.55) }]
+      : []),
+  ];
+
+  // Twenty-five lenses need a legend of their own size: past eight series the
+  // colours alone cannot be told apart, so the names are the chart's spine and
+  // dropping them is not an option — they get smaller instead.
+  let legendL = L;
+  let legend = layoutLegend(entries, plot.w, legendL);
+  for (const scale of [0.85, 0.72, 0.6]) {
+    if (legend.rows * legendL.axis * 1.9 <= plot.h * 0.3) break;
+    legendL = { ...L, axis: L.axis * scale };
+    legend = layoutLegend(entries, plot.w, legendL);
+  }
+  const legendH = legend.rows * legendL.axis * 1.9;
   const baseline = plot.y + plot.h - legendH - L.axis * 3;
   const height = Math.max(40, baseline - plot.y);
   const stride = Math.max(1, Math.ceil(months.length / (L.narrow ? 6 : 12)));
@@ -1317,20 +1417,22 @@ function drawStack(root, plot, slide, theme, L) {
   );
 
   // A legend is not optional once there is more than one series.
-  const legendTop = plot.y + plot.h - legendH + L.axis;
+  const legendTop = plot.y + plot.h - legendH + legendL.axis;
   legend.entries.forEach((entry) => {
-    const y = legendTop + entry.row * L.axis * 1.9;
+    const y = legendTop + entry.row * legendL.axis * 1.9;
     root.append(
       el("rect", {
         x: plot.x + entry.x,
-        y: y - L.axis * 0.75,
-        width: L.axis * 0.7,
-        height: L.axis * 0.7,
+        y: y - legendL.axis * 0.75,
+        width: legendL.axis * 0.7,
+        height: legendL.axis * 0.7,
         rx: 3,
         fill: entry.colour,
       }),
     );
-    root.append(text(entry.label, plot.x + entry.x + L.axis, y, { size: L.axis, fill: theme.ink2 }));
+    root.append(
+      text(entry.label, plot.x + entry.x + legendL.axis, y, { size: legendL.axis, fill: theme.ink2 }),
+    );
   });
 }
 

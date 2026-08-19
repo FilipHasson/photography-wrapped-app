@@ -111,6 +111,7 @@ button.ghost {
 }
 
 input[type="text"],
+input[type="number"],
 input[type="date"] {
   font: inherit;
   color: var(--ink);
@@ -822,4 +823,23 @@ main {
   display: block;
   width: 100%;
   height: auto;
+}
+
+/* Where you are: a button for the easy case, fields for everyone else. */
+.setting.location {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.location-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.location-row input[type="text"] {
+  width: 160px;
+}
+.location-row input[type="number"] {
+  width: 120px;
 }

@@ -51,13 +51,14 @@ export const DEFAULT_LIMITS = { cameras: 8, lenses: 8, combos: 8, gear: 5 } as c
 export const MAX_ROWS = 40;
 
 /**
- * Series on one stacked chart, capped at the palette.
+ * Series on one stacked chart.
  *
- * There are eight categorical slots and a ninth is never a generated hue: past
- * eight lenses the rest belong in "Everything else", which is also the point
- * where a stack of monthly columns stops being readable.
+ * The validated palette has eight slots; past those, `web/theme.js` generates
+ * hues rather than refusing to draw a ninth lens. Colour alone stops separating
+ * them somewhere around ten, which is why the stack carries a legend, a hover
+ * label and a table — and why this stops at a number a legend can still name.
  */
-export const MAX_SERIES = 8;
+export const MAX_SERIES = 25;
 
 export function resolveLimits(limits: RowLimits = {}): Required<RowLimits> {
   const clamp = (value: number | undefined, fallback: number, ceiling: number) =>
@@ -200,9 +201,21 @@ export interface YearBucket {
   lenses: number;
   /** The period has not finished yet. */
   partial: boolean;
+  /** Days still to come in it, 0 once it is over. */
+  remaining: number;
 }
 
 export type YearBasis = "anchor" | "calendar";
+
+/**
+ * Which day a week starts on.
+ *
+ * Not a detail: a Sunday-first reader looking at a Monday-first chart reads the
+ * weekend as split across the two ends of it, which is the one shape the slide
+ * exists to show. Stored Monday-first because that is what SQLite's `%w` maths
+ * was normalised to; the rotation happens where the slide is written.
+ */
+export type WeekStart = "mon" | "sun" | "sat";
 
 /**
  * Which hours the clock slide treats as daylight.
@@ -219,13 +232,18 @@ export interface Daylight {
   sunset: number;
   /** Where the window came from, for the slide to own up to. */
   source: string;
+  /** Whose position was used: the reader's, or the photographs'. */
+  from?: "you" | "frames";
 }
 
-/** Where most of the photographs were taken, when any of them said. */
+/** A place the daylight maths can be done for. */
 export interface Location {
   lat: number;
   lon: number;
-  shots: number;
+  /** How many photographs put it there, when it came from the photographs. */
+  shots?: number;
+  /** What to call it on a slide. Empty for a bare pair of coordinates. */
+  label?: string;
 }
 
 export interface Burst {
@@ -269,6 +287,11 @@ export interface DeckStats {
   yearBasis: YearBasis;
   /** The busiest place, for anything that needs to know where this happened. */
   location: Location | null;
+  /** Where the reader said they are, if they have. */
+  home: Location | null;
+  /** How the week slide is laid out and coloured. */
+  weekStart: WeekStart;
+  markWeekend: boolean;
   /** The hours counted as daylight, and where that came from. */
   daylight: Daylight;
   /** Resolved here so the slides and the settings beside them agree. */
@@ -291,6 +314,12 @@ export interface StatsOptions {
   naming?: NamingOptions;
   /** Which hours count as daylight on the clock slide. */
   daylight?: DaylightMode;
+  /** Where the reader is, which beats any GPS in the photographs. */
+  location?: Location | null;
+  /** Which day the day-of-the-week slide starts on. */
+  weekStart?: WeekStart;
+  /** Colour Saturday and Sunday differently from the working week. */
+  markWeekend?: boolean;
   /** How many rows the slides that pool a tail should draw. */
   limits?: RowLimits;
 }
@@ -345,17 +374,32 @@ export function yearPeriods(
   basis: YearBasis,
   anchorDay: number | null,
   today: number,
-): Array<{ from: number; to: number; label: string; partial: boolean }> {
-  const periods: Array<{ from: number; to: number; label: string; partial: boolean }> = [];
+): Array<{ from: number; to: number; label: string; partial: boolean; remaining: number }> {
+  const periods: Array<{
+    from: number;
+    to: number;
+    label: string;
+    partial: boolean;
+    remaining: number;
+  }> = [];
+
+  /**
+   * A year is still running if *its own* last day has not arrived yet — not if
+   * the photographs stop short of it. Somebody who last shot in June is still
+   * living in the same year in December, and the slide should say how much of
+   * it is left rather than pretend it ended in June.
+   */
+  const left = (end: number) => Math.max(0, daysBetween(today, end));
 
   if (basis === "calendar" || anchorDay === null) {
     const firstYear = Math.floor(range.from / 10000);
     const lastYear = Math.floor(range.to / 10000);
     for (let year = firstYear; year <= lastYear; year++) {
+      const end = makeDay(year, 12, 31);
       const from = Math.max(range.from, makeDay(year, 1, 1));
-      const to = Math.min(range.to, makeDay(year, 12, 31));
+      const to = Math.min(range.to, end);
       if (from > to) continue;
-      periods.push({ from, to, label: String(year), partial: to >= today });
+      periods.push({ from, to, label: String(year), partial: end >= today, remaining: left(end) });
     }
     return periods;
   }
@@ -376,7 +420,13 @@ export function yearPeriods(
     if (from <= to) {
       const a = String(year);
       const b = String(year + 1).slice(2);
-      periods.push({ from, to, label: `${a}–${b}`, partial: end > range.to || end >= today });
+      periods.push({
+        from,
+        to,
+        label: `${a}–${b}`,
+        partial: end >= today,
+        remaining: left(end),
+      });
     }
     year += 1;
     if (periods.length > 60) break;
@@ -401,9 +451,19 @@ const FIXED_DAYLIGHT: Record<string, { sunrise: number; sunset: number }> = {
  * latitudes, where the sun may not rise at all, fall back to a fixed window
  * rather than pretending to an answer.
  */
+/**
+ * Which hours were lit, and where that answer came from.
+ *
+ * The reader's own location is preferred to anything in the photographs: GPS in
+ * a frame says where a trip was, and a fortnight near the Arctic circle should
+ * not decide what "after dark" means for a year shot at home. Frame GPS is only
+ * a fallback for a library that has one and a reader who has not said where
+ * they are, and the slide names whichever it used.
+ */
 function resolveDaylight(
   mode: DaylightMode | undefined,
-  location: Location | null,
+  home: Location | null,
+  fromFrames: Location | null,
   range: Range,
 ): Daylight {
   const fallback = { mode: "06-18" as DaylightMode, ...FIXED_DAYLIGHT["06-18"]!, source: "06:00 to 18:00" };
@@ -415,17 +475,23 @@ function resolveDaylight(
     return { mode: chosen, ...fixed, source: `${formatHour(fixed.sunrise)} to ${formatHour(fixed.sunset)}` };
   }
 
+  const location = home ?? fromFrames;
   if (!location) return fallback;
 
   const middle = addDays(range.from, Math.floor(daysBetween(range.from, range.to) / 2));
   const times = sunTimes(location.lat, middle);
   if (!times) return fallback;
 
-  const where = `${Math.abs(location.lat).toFixed(1)}°${location.lat >= 0 ? "N" : "S"}`;
+  const where =
+    location.label && location.label !== ""
+      ? location.label
+      : `${Math.abs(location.lat).toFixed(1)}°${location.lat >= 0 ? "N" : "S"}`;
+
   return {
     mode: "sun",
     ...times,
-    source: `${formatHour(times.sunrise)} to ${formatHour(times.sunset)} at ${where}, mid-range`,
+    source: `${formatHour(times.sunrise)} to ${formatHour(times.sunset)} at ${where}`,
+    from: home ? "you" : "frames",
   };
 }
 
@@ -971,7 +1037,10 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
     // The cluster with the most frames in it. Good enough to ask the sun about,
     // and honest: it is where most of these photographs were taken.
     location: places[0] ?? null,
-    daylight: resolveDaylight(options.daylight, places[0] ?? null, range),
+    home: options.location ?? null,
+    weekStart: options.weekStart ?? "mon",
+    markWeekend: options.markWeekend ?? false,
+    daylight: resolveDaylight(options.daylight, options.location ?? null, places[0] ?? null, range),
   };
 }
 

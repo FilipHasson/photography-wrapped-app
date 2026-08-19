@@ -45,7 +45,8 @@ function statsWith(overrides: Partial<DeckStats>): DeckStats {
     orientation: { landscape: 0, portrait: 0, square: 0 },
     busiestDay: null, longestStreak: null, longestGap: null,
     places: [], placesKnown: 0, debuts: [], burst: null,
-    years: [], yearBasis: "anchor", location: null,
+    years: [], yearBasis: "anchor", location: null, home: null,
+    weekStart: "mon", markWeekend: false,
     daylight: { mode: "06-18", sunrise: 6, sunset: 18, source: "06:00 to 18:00" },
     limits: resolveLimits(),
     ...overrides,
@@ -53,6 +54,12 @@ function statsWith(overrides: Partial<DeckStats>): DeckStats {
 }
 
 const findSlide = (slides: Slide[], id: string) => slides.find((slide) => slide.id === id);
+
+const YEARS = [
+  { label: "2023–24", from: 20230824, to: 20240823, shots: 10621, cameras: 1, lenses: 6, partial: false, remaining: 0 },
+  { label: "2024–25", from: 20240824, to: 20250823, shots: 97962, cameras: 3, lenses: 8, partial: false, remaining: 0 },
+  { label: "2025–26", from: 20250824, to: 20260816, shots: 51156, cameras: 3, lenses: 8, partial: true, remaining: 7 },
+];
 
 describe("the numbers behind a slide", () => {
   const many = Array.from({ length: 20 }, (_, i) => tally(`Lens ${i + 1}`, 100 - i * 3));
@@ -102,7 +109,9 @@ describe("the numbers behind a slide", () => {
     assert.equal(keys[0]?.dimension, "camera");
     assert.equal(keys[0]?.excluded, false);
     assert.equal(keys[1]?.excluded, true);
-    assert.ok(slide.note?.includes("iPhone"), slide.note);
+    // The slide itself says nothing about it: what has been hidden is a fact
+    // about the reader's settings, not about their photography.
+    assert.equal(slide.note, undefined);
   });
 
   test("rows that are not gear carry no key", () => {
@@ -118,18 +127,15 @@ describe("the numbers behind a slide", () => {
 });
 
 describe("year by year", () => {
-  const years = [
-    { label: "2023–24", from: 20230824, to: 20240823, shots: 10621, cameras: 1, lenses: 6, partial: false },
-    { label: "2024–25", from: 20240824, to: 20250823, shots: 97962, cameras: 3, lenses: 8, partial: false },
-    { label: "2025–26", from: 20250824, to: 20260816, shots: 51156, cameras: 3, lenses: 8, partial: true },
-  ];
+  const years = YEARS;
 
   test("three numbers a year, and the busiest one named", () => {
     const slide = findSlide(buildDeck(statsWith({ years })).slides, "years");
     assert.ok(slide && slide.kind === "years");
     assert.equal(slide.years.length, 3);
     assert.ok(slide.headline.includes("2024–25"), slide.headline);
-    assert.ok(slide.note?.includes("still running"), slide.note);
+    // How much of the running year is left, rather than only that it is.
+    assert.equal(slide.note, "7 days left in 2025–26");
   });
 
   test("carries the choice of what a year is", () => {
@@ -182,7 +188,7 @@ describe("what the opening slide owns up to", () => {
     assert.ok(opening?.note?.includes("24 Aug 2023"), opening?.note);
   });
 
-  test("says how much gear is hidden", () => {
+  test("never mentions what is hidden, or counts files at anyone", () => {
     const deck = buildDeck(
       statsWith({
         cameras: [tally("Nikon Z 8", 100)],
@@ -190,7 +196,80 @@ describe("what the opening slide owns up to", () => {
         hiddenLenses: [tally("Unknown", 2, true)],
       }),
     );
-    // Footnotes are a phrase now, not a sentence — the count is still there.
-    assert.ok(findSlide(deck.slides, "opening")?.note?.includes("2 hidden"));
+    assert.equal(findSlide(deck.slides, "opening")?.note, undefined);
+  });
+
+  /**
+   * The footnote rule, enforced rather than remembered: no slide ends with a
+   * count of frames, files or photographs, and none of them mentions hidden
+   * gear. Both were noise on every slide that had them, and both are in the
+   * table view, which is where a denominator belongs.
+   */
+  test("no slide footnotes a count of frames, or anything hidden", () => {
+    const deck = buildDeck(
+      statsWith({
+        cameras: [tally("Nikon Z 8", 900), tally("iPhone", 4)],
+        lenses: Array.from({ length: 20 }, (_, i) => tally(`Lens ${i + 1}`, 100 - i * 3)),
+        combos: Array.from({ length: 12 }, (_, i) => tally(`Z 8 + Lens ${i + 1}`, 90 - i * 3)),
+        hiddenCameras: [tally("Apple iPhone 15 Pro", 1, true)],
+        hiddenLenses: [tally("Unknown", 2, true)],
+        years: YEARS,
+      }),
+    );
+
+    for (const slide of deck.slides) {
+      const note = slide.note ?? "";
+      assert.doesNotMatch(
+        note,
+        /[\d,]+\s+(frames|files|photographs|photos|shots)/i,
+        `${slide.id} footnotes a count: "${note}"`,
+      );
+      assert.doesNotMatch(note, /hidden/i, `${slide.id} mentions hiding: "${note}"`);
+    }
+  });
+});
+
+describe("the week", () => {
+  const weekdays = [10, 20, 30, 40, 50, 60, 70];
+
+  test("starts where the reader says it does", () => {
+    const monday = findSlide(buildDeck(statsWith({ weekdays })).slides, "week");
+    assert.ok(monday && monday.kind === "week");
+    assert.equal(monday.labels[0], "Monday");
+    assert.deepEqual(monday.days, weekdays);
+
+    const sunday = findSlide(
+      buildDeck(statsWith({ weekdays, weekStart: "sun" })).slides,
+      "week",
+    );
+    assert.ok(sunday && sunday.kind === "week");
+    assert.equal(sunday.labels[0], "Sunday");
+    // Sunday's own count leads, and Saturday's brings up the rear.
+    assert.equal(sunday.days[0], 70);
+    assert.equal(sunday.days[6], 60);
+    // The table has to agree with the chart, or the numbers view contradicts it.
+    assert.equal(sunday.table.rows[0]?.[0], "Sun");
+  });
+
+  test("marks the weekend only when asked, wherever it has landed", () => {
+    const plain = findSlide(buildDeck(statsWith({ weekdays })).slides, "week");
+    assert.ok(plain && plain.kind === "week");
+    assert.deepEqual(plain.weekend, []);
+
+    const marked = findSlide(
+      buildDeck(statsWith({ weekdays, weekStart: "sun", markWeekend: true })).slides,
+      "week",
+    );
+    assert.ok(marked && marked.kind === "week");
+    // Sunday first, so the weekend is the first column and the last.
+    assert.deepEqual(marked.weekend, [0, 6]);
+  });
+
+  test("both choices ride with the slide", () => {
+    const slide = findSlide(buildDeck(statsWith({ weekdays })).slides, "week");
+    assert.deepEqual(
+      slide?.settings?.map((setting) => setting.id),
+      ["weekStart", "weekend"],
+    );
   });
 });

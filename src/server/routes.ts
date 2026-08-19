@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import fs from "node:fs/promises";
 import type { Db } from "../core/db.ts";
 import {
+  coercePlace,
   defaultSource,
   makeAnchor,
   makeKey,
@@ -19,6 +20,7 @@ import {
   computeStats,
   type DaylightMode,
   type RowLimits,
+  type WeekStart,
 } from "../stats/aggregate.ts";
 import { buildDeck } from "../stats/slides.ts";
 import { parseRangeSpec, resolveRange, type RangeSpec } from "../stats/range.ts";
@@ -164,6 +166,14 @@ async function applyConfigPatch(ctx: AppContext, body: Record<string, unknown>):
     next.naming = { ...next.naming, lensStyle: body.lensStyle };
   }
   if (typeof body.showMake === "boolean") next.naming = { ...next.naming, showMake: body.showMake };
+
+  // `location: null` clears it; anything else has to be a real position.
+  if (body.location === null) next.location = null;
+  else if (body.location !== undefined) {
+    const place = coercePlace(body.location);
+    if (!place) throw new HttpError(400, "That is not a position on Earth.");
+    next.location = place;
+  }
   if (typeof body.port === "number" && Number.isFinite(body.port)) next.port = body.port;
 
   const problems = validateConfig(next);
@@ -240,6 +250,10 @@ export async function handleApi(
         if (Number.isFinite(asked) && asked >= 1) limits[field] = Math.floor(asked);
       }
 
+      const asWeekStart = url.searchParams.get("weekStart");
+      const weekStart: WeekStart =
+        asWeekStart === "sun" || asWeekStart === "sat" ? asWeekStart : "mon";
+
       const stats = computeStats(ctx.db, range, {
         includeVideo: ctx.config.includeVideo,
         excluded: ctx.config.excluded,
@@ -247,6 +261,11 @@ export async function handleApi(
         yearBasis,
         daylight,
         limits,
+        // Where the reader is beats any GPS in the photographs: a trip abroad
+        // should not decide what "after dark" means for a year shot at home.
+        location: ctx.config.location,
+        weekStart,
+        markWeekend: url.searchParams.get("weekend") === "mark",
         // An anchor year starts where the library does; failing that, where the
         // photographs do.
         anchorDay: ctx.config.startDay ?? overview.firstDay,

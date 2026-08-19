@@ -153,9 +153,13 @@ re-reading a library for it.
   changed file from being counted with its old numbers.
 - The colours in `web/theme.js` are the validated categorical palette; slot
   order is the colour-blind-safety mechanism, not decoration. Assign by slot,
-  never cycle, and run the palette validator before changing a hex. Eight slots
-  is the whole palette and therefore the cap on series in one chart (`MAX_SERIES`);
-  a ninth lens is "Everything else", never a ninth hue.
+  never cycle, and run the palette validator before changing a hex. Past the
+  eighth slot `seriesColour` *generates* one: golden-angle hues, then a search
+  over hue and lightness candidates scored on OKLab distance from the previous
+  colour through normal vision and simulated protanopia, deuteranopia and
+  tritanopia. All 25 clear every hard gate of the validator in both modes — the
+  worst adjacent pairs are still the documented ones. Never assign a generated
+  colour to anything but a series, and never let one displace a documented slot.
 - Every slide carries a `table`, and the deck's `t` view renders it. Three of
   the light-mode series colours sit below 3:1 against the surface, so a value
   reachable only by colour is a defect.
@@ -173,8 +177,12 @@ re-reading a library for it.
   One lens is one row and one bar; the converter is a shade within it. The key
   is computed from the optics with the converter stripped, so bare and converted
   frames land in the same bucket by construction.
-- Footnotes are a phrase, not a paragraph. Anything needing a sentence to
-  explain belongs in the table view, which carries every value anyway.
+- Footnotes are a phrase, not a paragraph, and never a count of frames or a word
+  about hidden gear — `test/slides.test.ts` enforces both. Denominators live in
+  the table view, which carries every value anyway. A slide with nothing to add
+  has no note, and `frame()` gives that space back to the chart.
+- No number appears twice on one slide. A hero's headline says in words what its
+  big number says in digits, and the tiles under it carry the numbers it does not.
 - `config.startDay` is applied in `resolveRange`, not in the SQL, so one place
   decides what a range means. `Range.clipped` is how the opening slide knows to
   say the start date is holding it back.
@@ -182,7 +190,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 134 tests
+npm test          # 141 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```

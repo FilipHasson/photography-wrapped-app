@@ -157,6 +157,23 @@
                 <span class="hint">Sony FE 24-70mm GM II, rather than FE 24-70mm GM II.</span>
               </span>
             </label>
+
+            <div class="setting location">
+              <span class="setting-label">Where you are</span>
+              <div class="location-row">
+                <button id="location-here" class="ghost" type="button">Use my location</button>
+                <input id="location-label" type="text" maxlength="60" placeholder="Stockholm" />
+                <input id="location-lat" type="number" step="0.01" min="-90" max="90" placeholder="Latitude" />
+                <input id="location-lon" type="number" step="0.01" min="-180" max="180" placeholder="Longitude" />
+                <button id="location-save" class="ghost" type="button">Save</button>
+                <button id="location-clear" class="ghost" type="button">Clear</button>
+              </div>
+              <span class="hint">
+                Used to work out sunrise and sunset for the time-of-day slide. Your own position, not
+                the GPS in your photographs — a fortnight abroad should not decide what "after dark"
+                means for a year shot at home. It never leaves this machine.
+              </span>
+            </div>
           </div>
         </section>
       </section>

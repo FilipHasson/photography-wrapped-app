@@ -254,6 +254,11 @@ function renderSettings() {
   $("setting-video").checked = config.includeVideo;
   $("setting-make").checked = config.naming?.showMake ?? false;
 
+  const place = config.location;
+  $("location-label").value = place?.label ?? "";
+  $("location-lat").value = place ? String(place.lat) : "";
+  $("location-lon").value = place ? String(place.lon) : "";
+
   // Naming is a display choice, so changing it rebuilds the deck rather than
   // the index: nothing is re-read, the labels are simply written differently.
   for (const button of $("setting-lens-style").querySelectorAll("button")) {
@@ -370,6 +375,61 @@ async function saveSettings() {
   } catch (err) {
     toast(err.message, true);
   }
+}
+
+/**
+ * Where the reader is, for the daylight shading.
+ *
+ * Saved like any other setting, and the deck is rebuilt if one is open, since
+ * sunrise decides what "after dark" counts as on the clock slide.
+ */
+async function saveLocation(location) {
+  try {
+    await api("/api/config", { method: "POST", body: { location } });
+    await refreshState();
+    if (!$("view-deck").hidden) await buildDeck(true);
+    toast(location === null ? "Location cleared." : "Location saved.");
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+/**
+ * The device's own position, which is the answer for almost everybody.
+ *
+ * The page is served over loopback, which browsers treat as a secure context,
+ * so this works without a certificate. A refusal is a refusal — the fields
+ * beside the button are there for anyone who would rather type it.
+ */
+function useDeviceLocation() {
+  const button = $("location-here");
+  if (!navigator.geolocation) {
+    toast("This browser will not share a location. Type one instead.", true);
+    return;
+  }
+
+  button.disabled = true;
+  button.textContent = "Asking…";
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      button.disabled = false;
+      button.textContent = "Use my location";
+      const { latitude, longitude } = position.coords;
+      $("location-lat").value = latitude.toFixed(3);
+      $("location-lon").value = longitude.toFixed(3);
+      void saveLocation({
+        lat: Number(latitude.toFixed(3)),
+        lon: Number(longitude.toFixed(3)),
+        label: $("location-label").value.trim(),
+      });
+    },
+    (err) => {
+      button.disabled = false;
+      button.textContent = "Use my location";
+      toast(`No location from the browser: ${err.message}`, true);
+    },
+    { timeout: 10000, maximumAge: 600000 },
+  );
 }
 
 async function saveStartDay(value) {
@@ -604,6 +664,18 @@ $("setting-video").addEventListener("change", () => void saveSettings());
 $("setting-make").addEventListener("change", (event) =>
   void saveNaming({ showMake: event.target.checked }),
 );
+$("location-here").addEventListener("click", useDeviceLocation);
+$("location-clear").addEventListener("click", () => void saveLocation(null));
+$("location-save").addEventListener("click", () => {
+  const lat = Number($("location-lat").value);
+  const lon = Number($("location-lon").value);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    toast("A latitude and a longitude, both.", true);
+    return;
+  }
+  void saveLocation({ lat, lon, label: $("location-label").value.trim() });
+});
+
 $("setting-lens-style").addEventListener("click", (event) => {
   const button = event.target.closest("button[data-style]");
   if (button) void saveNaming({ lensStyle: button.dataset.style });

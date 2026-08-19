@@ -72,8 +72,25 @@ export interface AppConfig {
   includeVideo: boolean;
   /** Optional, and only ever used to title the deck ("Filip's 2025"). */
   ownerName: string;
+  /**
+   * Where the reader is, for anything that needs to know what the sky was
+   * doing — currently the daylight shading on the clock slide.
+   *
+   * Deliberately *not* taken from the photographs. GPS in a frame says where a
+   * trip was, and a fortnight in Iceland should not decide what "after dark"
+   * means for a year shot at home. The browser can fill this in from the device
+   * with one click, or it can be typed.
+   */
+  location: Place | null;
   /** Port for the local UI. 0 picks a free one. */
   port: number;
+}
+
+/** A saved position. The label is whatever the reader wants to call it. */
+export interface Place {
+  lat: number;
+  lon: number;
+  label: string;
 }
 
 export const CONFIG_VERSION = 1;
@@ -89,7 +106,24 @@ export function defaultConfig(): AppConfig {
     mergeRawJpegPairs: true,
     includeVideo: true,
     ownerName: "",
+    location: null,
     port: 4112,
+  };
+}
+
+/** A position is only kept when both halves of it are real. */
+export function coercePlace(value: unknown): Place | null {
+  if (typeof value !== "object" || value === null) return null;
+  const raw = value as Record<string, unknown>;
+  const lat = Number(raw.lat);
+  const lon = Number(raw.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+
+  return {
+    lat,
+    lon,
+    label: typeof raw.label === "string" ? raw.label.trim().slice(0, 60) : "",
   };
 }
 
@@ -186,6 +220,7 @@ function coerce(raw: unknown): AppConfig {
     mergeRawJpegPairs: r.mergeRawJpegPairs !== false,
     includeVideo: r.includeVideo !== false,
     ownerName: typeof r.ownerName === "string" ? r.ownerName.trim().slice(0, 60) : "",
+    location: coercePlace(r.location),
     port: typeof r.port === "number" && Number.isFinite(r.port) ? r.port : base.port,
   };
 }

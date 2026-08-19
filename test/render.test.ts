@@ -357,3 +357,81 @@ describe("lists the reader has made longer", () => {
     assert.ok(fills.size >= 9, `only ${fills.size} distinct fills for eight series`);
   });
 });
+
+/**
+ * Past the palette's eight documented slots the colours are generated, and the
+ * thing that must hold is that they are *different from each other* — a chart
+ * of twenty-five lenses where two of them share a colour is a chart that lies.
+ */
+describe("colours past the palette", () => {
+  test("the documented eight are never touched", async () => {
+    // @ts-expect-error — untyped module, imported for its behaviour.
+    const { seriesColour } = (await import("../src/web/theme.js")) as {
+      seriesColour: (index: number, theme: unknown) => string;
+    };
+
+    for (const theme of [LIGHT, DARK] as Array<{ series: string[] }>) {
+      theme.series.forEach((hex, index) => {
+        assert.equal(seriesColour(index, theme), hex, `slot ${index} moved`);
+      });
+    }
+  });
+
+  test("twenty-five series are twenty-five colours", async () => {
+    // @ts-expect-error — untyped module, imported for its behaviour.
+    const { seriesColour } = (await import("../src/web/theme.js")) as {
+      seriesColour: (index: number, theme: unknown) => string;
+    };
+
+    for (const theme of [LIGHT, DARK]) {
+      const colours = Array.from({ length: 25 }, (_, i) => seriesColour(i, theme));
+      assert.equal(new Set(colours).size, 25, colours.join(","));
+      for (const hex of colours) assert.match(hex, /^#[0-9a-f]{6}$/);
+    }
+  });
+});
+
+/**
+ * The keepers slide answers with a number the columns cannot hold — everything
+ * that was never rated — and it has to survive every shape. It used to be
+ * fitted into whatever room was left, which on the narrow formats was none.
+ */
+describe("a figure beside the chart", () => {
+  const withFigure: Slide = {
+    kind: "columns",
+    id: "keepers",
+    title: "Keepers",
+    headline: "455 frames at four stars or better",
+    items: [
+      { label: "★", value: 1200 },
+      { label: "★★", value: 800 },
+      { label: "★★★", value: 400 },
+      { label: "★★★★", value: 300 },
+      { label: "★★★★★", value: 155 },
+    ],
+    highlight: 4,
+    axisLabel: "Rating",
+    figure: { value: "158,766", label: "never rated  ·  99%" },
+    table: { columns: ["Rating", "Photographs"], rows: [] },
+  };
+
+  test("is drawn, in every shape, inside the frame", () => {
+    for (const format of FORMATS) {
+      const svg = renderSlide(withFigure, LIGHT, format);
+      const texts = [...svg.walk()].filter((node) => node.tag === "text").map((n) => n.textContent);
+      assert.ok(texts.includes("158,766"), `${format.id}: the figure was dropped`);
+
+      for (const node of svg.walk()) {
+        if (node.tag === "svg") continue;
+        const x = Number(node.attrs.get("x") ?? 0);
+        const y = Number(node.attrs.get("y") ?? 0);
+        const width = Number(node.attrs.get("width") ?? 0);
+        const height = Number(node.attrs.get("height") ?? 0);
+        assert.ok(
+          x >= -1 && x + width <= format.width + 1 && y >= -1 && y + height <= format.height + 1,
+          `${format.id}: ${node.tag} left the frame`,
+        );
+      }
+    }
+  });
+});

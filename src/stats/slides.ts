@@ -1,5 +1,13 @@
 import { HEATMAP_MAX_DAYS, MAX_ROWS as MAX_BARS, MAX_SERIES } from "./aggregate.ts";
-import type { DeckStats, DayCount, Place, Series, Streak, YearBucket } from "./aggregate.ts";
+import type {
+  DeckStats,
+  DayCount,
+  Place,
+  Series,
+  Streak,
+  WeekStart,
+  YearBucket,
+} from "./aggregate.ts";
 import { formatDay, formatYearMonth, WEEKDAYS } from "../core/time.ts";
 
 /**
@@ -118,7 +126,14 @@ export type Slide =
       sunrise: number;
       sunset: number;
     })
-  | (Common & { kind: "week"; days: number[] })
+  | (Common & {
+      kind: "week";
+      days: number[];
+      /** Day names in the order they are drawn, the reader's week start first. */
+      labels: string[];
+      /** Which of those positions are the weekend, when it is being marked. */
+      weekend: number[];
+    })
   | (Common & { kind: "calendar"; days: DayCount[]; from: number; to: number })
   | (Common & { kind: "months"; months: Array<{ ym: number; shots: number }> })
   | (Common & { kind: "stack"; months: number[]; series: Series[] })
@@ -313,18 +328,9 @@ function opening(stats: DeckStats, rangeLabel: string): Slide {
       : plural(totals.shots, "photograph"),
     subtitle,
     tiles,
-    // Footnotes are a phrase, never a paragraph: the numbers are the slide, and
-    // anything that needs explaining at length belongs in the table view.
-    note:
-      [
-        totals.files > totals.shots ? `${fmtInt(totals.files)} files, counted once each` : "",
-        range.clipped ? `from ${formatDay(range.from)}` : "",
-        stats.hiddenCameras.length + stats.hiddenLenses.length > 0
-          ? `${stats.hiddenCameras.length + stats.hiddenLenses.length} hidden`
-          : "",
-      ]
-        .filter(Boolean)
-        .join(" · ") || undefined,
+    // Footnotes are a phrase, never a paragraph, and never a count of frames —
+    // the numbers are the slide, and every denominator is in the table view.
+    note: range.clipped ? `From ${formatDay(range.from)}` : undefined,
     table: tableOf(
       ["Measure", "Value"],
       [
@@ -351,6 +357,21 @@ function opening(stats: DeckStats, rangeLabel: string): Slide {
  * choice about how to look rather than a fact about the photographs — so it is
  * a setting on the slide.
  */
+/**
+ * How much of the year is left, for the year that has not finished.
+ *
+ * "2026" beside "2025" reads as a year that came up short until it says why —
+ * and "still running" says why without saying how much, which is the number
+ * anyone actually wants: four months left is a different slide from four days.
+ */
+function runningNote(years: YearBucket[]): string | undefined {
+  const running = years.find((year) => year.partial);
+  if (!running) return undefined;
+  if (running.remaining <= 0) return `${running.label} ends today`;
+  if (running.remaining === 1) return `One day left in ${running.label}`;
+  return `${fmtInt(running.remaining)} days left in ${running.label}`;
+}
+
 function yearsSlide(stats: DeckStats): Slide | null {
   const years = stats.years.filter((year) => year.shots > 0);
   // One year is the opening slide with extra steps.
@@ -380,7 +401,7 @@ function yearsSlide(stats: DeckStats): Slide | null {
       busiest.shots > 0
         ? `${busiest.label} was your busiest year — ${shotsPhrase(busiest.shots)}`
         : "Year by year",
-    note: years.some((year) => year.partial) ? "The last year is still running" : undefined,
+    note: runningNote(years),
     settings: [setting],
     years,
     table: tableOf(
@@ -415,7 +436,7 @@ function rowsSetting(field: string, total: number, value: number, ceiling: numbe
   // Asking for more rows than exist is the same slide as asking for all of
   // them, and the chip that is on has to be one the reader can see.
   const current = Math.min(value, most);
-  const steps = [...new Set([3, 5, 8, 12, 16, 20, 30, current].filter((n) => n < most))].sort(
+  const steps = [...new Set([3, 5, 8, 12, 16, 20, 25, 30, current].filter((n) => n < most))].sort(
     (a, b) => a - b,
   );
 
@@ -491,8 +512,6 @@ function ranked(
       ? `Everything came from one ${noun}`
       : `${top.label} — ${fmtPct(top.share)} of your frames`;
 
-  const hiddenNote = hidden.length > 0 ? `${hidden.map((row) => row.label).join(", ")} hidden` : "";
-
   const rowsChoice = rowsSetting(field, rows.length, limit, MAX_BARS);
 
   return {
@@ -501,7 +520,6 @@ function ranked(
     title,
     subtitle,
     headline,
-    note: hiddenNote || undefined,
     ...(rowsChoice ? { settings: [rowsChoice] } : {}),
     items: drawn,
     // The shades need naming wherever any bar has them.
@@ -650,7 +668,7 @@ function shutterSlide(stats: DeckStats): Slide | null {
     headline: `${shutter.favourite.label} is your default`,
     note: [
       fastest && slowest ? `${fastest.label} to ${slowest.label}` : "",
-      long > 0 ? `${fmtInt(long)} at a second or longer` : "",
+      long > 0 ? `${fmtPct(long / shutter.known)} at a second or longer` : "",
     ]
       .filter(Boolean)
       .join(" · ") || undefined,
@@ -690,7 +708,11 @@ function clockSlide(stats: DeckStats): Slide | null {
       {
         value: "sun",
         label: "Sunrise to sunset",
-        note: stats.location ? "where you shoot, mid-range" : "needs a frame with GPS",
+        note: stats.home
+          ? `at ${stats.home.label || "your location"}`
+          : stats.location
+            ? "from GPS in your frames — set a location in Settings"
+            : "set a location in Settings",
       },
       { value: "06-18", label: "06:00 to 18:00" },
       { value: "07-19", label: "07:00 to 19:00" },
@@ -716,6 +738,11 @@ function clockSlide(stats: DeckStats): Slide | null {
   };
 }
 
+const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+/** How far to rotate a Monday-first week so it starts where the reader does. */
+const WEEK_OFFSET: Record<WeekStart, number> = { mon: 0, sun: 6, sat: 5 };
+
 function weekSlide(stats: DeckStats): Slide | null {
   const total = stats.weekdays.reduce((sum, n) => sum + n, 0);
   if (total === 0) return null;
@@ -726,17 +753,49 @@ function weekSlide(stats: DeckStats): Slide | null {
   }
   const weekend = (stats.weekdays[5] ?? 0) + (stats.weekdays[6] ?? 0);
 
+  // Rotated here rather than in the renderer: the slide decides what its own
+  // week looks like, and the table has to agree with the chart.
+  const offset = WEEK_OFFSET[stats.weekStart];
+  const order = Array.from({ length: 7 }, (_, i) => (i + offset) % 7);
+
+  const settings: SlideSetting[] = [
+    {
+      id: "weekStart",
+      label: "The week starts on",
+      value: stats.weekStart,
+      options: [
+        { value: "mon", label: "Monday" },
+        { value: "sun", label: "Sunday" },
+        { value: "sat", label: "Saturday" },
+      ],
+    },
+    {
+      id: "weekend",
+      label: "The weekend",
+      value: stats.markWeekend ? "mark" : "plain",
+      options: [
+        { value: "plain", label: "Same as the rest" },
+        { value: "mark", label: "In its own colour", note: "Saturday and Sunday" },
+      ],
+    },
+  ];
+
   return {
     kind: "week",
     id: "week",
     title: "Day of the week",
     subtitle: "The shape of your week",
-    headline: `${["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][busiest]} is your day`,
+    headline: `${DAY_NAMES[busiest]} is your day`,
     note: `${fmtPct(weekend / total)} at the weekend`,
-    days: stats.weekdays,
+    settings,
+    days: order.map((day) => stats.weekdays[day] ?? 0),
+    labels: order.map((day) => DAY_NAMES[day] ?? ""),
+    // Positions in the rotated week that are Saturday or Sunday, when they are
+    // to be drawn as their own thing.
+    weekend: stats.markWeekend ? order.flatMap((day, i) => (day >= 5 ? [i] : [])) : [],
     table: tableOf(
       ["Day", "Photographs"],
-      stats.weekdays.map((shots, day) => [WEEKDAYS[day] ?? "", shots]),
+      order.map((day) => [WEEKDAYS[day] ?? "", stats.weekdays[day] ?? 0]),
     ),
   };
 }
@@ -854,8 +913,8 @@ function timelineSlide(stats: DeckStats): Slide | null {
   const pooled = timeline.series.some((series) => series.label === "Everything else");
   const named = timeline.series.length - (pooled ? 1 : 0);
 
-  // The chart is capped by the palette rather than by taste: there are eight
-  // categorical slots and a ninth would have to be an invented hue.
+  // Past the palette's eight slots the colours are generated, so the ceiling
+  // here is what a legend can still name rather than what the palette holds.
   const rowsChoice = rowsSetting(
     "gear",
     pooled ? stats.lenses.length : named,
@@ -1064,19 +1123,20 @@ function burstSlide(stats: DeckStats): Slide | null {
 
   const rate = burst.seconds > 0 ? burst.frames / burst.seconds : burst.frames;
 
+  // Every number appears once. The hero is the frame count, so the headline
+  // says it in words and the tiles carry the numbers it does not.
   return {
     kind: "hero",
     id: "burst",
     title: "The longest burst",
-    headline: `${fmtInt(burst.frames)} frames without letting go`,
+    headline: "The longest you held the shutter down",
     value: fmtInt(burst.frames),
     caption: `frames in ${burst.seconds <= 1 ? "under a second" : `${fmtInt(burst.seconds)} seconds`}`,
-    subtitle: `${formatDay(burst.day)}${burst.camera ? ` · ${burst.camera}` : ""}`,
+    subtitle: burst.camera ?? undefined,
     note: "Frames no more than two seconds apart",
     tiles: [
-      { label: "Frames", value: fmtInt(burst.frames) },
-      { label: "Seconds", value: fmtInt(burst.seconds) },
-      { label: "Rate", value: `${rate.toFixed(1)}/s` },
+      { label: "When", value: formatDay(burst.day) },
+      { label: "Rate", value: `${rate.toFixed(1)}/s`, note: "frames a second" },
     ],
     table: tableOf(
       ["Measure", "Value"],
