@@ -147,6 +147,35 @@ describe("gear", () => {
   });
 });
 
+describe("teleconverters", () => {
+  test("a converted frame keeps the lens it was taken with", () => {
+    const stats = statsFor(db);
+    const tele = stats.lenses.find((lens) => lens.label.includes("70-200"));
+    assert.ok(tele, "expected the telephoto in the list");
+
+    // One row, not two: six frames on one lens, two of them through a 1.4x.
+    assert.equal(tele.shots, 6);
+    assert.deepEqual(tele.parts, [
+      { tc: null, shots: 4 },
+      { tc: "1.4x", shots: 2 },
+    ]);
+  });
+
+  test("the converter is recorded on the frame", () => {
+    const rows = db.allAs<{ tc: string | null; n: number }>(
+      "SELECT tc, COUNT(*) AS n FROM photo WHERE is_primary = 1 AND tc IS NOT NULL GROUP BY tc",
+    );
+    assert.deepEqual(
+      rows.map((row) => ({ tc: row.tc, n: row.n })),
+      [{ tc: "1.4x", n: EXPECTED.teleconverted }],
+    );
+  });
+
+  test("the lens count is unchanged by it", () => {
+    assert.equal(statsFor(db).totals.lenses, EXPECTED.lenses);
+  });
+});
+
 describe("exposure", () => {
   test("snaps focal lengths onto the scale people talk in", () => {
     const stats = statsFor(db);

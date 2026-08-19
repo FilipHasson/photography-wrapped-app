@@ -153,6 +153,10 @@ async function applyConfigPatch(ctx: AppContext, body: Record<string, unknown>):
     next.mergeRawJpegPairs = body.mergeRawJpegPairs;
     dedupeChanged = true;
   }
+  if (body.lensStyle === "full" || body.lensStyle === "short") {
+    next.naming = { ...next.naming, lensStyle: body.lensStyle };
+  }
+  if (typeof body.showMake === "boolean") next.naming = { ...next.naming, showMake: body.showMake };
   if (typeof body.port === "number" && Number.isFinite(body.port)) next.port = body.port;
 
   const problems = validateConfig(next);
@@ -216,6 +220,7 @@ export async function handleApi(
       const stats = computeStats(ctx.db, range, {
         includeVideo: ctx.config.includeVideo,
         excluded: ctx.config.excluded,
+        naming: ctx.config.naming,
       });
       json(res, 200, { range, deck: buildDeck(stats, ctx.config.ownerName) });
       return true;

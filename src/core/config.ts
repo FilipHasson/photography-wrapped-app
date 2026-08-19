@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { configDir, configFile, normPath } from "./paths.ts";
 import { isValidDay } from "./time.ts";
+import { DEFAULT_NAMING, type NamingOptions } from "./gear.ts";
 
 export type SourceKind = "folder" | "lightroom";
 
@@ -56,6 +57,12 @@ export interface AppConfig {
    */
   excluded: Exclusions;
   /**
+   * How gear is written on a slide. A reader preference, not a fact about the
+   * data, so it is applied when a deck is built — changing it re-labels a whole
+   * library at once and never touches the index.
+   */
+  naming: NamingOptions;
+  /**
    * Count a raw file and its out-of-camera JPEG as one photograph. On by
    * default: shooting RAW+JPEG is a storage decision, not two photographs, and
    * leaving it off doubles every number for the people who do it.
@@ -78,6 +85,7 @@ export function defaultConfig(): AppConfig {
     anchors: [],
     startDay: null,
     excluded: { cameras: [], lenses: [] },
+    naming: { ...DEFAULT_NAMING },
     mergeRawJpegPairs: true,
     includeVideo: true,
     ownerName: "",
@@ -171,6 +179,10 @@ function coerce(raw: unknown): AppConfig {
     anchors,
     startDay: isValidDay(Number(r.startDay)) ? Number(r.startDay) : null,
     excluded: { cameras: keyList(excluded.cameras), lenses: keyList(excluded.lenses) },
+    naming: {
+      lensStyle: (r.naming as NamingOptions | undefined)?.lensStyle === "full" ? "full" : "short",
+      showMake: (r.naming as NamingOptions | undefined)?.showMake !== false,
+    },
     mergeRawJpegPairs: r.mergeRawJpegPairs !== false,
     includeVideo: r.includeVideo !== false,
     ownerName: typeof r.ownerName === "string" ? r.ownerName.trim().slice(0, 60) : "",

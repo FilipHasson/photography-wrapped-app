@@ -235,16 +235,17 @@ export async function indexLightroomSource(
     INSERT INTO photo (
       source_id, dir_id, name, name_key, stem, ext, kind, size, mtime_ms, present, seen_run, created_run,
       meta_state, captured_at, epoch_sec, day, year, ym, weekday, hour, sub_sec,
-      camera_id, lens_id, body_serial,
+      camera_id, lens_id, tc, body_serial,
       focal, focal35, aperture, shutter, iso, flash, width, height, orientation,
       lat, lon, duration, rating, pick, color_label, shot_key
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, -1, 0, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, -1, 0, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(dir_id, name_key) DO UPDATE SET
       name = excluded.name, seen_run = excluded.seen_run, meta_state = excluded.meta_state,
       captured_at = excluded.captured_at, epoch_sec = excluded.epoch_sec, day = excluded.day, year = excluded.year, ym = excluded.ym,
       weekday = excluded.weekday, hour = excluded.hour, sub_sec = excluded.sub_sec,
-      camera_id = excluded.camera_id, lens_id = excluded.lens_id, body_serial = excluded.body_serial,
+      camera_id = excluded.camera_id, lens_id = excluded.lens_id, tc = excluded.tc,
+      body_serial = excluded.body_serial,
       focal = excluded.focal, focal35 = excluded.focal35, aperture = excluded.aperture,
       shutter = excluded.shutter, iso = excluded.iso, flash = excluded.flash,
       width = excluded.width, height = excluded.height, orientation = excluded.orientation,
@@ -318,6 +319,7 @@ export async function indexLightroomSource(
           null, // The catalog rounds capture time to the second.
           cameraId,
           lensId,
+          lens?.teleconverter ?? null,
           cleanField(r.cameraSerial ?? "") || null,
           numberOrNull(r.focalLength, 0.5, 5000),
           null, // No 35mm equivalent is harvested, so the barrel figure stands alone.

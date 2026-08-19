@@ -215,6 +215,131 @@ export async function exportDeckPdf(slides, render, filename, onProgress, format
   download(buildPdf(images, format), filename);
 }
 
+// ----------------------------------------------------------------- ZIP -----
+
+/**
+ * A ZIP of PNGs, written by hand like the PDF.
+ *
+ * Entries are stored rather than deflated: a PNG is already compressed, so
+ * deflating it again buys a percent or two and would mean shipping a compressor
+ * — which is the entire reason this file has no dependencies.
+ */
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let value = i;
+    for (let bit = 0; bit < 8; bit++) {
+      value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+    }
+    table[i] = value >>> 0;
+  }
+  return table;
+})();
+
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) crc = CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+/** MS-DOS packs a timestamp into two 16-bit words, seconds in units of two. */
+function dosStamp(date) {
+  return {
+    time: (date.getHours() << 11) | (date.getMinutes() << 5) | (date.getSeconds() >> 1),
+    date: ((date.getFullYear() - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate(),
+  };
+}
+
+export function buildZip(files, now = new Date()) {
+  const stamp = dosStamp(now);
+  const encoded = files.map((file) => ({
+    name: encoder.encode(file.name),
+    bytes: file.bytes,
+    crc: crc32(file.bytes),
+  }));
+
+  const chunks = [];
+  const offsets = [];
+  let length = 0;
+
+  const push = (bytes) => {
+    chunks.push(bytes);
+    length += bytes.length;
+  };
+
+  /** A little-endian record, built from a list of [bytes, value] pairs. */
+  const record = (parts) => {
+    const size = parts.reduce((sum, [width]) => sum + width, 0);
+    const view = new DataView(new ArrayBuffer(size));
+    let at = 0;
+    for (const [width, value] of parts) {
+      if (width === 2) view.setUint16(at, value, true);
+      else view.setUint32(at, value, true);
+      at += width;
+    }
+    return new Uint8Array(view.buffer);
+  };
+
+  encoded.forEach((file) => {
+    offsets.push(length);
+    push(
+      record([
+        [4, 0x04034b50], [2, 20], [2, 0], [2, 0], [2, stamp.time], [2, stamp.date],
+        [4, file.crc], [4, file.bytes.length], [4, file.bytes.length],
+        [2, file.name.length], [2, 0],
+      ]),
+    );
+    push(file.name);
+    push(file.bytes);
+  });
+
+  const directoryStart = length;
+  encoded.forEach((file, i) => {
+    push(
+      record([
+        [4, 0x02014b50], [2, 20], [2, 20], [2, 0], [2, 0], [2, stamp.time], [2, stamp.date],
+        [4, file.crc], [4, file.bytes.length], [4, file.bytes.length],
+        [2, file.name.length], [2, 0], [2, 0], [2, 0], [2, 0], [4, 0], [4, offsets[i]],
+      ]),
+    );
+    push(file.name);
+  });
+
+  push(
+    record([
+      [4, 0x06054b50], [2, 0], [2, 0], [2, encoded.length], [2, encoded.length],
+      [4, length - directoryStart], [4, directoryStart], [2, 0],
+    ]),
+  );
+
+  return new Blob(chunks, { type: "application/zip" });
+}
+
+/** Exports the whole deck as a folder of PNGs, one per slide, in a ZIP. */
+export async function exportDeckZip(slides, render, filename, onProgress, format = DEFAULT_FORMAT) {
+  const files = [];
+
+  for (const [index, slide] of slides.entries()) {
+    onProgress?.(index, slides.length);
+    const canvas = await rasterize(render(slide, index), format);
+    const blob = await new Promise((resolve) => canvas.toBlob((result) => resolve(result), "image/png"));
+    if (!blob) throw new Error("A slide could not be turned into a PNG.");
+
+    // Numbered so they sort in deck order in any file browser.
+    const name = `${String(index + 1).padStart(2, "0")}-${slugify(slide.title)}.png`;
+    files.push({ name, bytes: new Uint8Array(await blob.arrayBuffer()) });
+  }
+
+  onProgress?.(slides.length, slides.length);
+  download(buildZip(files), filename);
+}
+
+const slugify = (value) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "slide";
+
 /** `filip-2025.pdf` — a name that says what it is without needing renaming. */
 export function fileNameFor(deck, extension, slideTitle = "") {
   const clean = (value) =>

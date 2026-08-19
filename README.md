@@ -30,7 +30,7 @@ pick a range, and hit **Show me the deck**.
 ```
 npm start -- --port 8080     # a different port
 npm start -- --no-open       # don't launch a browser
-npm test                     # 94 tests, including a full index-and-count run
+npm test                     # 109 tests, including a full index-and-count run
 npm run typecheck
 ```
 
@@ -82,6 +82,23 @@ The same deck, over whatever span you ask for:
 Every range except all-time also carries the equally long window before it, so
 the opening slide can tell you whether you shot more or less than last time.
 
+### How gear is named
+
+Gear names are written when a deck is built, not when a file is indexed, so
+changing any of this re-labels a library of two hundred thousand photographs
+instantly and re-reads nothing:
+
+- **Lens names — short or as written.** Short drops what nobody says out loud:
+  `FE 200-600mm F5.6-6.3 G OSS` becomes `FE 200-600mm G`, and
+  `FE 70-200mm F2.8 GM OSS II` becomes `FE 70-200mm GM II`. Series marks
+  (`G`, `GM`, `L`, `S`, `Art`) and version numerals stay, because those
+  are what people do say.
+- **The maker in front, or not.** `Sony FE 24-70mm GM II` or
+  `FE 24-70mm GM II`; `Sony a9 III` or `a9 III`.
+
+Grouping never depends on any of it — the key is the name the camera wrote — so
+a display setting can never merge or split two pieces of kit.
+
 ### Milestones and where your library starts
 
 A catalog usually reaches back further than the photography does — phone snaps,
@@ -105,8 +122,21 @@ in your library means no map, no ratings means no keepers slide.
 
 Opening totals · cameras · lenses · **camera + lens pairings** · focal length ·
 aperture · ISO · shutter speed · time of day · day of the week · a calendar of
-every day · which lens was on the camera month by month · keepers · format and
-orientation · where · new gear · your longest burst · a closing summary.
+every day · runs and quiet spells · which lens was on the camera month by month ·
+keepers · format and orientation · where · new gear · your longest burst · a
+closing summary.
+
+A few things the slides do rather than say:
+
+- **The clock is coloured by the time of day** — cool at midnight, warm at
+  midday. A stylised day rather than a computed sunrise, which is what the
+  scale under it says.
+- **A lens used with a teleconverter is one row, not three.** The bar splits
+  into shades: bare glass, then a shade per converter.
+- **Two or three cameras stand up as columns** instead of lying down as short
+  bars in an empty frame.
+- **Keepers carries a figure for everything never rated**, which is usually most
+  of a library and would flatten the five star columns if it were a sixth.
 
 | Key | Does |
 |---|---|
@@ -149,9 +179,11 @@ monthly report becomes one big month, a year becomes twelve small ones. The map
 frames itself on your photographs rather than on the world, so a year spent
 within fifty miles of home is not four dots in an empty rectangle.
 
-- **Save slide (PNG)** — the slide you are on, at twice the format size
+- **Slide (PNG)** — the slide you are on, at twice the format size
   (9:16 comes out 2160×3840).
-- **Save deck (PDF)** — every slide, one page each, at the format's aspect ratio.
+- **Deck (PDF)** — every slide, one page each, at the format's aspect ratio.
+- **Deck (PNGs)** — a ZIP with one numbered PNG per slide, ready to post one at
+  a time.
 
 Both are rendered from the slides themselves rather than from the screen, so
 what you save is what you saw, at full resolution, in the theme you are using.

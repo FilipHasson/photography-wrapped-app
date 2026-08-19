@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import exifr from "exifr";
 import { hasReadableExif, isQuicktimeFamily } from "./media.ts";
-import { normalizeCamera, normalizeLens, cleanField, type GearName } from "./gear.ts";
+import { normalizeCamera, normalizeLens, cleanField, type GearName, type LensName } from "./gear.ts";
 import { apexToAperture, apexToShutter } from "./units.ts";
 import { naiveStamp, parseExifDate } from "./time.ts";
 
@@ -18,7 +18,7 @@ export interface ShotMeta {
   subSec: number | null;
   camera: GearName | null;
   bodySerial: string | null;
-  lens: GearName | null;
+  lens: LensName | null;
   /** Focal length as marked on the barrel, in mm. */
   focal: number | null;
   /** 35mm-equivalent focal length, when the camera reports one. */

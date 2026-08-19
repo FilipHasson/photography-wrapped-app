@@ -32,6 +32,11 @@ export const LIGHT = {
   /** Sequential blue, near-zero to most. One hue, light to dark. */
   ramp: ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf"],
   rampEmpty: "#f0efec",
+  // Two poles for the clock: cool for the small hours, warm for the middle of
+  // the day. Semantic heat rather than categories — the thing being encoded
+  // really is how much light there was — so it ships with a scale legend.
+  night: "#1c5cab",
+  day: "#eda100",
 };
 
 export const DARK = {
@@ -50,6 +55,8 @@ export const DARK = {
   // not as the background.
   ramp: ["#184f95", "#256abf", "#3987e5", "#6da7ec", "#9ec5f4"],
   rampEmpty: "#232322",
+  night: "#3987e5",
+  day: "#c98500",
 };
 
 /** Follows the toggle when one is set, and the OS otherwise. */

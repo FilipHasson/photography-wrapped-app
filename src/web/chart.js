@@ -229,6 +229,50 @@ function frame(slide, theme, position, L) {
 
 // ------------------------------------------------------------- the marks ---
 
+// ------------------------------------------------------------- colour ------
+
+const hex = (colour) => {
+  const value = colour.replace("#", "");
+  const full = value.length === 3 ? value.replace(/./g, (c) => c + c) : value;
+  return [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16));
+};
+
+/** Blends two colours, `t` of the way from the first to the second. */
+function mix(from, to, t) {
+  const a = hex(from);
+  const b = hex(to);
+  const channel = (i) => Math.round(a[i] + (b[i] - a[i]) * Math.max(0, Math.min(1, t)));
+  return `#${[0, 1, 2].map((i) => channel(i).toString(16).padStart(2, "0")).join("")}`;
+}
+
+/**
+ * Shades for the parts of one bar — a lens, then the same lens behind each
+ * teleconverter it was used with.
+ *
+ * Stepping towards the surface rather than to another hue is what keeps it
+ * reading as one lens: the segments are the same thing at different reach, not
+ * different things.
+ */
+function shadeOf(index, count, theme) {
+  if (index === 0 || count < 2) return theme.series[0];
+  return mix(theme.series[0], theme.surface, (index / count) * 0.72);
+}
+
+/**
+ * How much daylight there was, 0 at night and 1 in the middle of the day.
+ *
+ * A stylised day rather than a computed one: real sunrise moves with latitude
+ * and season, and a slide that implied otherwise would be claiming something
+ * this tool does not know. The legend says as much.
+ */
+function daylight(hour) {
+  if (hour >= 8 && hour <= 16) return 1;
+  if (hour >= 20 || hour <= 4) return 0;
+  return hour < 8 ? (hour - 4) / 4 : (20 - hour) / 4;
+}
+
+const hourColour = (hour, theme) => mix(theme.night, theme.day, daylight(hour));
+
 /** A bar: rounded at the data end, square where it leaves the baseline. */
 function bar(root, x, y, width, height, fill, label, opacity = 1) {
   const radius = Math.min(4, height / 2, width / 2);
@@ -264,34 +308,45 @@ function drawBars(root, plot, slide, theme, L) {
   if (items.length === 0) return;
   const max = Math.max(...items.map((item) => item.value), 1);
 
-  if (L.narrow) {
-    drawBarsStacked(root, plot, items, max, theme, L);
+  const legendH = slide.legend?.length ? L.axis * 2.6 : 0;
+  const area = { ...plot, h: plot.h - legendH };
+  if (legendH > 0) drawShadeLegend(root, plot, slide.legend, theme, L);
+
+  // Two or three bars across a tall frame is a lot of nothing. Standing them up
+  // turns the same numbers into something with presence, which is the reason a
+  // two-camera count belongs on a story at all.
+  if (items.length <= 3 && L.tall) {
+    drawBarsAsColumns(root, area, items, max, theme, L);
     return;
   }
 
-  const rowHeight = Math.min(plot.h / items.length, L.label * 4);
-  const top0 = plot.y + Math.max(0, (plot.h - rowHeight * items.length) / 2);
+  if (L.narrow) {
+    drawBarsStacked(root, area, items, max, theme, L);
+    return;
+  }
+
+  const rowHeight = Math.min(area.h / items.length, L.label * 4);
+  const top0 = area.y + Math.max(0, (area.h - rowHeight * items.length) / 2);
   const thickness = Math.min(24, Math.max(6, rowHeight - L.label * 0.9));
   const valueWidth = Math.max(...items.map((item) => measure(item.valueLabel, L.value, 600))) + 20;
-  const labelWidth = Math.min(plot.w * 0.36, 460);
-  const trackX = plot.x + labelWidth + 24;
-  const trackW = Math.max(40, plot.w - labelWidth - valueWidth - 48);
+  const labelWidth = Math.min(area.w * 0.36, 460);
+  const trackX = area.x + labelWidth + 24;
+  const trackW = Math.max(40, area.w - labelWidth - valueWidth - 48);
 
   items.forEach((item, i) => {
     const mid = top0 + i * rowHeight + rowHeight / 2;
     const width = Math.max(2, (item.value / max) * trackW);
-    const fill = item.muted ? theme.axis : theme.series[0];
 
     root.append(
-      text(ellipsize(item.label, labelWidth, L.label, i === 0 ? 600 : 400), plot.x, mid + L.label * 0.34, {
+      text(ellipsize(item.label, labelWidth, L.label, i === 0 ? 600 : 400), area.x, mid + L.label * 0.34, {
         size: L.label,
         weight: i === 0 ? 600 : 400,
         fill: i === 0 ? theme.ink : theme.ink2,
       }),
     );
-    bar(root, trackX, mid - thickness / 2, width, thickness, fill, `${item.label}: ${fmt(item.value)}`);
+    segmentedBar(root, trackX, mid - thickness / 2, width, thickness, item, theme);
     root.append(
-      text(item.valueLabel, plot.x + plot.w, mid + L.value * 0.34, {
+      text(item.valueLabel, area.x + area.w, mid + L.value * 0.34, {
         size: L.value,
         fill: theme.ink2,
         weight: i === 0 ? 600 : 400,
@@ -299,6 +354,123 @@ function drawBars(root, plot, slide, theme, L) {
       }),
     );
   });
+}
+
+/**
+ * One bar, in as many shades as it has parts.
+ *
+ * A lens used bare and behind two converters is one bar in three shades rather
+ * than three bars: the reader is being told how much that lens was used, and
+ * then how it was used.
+ */
+function segmentedBar(root, x, y, width, height, item, theme) {
+  const fill = item.muted ? theme.axis : theme.series[0];
+  const parts = item.segments ?? [];
+
+  if (item.muted || parts.length < 2 || item.value <= 0) {
+    bar(root, x, y, width, height, fill, `${item.label}: ${fmt(item.value)}`);
+    return;
+  }
+
+  let offset = 0;
+  parts.forEach((part, index) => {
+    const share = (part.value / item.value) * width;
+    if (share <= 0) return;
+    const last = index === parts.length - 1;
+    const shade = shadeOf(index, parts.length, theme);
+    // Every piece but the last is square-ended and holds back 2px of surface,
+    // so the bar reads as one bar with divisions rather than a row of small
+    // ones. The last keeps the rounded data end.
+    const drawn = Math.max(1, share - (last ? 0 : 2));
+    const label = `${item.label} ${part.label}: ${fmt(part.value)}`;
+
+    if (last) {
+      bar(root, x + offset, y, drawn, height, shade, label);
+    } else {
+      root.append(titled(el("rect", { x: x + offset, y, width: drawn, height, fill: shade }), label));
+    }
+    offset += share;
+  });
+}
+
+/** Names the shades inside a segmented bar. */
+function drawShadeLegend(root, plot, labels, theme, L) {
+  let x = plot.x;
+  const y = plot.y + plot.h - L.axis;
+
+  labels.forEach((label, index) => {
+    root.append(
+      el("rect", {
+        x,
+        y: y - L.axis * 0.75,
+        width: L.axis * 0.7,
+        height: L.axis * 0.7,
+        rx: 3,
+        fill: shadeOf(index, labels.length, theme),
+      }),
+    );
+    root.append(text(label, x + L.axis, y, { size: L.axis, fill: theme.ink2 }));
+    x += L.axis + measure(label, L.axis) + L.axis * 1.6;
+  });
+}
+
+/**
+ * Two or three bars, stood up.
+ *
+ * Ranked bars lie down because names are long; with only a couple of them there
+ * is room for the name *under* a column, and a column half a slide tall says
+ * "this is the one" in a way a 24px bar never will.
+ */
+function drawBarsAsColumns(root, plot, items, max, theme, L) {
+  const band = plot.w / items.length;
+  const thickness = Math.min(band * 0.5, plot.w * 0.22);
+  const baseline = plot.y + plot.h - L.label * 4.2;
+  const height = Math.max(60, baseline - plot.y - L.subtitle * 2);
+
+  items.forEach((item, i) => {
+    const cx = plot.x + band * (i + 0.5);
+    const barHeight = item.value > 0 ? Math.max(3, (item.value / max) * height) : 0;
+    const fill = item.muted ? theme.axis : theme.series[0];
+
+    column(root, cx - thickness / 2, baseline, thickness, barHeight, fill, `${item.label}: ${fmt(item.value)}`);
+
+    root.append(
+      text(fmt(item.value), cx, baseline - barHeight - L.value * 0.7, {
+        size: L.subtitle * 1.15,
+        weight: 600,
+        fill: theme.ink,
+        anchor: "middle",
+      }),
+    );
+
+    const lines = wrap(item.label, band - L.tiny, L.label, 2, i === 0 ? 600 : 400);
+    lines.forEach((line, row) => {
+      root.append(
+        text(line, cx, baseline + L.label * (1.5 + row * 1.15), {
+          size: L.label,
+          weight: i === 0 ? 600 : 400,
+          fill: i === 0 ? theme.ink : theme.ink2,
+          anchor: "middle",
+        }),
+      );
+    });
+
+    // The share, which the value label carries after its separator.
+    const share = item.valueLabel.split("·").pop();
+    if (share) {
+      root.append(
+        text(share.trim(), cx, baseline + L.label * (1.5 + lines.length * 1.15) + L.value * 0.4, {
+          size: L.value,
+          fill: theme.muted,
+          anchor: "middle",
+        }),
+      );
+    }
+  });
+
+  root.append(
+    el("line", { x1: plot.x, y1: baseline, x2: plot.x + plot.w, y2: baseline, stroke: theme.axis }),
+  );
 }
 
 function drawBarsStacked(root, plot, items, max, theme, L) {
@@ -366,12 +538,47 @@ function drawColumns(root, plot, slide, theme, L) {
     );
   }
 
-  // Every label, or every other one, or every fourth — whatever fits.
-  const widest = Math.max(...items.map((item) => measure(item.label, L.axis)));
-  const stride = Math.max(1, Math.ceil((widest + 12) / band));
+  /**
+   * Which labels get drawn.
+   *
+   * A stride alone is not enough: the highlighted column is always labelled, and
+   * at the long end of a focal-length axis the labels are wider than the ones at
+   * the short end, so a stride that fits at 24mm collides at 600mm. Labels are
+   * placed in priority order and only where the space is actually free.
+   */
+  const taken = [];
+  const fits = (centre, width) => {
+    const left = centre - width / 2;
+    const right = centre + width / 2;
+    if (left < plot.x - 4 || right > plot.x + plot.w + 4) return false;
+    return taken.every((box) => right + 8 < box.left || left - 8 > box.right);
+  };
+  const claim = (centre, width) => taken.push({ left: centre - width / 2, right: centre + width / 2 });
+
+  const centreOf = (i) => plot.x + band * (i + 0.5);
+  const stride = Math.max(
+    1,
+    Math.ceil((Math.max(...items.map((item) => measure(item.label, L.axis))) + 12) / band),
+  );
+
+  // The favourite first, then the stride, then whatever else still fits.
+  const order = [
+    ...(slide.highlight >= 0 ? [slide.highlight] : []),
+    ...items.map((_, i) => i).filter((i) => i % stride === 0),
+    ...items.map((_, i) => i),
+  ];
+  const labelled = new Set();
+  for (const i of order) {
+    const item = items[i];
+    if (!item || labelled.has(i)) continue;
+    const width = measure(item.label, L.axis);
+    if (!fits(centreOf(i), width)) continue;
+    claim(centreOf(i), width);
+    labelled.add(i);
+  }
 
   items.forEach((item, i) => {
-    const cx = plot.x + band * (i + 0.5);
+    const cx = centreOf(i);
     const barHeight = item.value > 0 ? Math.max(2, (item.value / ceiling) * height) : 0;
     const highlighted = i === slide.highlight;
     // One series, one colour; the favourite holds full strength and the rest
@@ -402,7 +609,7 @@ function drawColumns(root, plot, slide, theme, L) {
       );
     }
 
-    if (i % stride === 0 || highlighted) {
+    if (labelled.has(i)) {
       root.append(
         text(item.label, cx, baseline + L.axis * 1.6, {
           size: L.axis,
@@ -424,6 +631,101 @@ function drawColumns(root, plot, slide, theme, L) {
       anchor: "end",
     }),
   );
+
+  // A number the columns cannot show — the frames that were never rated at all,
+  // which dwarf the rated ones and would flatten the chart into a single spike
+  // if they were given a column of their own.
+  if (slide.figure) {
+    const size = Math.min(L.tileValue * 1.6, plot.w * 0.3);
+    const y = baseline + L.axis * 5.4 + size * 0.8;
+    if (y + L.value < plot.y + plot.h + L.axis * 4) {
+      root.append(
+        text(slide.figure.value, plot.x, y, { size, weight: 600, fill: theme.ink }),
+      );
+      root.append(
+        text(ellipsize(slide.figure.label, plot.w, L.value), plot.x, y + L.value * 1.6, {
+          size: L.value,
+          fill: theme.ink2,
+        }),
+      );
+    }
+  }
+}
+
+/**
+ * A line of days, one mark each, with the longest run and the longest silence
+ * picked out of it.
+ *
+ * The calendar answers "when"; this answers "how steadily", which is a shape
+ * rather than a number — and it used to be two sentences of footnote.
+ */
+function drawStrip(root, plot, slide, theme, L) {
+  const counts = new Map(slide.days.map((entry) => [entry.day, entry.shots]));
+  const total = Math.round((toDate(slide.to).getTime() - toDate(slide.from).getTime()) / 86400000) + 1;
+  if (total <= 0) return;
+
+  const cell = plot.w / total;
+  const width = Math.max(1, cell - (cell > 6 ? 1.5 : 0));
+  const bandH = Math.min(plot.h * 0.5, L.tileValue * (L.tall ? 5 : 2.6));
+  const top = plot.y + Math.max(0, (plot.h - bandH) / 2) - L.value * 2;
+  const max = Math.max(...slide.days.map((entry) => entry.shots), 1);
+
+  const xOf = (day) =>
+    plot.x + (Math.round((toDate(day).getTime() - toDate(slide.from).getTime()) / 86400000) * plot.w) / total;
+
+  root.append(
+    el("rect", { x: plot.x, y: top, width: plot.w, height: bandH, fill: theme.rampEmpty, rx: 4 }),
+  );
+
+  for (let i = 0; i < total; i++) {
+    const date = new Date(toDate(slide.from).getTime() + i * 86400000);
+    const value = counts.get(toKey(date)) ?? 0;
+    if (value === 0) continue;
+    // A day is a day whether it held four frames or four hundred, so height
+    // carries the count and presence carries the fact.
+    const height = bandH * (0.35 + 0.65 * Math.sqrt(value / max));
+    root.append(
+      titled(
+        el("rect", {
+          x: plot.x + i * cell,
+          y: top + bandH - height,
+          width,
+          height,
+          fill: theme.series[0],
+        }),
+        `${date.getUTCDate()} ${MONTH_SHORT[date.getUTCMonth()]} ${date.getUTCFullYear()} — ${fmt(value)}`,
+      ),
+    );
+  }
+
+  const spans = [
+    slide.streak ? { ...slide.streak, label: "longest run", colour: theme.series[0] } : null,
+    slide.gap ? { ...slide.gap, label: "quiet spell", colour: theme.axis } : null,
+  ].filter(Boolean);
+
+  spans.forEach((span, index) => {
+    const from = xOf(span.from);
+    const to = xOf(span.to) + cell;
+    const y = top + bandH + L.value * (1.4 + index * 2.6);
+
+    root.append(
+      el("line", { x1: from, y1: y, x2: to, y2: y, stroke: span.colour, "stroke-width": 3 }),
+    );
+    for (const x of [from, to]) {
+      root.append(
+        el("line", { x1: x, y1: y - L.tiny * 0.5, x2: x, y2: y + L.tiny * 0.5, stroke: span.colour, "stroke-width": 3 }),
+      );
+    }
+
+    const caption = `${fmt(span.days)} days ${span.label}`;
+    const centre = Math.min(
+      Math.max(plot.x + measure(caption, L.value) / 2, (from + to) / 2),
+      plot.x + plot.w - measure(caption, L.value) / 2,
+    );
+    root.append(
+      text(caption, centre, y + L.value * 1.5, { size: L.value, fill: theme.ink2, anchor: "middle" }),
+    );
+  });
 }
 
 /** Twenty-four spokes: a day, read as a clock face. */
@@ -454,10 +756,12 @@ function drawClock(root, plot, slide, theme, L) {
           y1: cy + Math.sin(angle) * inner,
           x2: cx + Math.cos(angle) * (inner + length),
           y2: cy + Math.sin(angle) * (inner + length),
-          stroke: theme.series[0],
+          // Cool at midnight, warm at midday: the spoke says when as well as
+          // how many, which is the whole point of a clock face.
+          stroke: hourColour(hour, theme),
           "stroke-width": thickness,
           "stroke-linecap": "round",
-          opacity: hour === peak ? 1 : 0.55,
+          opacity: hour === peak ? 1 : 0.82,
         }),
         `${String(hour).padStart(2, "0")}:00 — ${fmt(value)}`,
       ),
@@ -487,6 +791,36 @@ function drawClock(root, plot, slide, theme, L) {
   root.append(
     text("busiest hour", cx, cy + L.tiny * 1.7, { size: L.tiny, fill: theme.muted, anchor: "middle" }),
   );
+
+  drawClockLegend(root, plot, cy + outer + L.axis * 2.6, theme, L);
+}
+
+/** The scale for the colour, since colour is carrying the time of day. */
+function drawClockLegend(root, plot, y, theme, L) {
+  const width = Math.min(plot.w * 0.6, 420);
+  const x = plot.x + (plot.w - width) / 2;
+  const height = L.tiny * 0.9;
+  if (y + height + L.tiny * 2 > plot.y + plot.h) return;
+
+  // Twenty-four steps rather than a gradient: a gradient would need a def, and
+  // a def does not survive being rasterised as an isolated image everywhere.
+  for (let hour = 0; hour < 24; hour++) {
+    root.append(
+      el("rect", {
+        x: x + (hour / 24) * width,
+        y,
+        width: width / 24 + 0.5,
+        height,
+        fill: hourColour(hour, theme),
+      }),
+    );
+  }
+
+  const label = (value, at, anchor) =>
+    root.append(text(value, at, y + height + L.tiny * 1.4, { size: L.tiny, fill: theme.muted, anchor }));
+  label("midnight", x, "start");
+  label("midday", x + width / 2, "middle");
+  label("midnight", x + width, "end");
 }
 
 const WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -1187,6 +1521,7 @@ const RENDERERS = {
   hero: drawHero,
   bars: drawBars,
   columns: drawColumns,
+  strip: drawStrip,
   clock: drawClock,
   week: drawWeek,
   calendar: drawCalendar,

@@ -1,6 +1,14 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeCamera, normalizeLens, lensNameFromSpec } from "../src/core/gear.ts";
+import {
+  describeCamera,
+  describeLens,
+  normalizeCamera,
+  normalizeLens,
+  lensNameFromSpec,
+  shortLensName,
+  splitTeleconverter,
+} from "../src/core/gear.ts";
 
 /**
  * The invariant these tests exist for: the same piece of kit must produce the
@@ -171,5 +179,75 @@ describe("lenses", () => {
   test("leaves a name alone when the brand is already in it", () => {
     assert.equal(normalizeLens("NIKON", "NIKKOR Z 24-70mm f/2.8 S")?.label, "NIKKOR Z 24-70mm f/2.8 S");
     assert.equal(normalizeLens("SIGMA", "24-70mm F2.8 DG DN")?.label, "Sigma 24-70mm F2.8 DG DN");
+  });
+});
+
+describe("teleconverters", () => {
+  test("a lens with a converter is the same lens", () => {
+    const bare = normalizeLens("SONY", "FE 200-600mm F5.6-6.3 G OSS");
+    const with14 = normalizeLens("SONY", "FE 200-600mm F5.6-6.3 G OSS + 1.4X Teleconverter");
+    const with20 = normalizeLens("SONY", "FE 200-600mm F5.6-6.3 G OSS + 2X Teleconverter");
+
+    // One key, so one row on the slide and one bar to split into shades.
+    assert.equal(with14?.key, bare?.key);
+    assert.equal(with20?.key, bare?.key);
+    assert.equal(bare?.teleconverter, null);
+    assert.equal(with14?.teleconverter, "1.4x");
+    assert.equal(with20?.teleconverter, "2x");
+  });
+
+  test("reads the ways other makers write it", () => {
+    assert.equal(splitTeleconverter("RF100-500mm F4.5-7.1 L IS USM +1.4x III").teleconverter, "1.4x");
+    assert.equal(splitTeleconverter("EF 300mm f/2.8L + 2x Extender").teleconverter, "2x");
+    assert.equal(splitTeleconverter("EF 300mm f/2.8L IS II USM").teleconverter, null);
+  });
+
+  test("a number in a name is not a converter", () => {
+    // Nothing here is a converter, and guessing one would merge two lenses.
+    for (const name of ["Laowa 2x Ultra Macro", "24-70mm F2.8", "Vario-Sonnar T* 24-70mm"]) {
+      assert.equal(splitTeleconverter(name).teleconverter, null, name);
+    }
+  });
+});
+
+describe("how a name is written", () => {
+  test("short names say what a photographer says", () => {
+    const short = (make: string, model: string) =>
+      describeLens(make, model, { lensStyle: "short", showMake: false });
+
+    assert.equal(short("SONY", "FE 200-600mm F5.6-6.3 G OSS"), "FE 200-600mm G");
+    assert.equal(short("SONY", "FE 70-200mm F2.8 GM OSS II"), "FE 70-200mm GM II");
+    assert.equal(short("SONY", "FE 24-70mm F2.8 GM II"), "FE 24-70mm GM II");
+    assert.equal(short("SONY", "FE 600mm F4 GM OSS"), "FE 600mm GM");
+    assert.equal(short("NIKON", "NIKKOR Z 24-70mm f/2.8 S"), "NIKKOR Z 24-70mm S");
+    assert.equal(short("Canon", "RF100-500mm F4.5-7.1 L IS USM"), "RF 100-500mm L");
+  });
+
+  test("the full name is still the full name", () => {
+    assert.equal(
+      describeLens("SONY", "FE 200-600mm F5.6-6.3 G OSS", { lensStyle: "full", showMake: false }),
+      "FE 200-600mm F5.6-6.3 G OSS",
+    );
+  });
+
+  test("the maker can be left off, or kept", () => {
+    const model = "FE 24-70mm F2.8 GM II";
+    assert.equal(describeLens("SONY", model, { lensStyle: "short", showMake: true }), "Sony FE 24-70mm GM II");
+    assert.equal(describeLens("SONY", model, { lensStyle: "short", showMake: false }), "FE 24-70mm GM II");
+
+    assert.equal(describeCamera("SONY", "ILCE-9M3", { lensStyle: "short", showMake: true }), "Sony a9 III");
+    assert.equal(describeCamera("SONY", "ILCE-9M3", { lensStyle: "short", showMake: false }), "a9 III");
+  });
+
+  test("shortening never leaves nothing behind", () => {
+    // A name that is nothing but jargon keeps what it had.
+    assert.equal(shortLensName("OSS"), "OSS");
+    assert.equal(shortLensName("f/2.8"), "f/2.8");
+  });
+
+  test("a stale label is rewritten, not re-indexed", () => {
+    // The point of describing from the raw name: a body indexed before the
+    // Sony rule existed reads correctly the next time a deck is built.
+    assert.equal(describeCamera("SONY", "ILCE-7M2", { lensStyle: "short", showMake: true }), "Sony a7 II");
   });
 });

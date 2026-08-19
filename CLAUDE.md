@@ -35,6 +35,13 @@ Dependencies point one way: `web → server → stats → index → core`.
 
 ## The parts that carry the weight
 
+**Naming happens at read time.** `camera` and `lens` rows keep `raw_make`/`raw_model`
+— the name exactly as the camera wrote it — and `stats/aggregate.ts` builds every
+label from those through `describeCamera`/`describeLens` with the reader s naming
+options. That is why a naming rule added today fixes a library indexed months
+ago, and why the settings panel can re-label two hundred thousand photographs
+without re-reading a file. Keys never move: they are still the model as written.
+
 **`core/gear.ts`** — two jobs, and they must not be confused. Naming is a table
 of makers and product lines (`BRANDS`, `FAMILIES`, `MAKE_ALIASES`) plus a rule
 per maker that writes codes rather than names — Sony `ILCE-`, Panasonic `DC-`,
@@ -101,10 +108,13 @@ Vertical spacing is always measured off the *larger* of two adjacent type sizes 
 that is what the overlap check in `test/render.test.ts` enforces, and what it
 caught when it was not.
 
-**`web/export.js`** — the PDF is written by hand: one JPEG XObject per page plus
-a cross-reference table. Byte offsets are tracked as chunks are appended;
-`test/export.test.ts` checks each offset actually lands on its object, because a
-wrong one produces a blank document rather than an error.
+**`web/export.js`** — the PDF and the ZIP are both written by hand: one JPEG
+XObject per page for the first, stored (never deflated) PNG entries for the
+second, since a PNG is already compressed and deflating it again would mean
+shipping a compressor. Byte offsets are tracked as chunks are appended, and
+`test/export.test.ts` walks both directories checking every offset lands on the
+thing it claims — a wrong one gives a blank document or an unopenable archive
+rather than an error.
 
 ## Invariants worth not breaking
 
@@ -130,6 +140,12 @@ wrong one produces a blank document rather than an error.
   The one exception is the pair of queries that list the hidden gear itself,
   which pass `hideGear: false` — a hidden row nobody can see is a hidden row
   nobody can restore.
+- A teleconverter is stored beside the lens (`photo.tc`), never inside its name.
+  One lens is one row and one bar; the converter is a shade within it. The key
+  is computed from the optics with the converter stripped, so bare and converted
+  frames land in the same bucket by construction.
+- Footnotes are a phrase, not a paragraph. Anything needing a sentence to
+  explain belongs in the table view, which carries every value anyway.
 - `config.startDay` is applied in `resolveRange`, not in the SQL, so one place
   decides what a range means. `Range.clipped` is how the opening slide knows to
   say the start date is holding it back.
@@ -137,7 +153,7 @@ wrong one produces a blank document rather than an error.
 ## Testing
 
 ```bash
-npm test          # 94 tests
+npm test          # 109 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```

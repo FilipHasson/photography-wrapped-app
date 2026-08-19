@@ -20,7 +20,7 @@ const BATCH = 500;
 const UPDATE_SQL = `
 UPDATE photo SET
   meta_state = ?, captured_at = ?, epoch_sec = ?, day = ?, year = ?, ym = ?, weekday = ?, hour = ?, sub_sec = ?,
-  camera_id = ?, lens_id = ?, body_serial = ?,
+  camera_id = ?, lens_id = ?, tc = ?, body_serial = ?,
   focal = ?, focal35 = ?, aperture = ?, shutter = ?, iso = ?, flash = ?,
   width = ?, height = ?, orientation = ?, lat = ?, lon = ?, duration = ?,
   shot_key = ?
@@ -77,6 +77,7 @@ export function metaWriter(db: Db): MetaWriter {
       meta.subSec,
       cameraId,
       lensId,
+      meta.lens?.teleconverter ?? null,
       meta.bodySerial,
       meta.focal,
       meta.focal35,

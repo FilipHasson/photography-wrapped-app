@@ -93,6 +93,9 @@ CREATE TABLE IF NOT EXISTS photo (
 
   camera_id   INTEGER REFERENCES camera(id),
   lens_id     INTEGER REFERENCES lens(id),
+  -- The teleconverter, if any, kept beside the lens rather than inside its
+  -- name: a 200-600 with a 1.4x on the back is the same lens used differently.
+  tc          TEXT,
   body_serial TEXT,
 
   focal       REAL,
@@ -160,6 +163,47 @@ export class Db {
     this.raw.exec("PRAGMA cache_size = -65536"); // ~64 MiB
     this.raw.exec("PRAGMA busy_timeout = 5000");
     this.raw.exec(SCHEMA);
+    this.#migrate();
+  }
+
+  /**
+   * Columns added after the first release.
+   *
+   * `CREATE TABLE IF NOT EXISTS` does nothing to a table that already exists,
+   * so anything added later has to be added here too — an index of two hundred
+   * thousand photographs is not something to ask someone to rebuild because a
+   * column moved.
+   */
+  #migrate(): void {
+    const columns = (table: string) =>
+      new Set(
+        (this.raw.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map(
+          (row) => row.name,
+        ),
+      );
+
+    for (const table of ["camera", "lens"] as const) {
+      const existing = columns(table);
+      // The name as the camera wrote it. Labels are derived from this at query
+      // time, so renaming rules and display settings apply to a library that
+      // was indexed months ago without re-reading a single file.
+      if (!existing.has("raw_make")) {
+        this.raw.exec(`ALTER TABLE ${table} ADD COLUMN raw_make TEXT`);
+      }
+      if (!existing.has("raw_model")) {
+        this.raw.exec(`ALTER TABLE ${table} ADD COLUMN raw_model TEXT`);
+        // Rows from before this column existed hold a tidied name in `model`,
+        // which is the closest thing to the original available and is what the
+        // naming rules were written to accept.
+        this.raw.exec(
+          `UPDATE ${table} SET raw_make = make, raw_model = model WHERE raw_model IS NULL`,
+        );
+      }
+    }
+
+    if (!columns("photo").has("tc")) {
+      this.raw.exec("ALTER TABLE photo ADD COLUMN tc TEXT");
+    }
   }
 
   /** Prepared statements are cached — an index run reuses the same few. */
@@ -269,10 +313,19 @@ export class Db {
     if (hit !== undefined) return hit;
 
     const row = this.prep(
-      `INSERT INTO ${table} (key, label, make, model) VALUES (?, ?, ?, ?)
-       ON CONFLICT(key) DO UPDATE SET label = excluded.label, make = excluded.make, model = excluded.model
+      `INSERT INTO ${table} (key, label, make, model, raw_make, raw_model) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET
+         label = excluded.label, make = excluded.make, model = excluded.model,
+         raw_make = excluded.raw_make, raw_model = excluded.raw_model
        RETURNING id`,
-    ).get(name.key, name.label, name.make, name.model) as { id: number };
+    ).get(
+      name.key,
+      name.label,
+      name.make,
+      name.model,
+      name.raw.make,
+      name.raw.model,
+    ) as { id: number };
 
     cache.set(name.key, row.id);
     return row.id;

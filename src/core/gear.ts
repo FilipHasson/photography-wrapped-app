@@ -15,10 +15,18 @@
 export interface GearName {
   /** Grouping key. Never shown. */
   key: string;
-  /** What appears on a slide. */
+  /** A sensible default label, for anything not asking for a specific style. */
   label: string;
   make: string;
   model: string;
+  /**
+   * What the camera actually wrote.
+   *
+   * Kept because display rules change and libraries do not: labels are derived
+   * from this whenever a deck is built, so a renaming rule or a settings toggle
+   * reaches a library indexed months ago without re-reading a single file.
+   */
+  raw: { make: string; model: string };
 }
 
 export function cleanField(value: unknown): string {
@@ -302,6 +310,7 @@ export function normalizeCamera(makeRaw: unknown, modelRaw: unknown): GearName |
     label: label.trim(),
     make: displayMake,
     model: displayModel,
+    raw: { make, model },
   };
 }
 
@@ -376,7 +385,45 @@ function tidyLens(model: string): string {
     .trim();
 }
 
-export function normalizeLens(makeRaw: unknown, modelRaw: unknown, spec?: unknown): GearName | null {
+/**
+ * Pulls a teleconverter off the end of a lens name.
+ *
+ * A 200-600 with a 1.4× on the back is the same lens, used differently — it
+ * belongs in the same row of "which lens do I reach for", not in a row of its
+ * own two places further down. So the converter is split off here and carried
+ * beside the lens rather than inside its name.
+ *
+ * Only an explicit one counts: a `+` or the word itself. Plenty of lenses have
+ * a bare number followed by an x in their name, and none of them mean this.
+ */
+export function splitTeleconverter(model: string): { optics: string; teleconverter: string | null } {
+  const match = model.match(
+    /\s*(?:\+\s*)?(\d(?:\.\d)?)\s*x\s*(?:teleconverter|tele\s*converter|extender|tc)?\s*(?:i{1,3})?\s*$/i,
+  );
+  if (!match) return { optics: model, teleconverter: null };
+
+  // A bare "2x" with nothing marking it as a converter is part of the name.
+  const explicit = /\+/.test(match[0]) || /teleconverter|extender|\btc\b/i.test(match[0]);
+  if (!explicit) return { optics: model, teleconverter: null };
+
+  const factor = Number(match[1]);
+  if (!Number.isFinite(factor) || factor < 1.1 || factor > 3) {
+    return { optics: model, teleconverter: null };
+  }
+
+  const optics = model.slice(0, model.length - match[0].length).replace(/\s*\+\s*$/, "").trim();
+  if (optics === "") return { optics: model, teleconverter: null };
+
+  // `1.4x` and `2x`, however the camera spelled them.
+  return { optics, teleconverter: `${factor % 1 === 0 ? factor.toFixed(0) : factor}x` };
+}
+
+export interface LensName extends GearName {
+  /** `1.4x`, `2x`, or null for the bare lens. */
+  teleconverter: string | null;
+}
+
+export function normalizeLens(makeRaw: unknown, modelRaw: unknown, spec?: unknown): LensName | null {
   const make = cleanField(makeRaw);
   let model = cleanField(modelRaw);
 
@@ -387,7 +434,8 @@ export function normalizeLens(makeRaw: unknown, modelRaw: unknown, spec?: unknow
   }
 
   // Sigma and Tamron append a release code after a pipe (`| Art 019`).
-  const label = tidyLens(model.replace(/\s*\|\s*/g, " "));
+  const { optics, teleconverter } = splitTeleconverter(model.replace(/\s*\|\s*/g, " "));
+  const label = tidyLens(optics);
   const displayMake = make === "" ? "" : tidyMake(make);
 
   // The make is only worth adding when the name does not already carry a brand.
@@ -396,10 +444,10 @@ export function normalizeLens(makeRaw: unknown, modelRaw: unknown, spec?: unknow
   const named = label.toLowerCase().includes(displayMake.toLowerCase()) || label !== stripBrandPrefix(label);
   const withMake = displayMake !== "" && !named ? `${displayMake} ${label}` : label;
 
-  // The key is built from the optics alone — brand stripped, aperture notation
-  // normalized (`F2.8`, `f/2.8`, `f2.8`), and the release codes Sigma and
-  // Tamron append (`019`, `A036`) dropped, since those move with a firmware
-  // revision rather than with the glass.
+  // The key is built from the optics alone — brand stripped, converter removed,
+  // aperture notation normalized (`F2.8`, `f/2.8`, `f2.8`), and the release
+  // codes Sigma and Tamron append (`019`, `A036`) dropped, since those move
+  // with a firmware revision rather than with the glass.
   const key = keyOf(
     stripBrandPrefix(label)
       .replace(/f\s*\/\s*(\d)/gi, "f$1")
@@ -408,7 +456,100 @@ export function normalizeLens(makeRaw: unknown, modelRaw: unknown, spec?: unknow
   );
   if (key === "") return null;
 
-  return { key, label: withMake, make: displayMake, model: label };
+  // The raw model has the converter taken off it: the lens is the lens.
+  return { key, label: withMake, make: displayMake, model: label, raw: { make, model: optics }, teleconverter };
+}
+
+// ------------------------------------------------------------- naming ------
+
+/**
+ * How gear is written on a slide.
+ *
+ * These are the reader's preferences, not facts about the data, so they are
+ * applied when a deck is built rather than when a file is indexed — changing
+ * one re-labels a library of two hundred thousand photographs instantly, and
+ * the keys everything is grouped by never move.
+ */
+export interface NamingOptions {
+  /** `short` drops what a photographer never says out loud. */
+  lensStyle: "full" | "short";
+  /** Whether `Sony` belongs in front of `FE 24-70mm GM II`. */
+  showMake: boolean;
+}
+
+// Short names by default, because the jargon in a lens name is not what anyone
+// calls it; the maker stays by default, because "X-T5" alone is a part number
+// until you know whose it is. Both are one toggle away.
+export const DEFAULT_NAMING: NamingOptions = { lensStyle: "short", showMake: true };
+
+/**
+ * The parts of a lens name that describe the engineering rather than the lens:
+ * stabilisation, motor type, coatings, element counts. Nobody says "the 200-600
+ * G OSS"; they say "the 200-600".
+ *
+ * Deliberately not dropped: the series marks — `G`, `GM`, `L`, `S`, `Art`,
+ * `Sports` — and version numerals, because those are what people *do* say, and
+ * what tells two generations of one lens apart.
+ */
+const LENS_JARGON =
+  /\b(oss|ois|os|vr|vc|is|usm|ssm|sam|stm|lm|wr|xd|rxd|vxd|pz|if|apo|asph|aspherical|ed|hsm|nano|hri|ldh|uld)\b/gi;
+
+/**
+ * Line names that only mean anything as a pair. Dropping half of "DG DN", or
+ * half of "Di III" and leaving a stranded numeral that was never a version, is
+ * worse than leaving both alone.
+ */
+const LENS_LINES = /\b(dg\s+(?:dn|hsm|os)|dc\s+(?:dn|hsm)|di\s+ii+|di\s+iii)\b/gi;
+
+/** `FE 200-600mm F5.6-6.3 G OSS` → `FE 200-600mm G`. */
+export function shortLensName(name: string): string {
+  const trimmed = name
+    .replace(LENS_LINES, " ")
+    // Aperture goes, but a designation stuck to it stays: `f/2.8L` → `L`.
+    //
+    // The prefix in the match is what keeps `XF16-55mm` intact: an aperture
+    // follows a space or the focal length, never a letter, and the `F16` inside
+    // a mount name would otherwise read as f/16 and be deleted.
+    .replace(/(^|\s|mm)f\s*\/?\s*\d[\d.]*(?:\s*-\s*\d[\d.]*)?([A-Za-z])?/gi, "$1$2")
+    .replace(LENS_JARGON, " ")
+    // Sigma and Tamron release codes: `019`, `A036`.
+    .replace(/(^|\s)[a-z]?\d{3}(?=\s|$)(?!\s*mm)/gi, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  // Never shorten a name into nothing: a lens called only by its aperture keeps
+  // what it had.
+  return trimmed === "" || !/\d/.test(trimmed) ? name : trimmed;
+}
+
+/**
+ * The lens as it should appear, given the reader's preferences.
+ *
+ * Takes what the camera wrote and runs the whole pipeline — the same one the
+ * indexer runs — so a name stored a year ago is written the way the rules say
+ * today. Grouping is untouched: this only ever produces a string.
+ */
+export function describeLens(
+  makeRaw: string,
+  modelRaw: string,
+  options: NamingOptions = DEFAULT_NAMING,
+): string {
+  const name = normalizeLens(makeRaw, modelRaw);
+  if (!name) return modelRaw;
+
+  const base = options.showMake ? name.label : name.model;
+  return options.lensStyle === "short" ? shortLensName(base) : base;
+}
+
+/** The body as it should appear. */
+export function describeCamera(
+  makeRaw: string,
+  modelRaw: string,
+  options: NamingOptions = DEFAULT_NAMING,
+): string {
+  const name = normalizeCamera(makeRaw, modelRaw);
+  if (!name) return modelRaw;
+  return options.showMake ? name.label : name.model;
 }
 
 /** The pairing the deck is really about: one body, one lens. */

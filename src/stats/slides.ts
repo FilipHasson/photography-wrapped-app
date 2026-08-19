@@ -1,4 +1,4 @@
-import type { DeckStats, DayCount, Place, Series } from "./aggregate.ts";
+import type { DeckStats, DayCount, Place, Series, Streak } from "./aggregate.ts";
 import { formatDay, formatYearMonth, WEEKDAYS } from "../core/time.ts";
 
 /**
@@ -55,13 +55,38 @@ export type Slide =
   | (Common & { kind: "hero"; value: string; caption?: string; tiles: Tile[] })
   | (Common & {
       kind: "bars";
-      items: Array<{ label: string; value: number; valueLabel: string; share: number; muted?: boolean }>;
+      items: Array<{
+        label: string;
+        value: number;
+        valueLabel: string;
+        share: number;
+        muted?: boolean;
+        /**
+         * The bar split by teleconverter. One lens is one bar; the converter is
+         * a shade inside it, because a 200-600 with a 1.4x on the back is the
+         * same lens being used further away.
+         */
+        segments?: Array<{ label: string; value: number }>;
+      }>;
+      /** Names the shades, when any bar has them. */
+      legend?: string[];
     })
   | (Common & {
       kind: "columns";
       items: Array<{ label: string; value: number }>;
       highlight: number;
       axisLabel: string;
+      /** An answer the columns cannot give, set beside them in full size. */
+      figure?: { value: string; label: string };
+    })
+  | (Common & {
+      kind: "strip";
+      /** One mark per day across the range, shot or not. */
+      days: DayCount[];
+      from: number;
+      to: number;
+      streak: Streak | null;
+      gap: Streak | null;
     })
   | (Common & { kind: "clock"; hours: number[] })
   | (Common & { kind: "week"; days: number[] })
@@ -185,7 +210,13 @@ export function buildDeck(stats: DeckStats, ownerName = ""): Deck {
   ];
   for (const slide of distributions) if (slide) slides.push(slide);
 
-  const rhythm = [clockSlide(stats), weekSlide(stats), calendarSlide(stats), timelineSlide(stats)];
+  const rhythm = [
+    clockSlide(stats),
+    weekSlide(stats),
+    calendarSlide(stats),
+    streaksSlide(stats),
+    timelineSlide(stats),
+  ];
   for (const slide of rhythm) if (slide) slides.push(slide);
 
   const extras = [
@@ -216,8 +247,16 @@ function opening(stats: DeckStats, rangeLabel: string): Slide {
       value: fmtInt(totals.cameras),
       note: totals.lenses > 0 ? `${fmtInt(totals.lenses)} ${plural(totals.lenses, "lens", "lenses")}` : undefined,
     },
-    { label: "On disk", value: fmtBytes(totals.bytes), note: `${fmtInt(totals.files)} files` },
   ];
+
+  // A catalog-only library knows nothing about file sizes, and a tile reading
+  // "0 B" is worse than a tile that is not there.
+  if (totals.bytes > 0) {
+    tiles.push({ label: "On disk", value: fmtBytes(totals.bytes), note: `${fmtInt(totals.files)} files` });
+  } else if (totals.daysInRange >= 14) {
+    const perWeek = (totals.shots / totals.daysInRange) * 7;
+    tiles.push({ label: "A week", value: `${Math.round(perWeek)}`, note: "photographs, on average" });
+  }
 
   let subtitle = `${formatDay(totals.firstDay ?? range.from)} — ${formatDay(totals.lastDay ?? range.to)}`;
   if (totals.previousShots !== null && range.previous) {
@@ -242,20 +281,18 @@ function opening(stats: DeckStats, rangeLabel: string): Slide {
       : plural(totals.shots, "photograph"),
     subtitle,
     tiles,
+    // Footnotes are a phrase, never a paragraph: the numbers are the slide, and
+    // anything that needs explaining at length belongs in the table view.
     note:
       [
-        totals.files > totals.shots
-          ? `${fmtInt(totals.files)} files, counted as ${fmtInt(totals.shots)} photographs — raw and JPEG pairs, and files seen by more than one source, count once.`
-          : "",
-        // Both of these change every number on every slide, so they are said
-        // once, plainly, on the slide that opens the deck.
-        range.clipped ? `Starts at ${formatDay(range.from)}; anything earlier is left out of this library.` : "",
+        totals.files > totals.shots ? `${fmtInt(totals.files)} files, counted once each` : "",
+        range.clipped ? `from ${formatDay(range.from)}` : "",
         stats.hiddenCameras.length + stats.hiddenLenses.length > 0
-          ? `${stats.hiddenCameras.length + stats.hiddenLenses.length} pieces of gear are hidden.`
+          ? `${stats.hiddenCameras.length + stats.hiddenLenses.length} hidden`
           : "",
       ]
         .filter(Boolean)
-        .join(" ") || undefined,
+        .join(" · ") || undefined,
     table: tableOf(
       ["Measure", "Value"],
       [
@@ -288,13 +325,22 @@ function ranked(
   const top = rows[0];
   if (!top) return null;
 
-  // Drawn: the leaders, then everything else as one bar.
+  // Drawn: the leaders, then everything else as one bar. A lens used with a
+  // teleconverter keeps its own row and carries the split inside the bar.
   const drawn = rows.slice(0, TOP_BARS).map((row) => ({
     label: row.label,
     value: row.shots,
     valueLabel: `${fmtInt(row.shots)}  ·  ${fmtPct(row.share)}`,
     share: row.share,
     muted: false,
+    ...(row.parts && row.parts.length > 1
+      ? {
+          segments: row.parts.map((part) => ({
+            label: part.tc === null ? "bare" : `with ${part.tc}`,
+            value: part.shots,
+          })),
+        }
+      : {}),
   }));
 
   const tail = rows.slice(TOP_BARS);
@@ -321,16 +367,10 @@ function ranked(
       ? `Everything came from one ${noun}`
       : `${top.label} — ${fmtPct(top.share)} of your frames`;
 
-  const subject = noun === "pairing" ? "both a body and a lens" : `a ${noun}`;
   const coverage =
-    known < stats.totals.shots
-      ? `${fmtInt(known)} of ${shotsPhrase(stats.totals.shots)} recorded ${subject}; the rest are not counted here.`
-      : undefined;
+    known < stats.totals.shots ? `${fmtInt(known)} of ${fmtInt(stats.totals.shots)} frames recorded one` : "";
 
-  const hiddenNote =
-    hidden.length > 0
-      ? `${hidden.length} hidden and left out of every count on every slide: ${hidden.map((row) => row.label).join(", ")}.`
-      : "";
+  const hiddenNote = hidden.length > 0 ? `${hidden.map((row) => row.label).join(", ")} hidden` : "";
 
   return {
     kind: "bars",
@@ -338,13 +378,36 @@ function ranked(
     title,
     subtitle,
     headline,
-    note: [coverage, hiddenNote].filter(Boolean).join(" ") || undefined,
+    note: [coverage, hiddenNote].filter(Boolean).join(" · ") || undefined,
     items: drawn,
+    // The shades need naming wherever any bar has them.
+    ...(drawn.some((item) => item.segments)
+      ? {
+          legend: [
+            ...new Set(drawn.flatMap((item) => (item.segments ?? []).map((part) => part.label))),
+          ],
+        }
+      : {}),
     table: {
-      columns: [title, "Photographs", "Share", "First", "Last"],
+      columns: [
+        title,
+        "Photographs",
+        ...(listed.some((row) => row.parts) ? ["With a converter"] : []),
+        "Share",
+        "First",
+        "Last",
+      ],
       rows: listed.map((row) => [
         row.label,
         row.shots,
+        ...(listed.some((entry) => entry.parts)
+          ? [
+              (row.parts ?? [])
+                .filter((part) => part.tc !== null)
+                .map((part) => `${part.tc} × ${fmtInt(part.shots)}`)
+                .join(", ") || "—",
+            ]
+          : []),
         row.excluded ? "hidden" : fmtPct(row.share),
         row.firstDay ? formatDay(row.firstDay) : "—",
         row.lastDay ? formatDay(row.lastDay) : "—",
@@ -372,12 +435,12 @@ function focalSlide(stats: DeckStats): Slide | null {
     subtitle: "Where you stood, in millimetres",
     headline: `${favourite.label} is your focal length — ${fmtPct(favourite.shots / focal.known)} of the frames`,
     note: [
-      widest && longest ? `From ${widest.label} to ${longest.label}.` : "",
-      topClass ? `Mostly ${topClass.label} work (${fmtPct(topClass.shots / focal.known)}).` : "",
-      `Known for ${fmtInt(focal.known)} of ${shotsPhrase(stats.totals.shots)}.`,
+      widest && longest ? `${widest.label} to ${longest.label}` : "",
+      topClass ? `mostly ${topClass.label}` : "",
+      `${fmtInt(focal.known)} frames`,
     ]
       .filter(Boolean)
-      .join(" "),
+      .join(" · "),
     items: focal.buckets.map((bucket) => ({ label: bucket.label, value: bucket.shots })),
     highlight: focal.buckets.indexOf(favourite),
     axisLabel: "Focal length",
@@ -405,7 +468,7 @@ function apertureSlide(stats: DeckStats): Slide | null {
     title: "Aperture",
     subtitle: "How much you let in",
     headline: `${aperture.favourite.label} more than any other stop`,
-    note: `${fmtPct(wideOpen / aperture.known)} at f/2 or wider, ${fmtPct(stoppedDown / aperture.known)} at f/8 or smaller. Known for ${fmtInt(aperture.known)} frames.`,
+    note: `${fmtPct(wideOpen / aperture.known)} at f/2 or wider · ${fmtPct(stoppedDown / aperture.known)} at f/8 or smaller · ${fmtInt(aperture.known)} frames`,
     items: aperture.buckets.map((bucket) => ({ label: bucket.label, value: bucket.shots })),
     highlight: aperture.buckets.indexOf(aperture.favourite),
     axisLabel: "Aperture",
@@ -433,12 +496,12 @@ function isoSlide(stats: DeckStats): Slide | null {
     subtitle: "How dark it got",
     headline: `${iso.favourite.label} is where you live`,
     note: [
-      base && highest ? `${base.label} to ${highest.label}.` : "",
-      `${fmtPct(high / iso.known)} of frames at ISO 3200 or above.`,
-      `Known for ${fmtInt(iso.known)} frames.`,
+      base && highest ? `${base.label} to ${highest.label}` : "",
+      `${fmtPct(high / iso.known)} at 3200 or above`,
+      `${fmtInt(iso.known)} frames`,
     ]
       .filter(Boolean)
-      .join(" "),
+      .join(" · "),
     items: iso.buckets.map((bucket) => ({ label: bucket.label.replace("ISO ", ""), value: bucket.shots })),
     highlight: iso.buckets.indexOf(iso.favourite),
     axisLabel: "ISO",
@@ -464,12 +527,12 @@ function shutterSlide(stats: DeckStats): Slide | null {
     subtitle: "How still you held it",
     headline: `${shutter.favourite.label} is your default`,
     note: [
-      fastest && slowest ? `Fastest ${fastest.label}, slowest ${slowest.label}.` : "",
-      long > 0 ? `${fmtInt(long)} ${plural(long, "frame")} at a second or longer.` : "",
-      `Known for ${fmtInt(shutter.known)} frames.`,
+      fastest && slowest ? `${fastest.label} to ${slowest.label}` : "",
+      long > 0 ? `${fmtInt(long)} at a second or longer` : "",
+      `${fmtInt(shutter.known)} frames`,
     ]
       .filter(Boolean)
-      .join(" "),
+      .join(" · "),
     items: shutter.buckets.map((bucket) => ({ label: bucket.label, value: bucket.shots })),
     highlight: shutter.buckets.indexOf(shutter.favourite),
     axisLabel: "Shutter speed",
@@ -500,7 +563,7 @@ function clockSlide(stats: DeckStats): Slide | null {
     title: "Time of day",
     subtitle: "When the shutter goes",
     headline: `${hourLabel(peak)} is your hour — ${fmtPct((stats.hours[peak] ?? 0) / total)} of everything`,
-    note: `${fmtPct(morning / total)} between 05:00 and 10:00, ${fmtPct(night / total)} between 22:00 and 05:00. Clock time as the camera recorded it, never converted.`,
+    note: `${fmtPct(morning / total)} before 10:00 · ${fmtPct(night / total)} after dark`,
     hours: stats.hours,
     table: tableOf(
       ["Hour", "Photographs"],
@@ -525,7 +588,7 @@ function weekSlide(stats: DeckStats): Slide | null {
     title: "Day of the week",
     subtitle: "The shape of your week",
     headline: `${["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][busiest]} is your day`,
-    note: `${fmtPct(weekend / total)} of your frames were taken at the weekend.`,
+    note: `${fmtPct(weekend / total)} at the weekend`,
     days: stats.weekdays,
     table: tableOf(
       ["Day", "Photographs"],
@@ -535,20 +598,8 @@ function weekSlide(stats: DeckStats): Slide | null {
 }
 
 function calendarSlide(stats: DeckStats): Slide | null {
-  const { busiestDay, longestStreak, longestGap, range } = stats;
+  const { busiestDay, range } = stats;
   if (!busiestDay) return null;
-
-  const notes: string[] = [];
-  if (longestStreak && longestStreak.days > 1) {
-    notes.push(
-      `Longest run: ${longestStreak.days} days straight, ${formatDay(longestStreak.from)} to ${formatDay(longestStreak.to)}.`,
-    );
-  }
-  if (longestGap && longestGap.days > 1) {
-    notes.push(
-      `Longest quiet spell: ${fmtInt(longestGap.days)} days between ${formatDay(longestGap.from)} and ${formatDay(longestGap.to)}.`,
-    );
-  }
 
   const headline = `${formatDay(busiestDay.day)} — ${shotsPhrase(busiestDay.shots)} in one day`;
 
@@ -559,7 +610,7 @@ function calendarSlide(stats: DeckStats): Slide | null {
       title: "Every day",
       subtitle: "One square per day",
       headline,
-      note: notes.join(" "),
+      note: `${fmtInt(stats.totals.daysShot)} days out of ${fmtInt(stats.totals.daysInRange)}`,
       days: stats.daily,
       from: range.from,
       to: range.to,
@@ -577,11 +628,66 @@ function calendarSlide(stats: DeckStats): Slide | null {
     title: "Month by month",
     subtitle: "The long view",
     headline,
-    note: notes.join(" "),
+    note: `${fmtInt(stats.totals.daysShot)} days out of ${fmtInt(stats.totals.daysInRange)}`,
     months: stats.monthly,
     table: tableOf(
       ["Month", "Photographs"],
       stats.monthly.map((entry) => [formatYearMonth(entry.ym), entry.shots]),
+    ),
+  };
+}
+
+/**
+ * Runs and quiet spells, which used to be two sentences under the calendar.
+ *
+ * They are the answer to a question the calendar does not ask — how *steadily*
+ * do you shoot — and a shape rather than a number: a line of days, each one
+ * marked or not, with the longest run and the longest silence picked out of it.
+ */
+function streaksSlide(stats: DeckStats): Slide | null {
+  const { longestStreak, longestGap, range, daily } = stats;
+  if (daily.length === 0) return null;
+  if (!longestStreak && !longestGap) return null;
+
+  const run = longestStreak?.days ?? 0;
+  const quiet = longestGap?.days ?? 0;
+  // Nothing to say about a fortnight where both are a day or two.
+  if (run < 2 && quiet < 3) return null;
+
+  const headline =
+    run >= quiet
+      ? `${run} days in a row`
+      : `${fmtInt(quiet)} days without picking it up`;
+
+  return {
+    kind: "strip",
+    id: "streaks",
+    title: "Runs and quiet spells",
+    subtitle: "Every day in the range, shot or not",
+    headline,
+    note: `${fmtInt(stats.totals.daysShot)} of ${fmtInt(stats.totals.daysInRange)} days`,
+    days: daily,
+    from: range.from,
+    to: range.to,
+    streak: longestStreak,
+    gap: longestGap,
+    table: tableOf(
+      ["Measure", "Days", "From", "To"],
+      [
+        [
+          "Longest run",
+          longestStreak?.days ?? 0,
+          longestStreak ? formatDay(longestStreak.from) : "—",
+          longestStreak ? formatDay(longestStreak.to) : "—",
+        ],
+        [
+          "Longest quiet spell",
+          longestGap?.days ?? 0,
+          longestGap ? formatDay(longestGap.from) : "—",
+          longestGap ? formatDay(longestGap.to) : "—",
+        ],
+        ["Days out", stats.totals.daysShot, formatDay(range.from), formatDay(range.to)],
+      ],
     ),
   };
 }
@@ -611,9 +717,7 @@ function timelineSlide(stats: DeckStats): Slide | null {
       leader && (leader.values[lastIndex] ?? 0) > 0
         ? `${leader.label} closed out ${formatYearMonth(timeline.months[lastIndex] as number)}`
         : "How your kit rotated",
-    note: pooled
-      ? `Your ${named} most-used lenses, with everything else pooled.`
-      : `Every lens you used, month by month.`,
+    note: pooled ? `Your ${named} most-used lenses, the rest pooled` : "Every lens you used",
     months: timeline.months,
     series: timeline.series,
     table: tableOf(
@@ -633,22 +737,34 @@ function keepersSlide(stats: DeckStats): Slide | null {
   const keepers = stats.totals.keepers;
   const fourPlus = (stats.ratings[4] ?? 0) + (stats.ratings[5] ?? 0);
 
+  // Everything that was never given a star. It dwarfs the rated frames in most
+  // libraries, which is why it is a figure beside the chart rather than a sixth
+  // column that would flatten the other five.
+  const unrated = Math.max(0, stats.totals.shots - rated);
+
   return {
     kind: "columns",
     id: "keepers",
     title: "Keepers",
     subtitle: "What survived the edit",
     headline: `${fmtInt(fourPlus)} ${plural(fourPlus, "frame")} at four stars or better`,
-    note: `${fmtPct(keepers / stats.totals.shots)} of everything you shot in this range. Ratings come from your Lightroom catalog; ${fmtInt(rated)} ${plural(rated, "frame")} carry one.`,
+    note: `${fmtPct(keepers / stats.totals.shots)} of the range · ratings come from Lightroom`,
     items: [1, 2, 3, 4, 5].map((stars) => ({
       label: "*".repeat(stars),
       value: stats.ratings[stars] ?? 0,
     })),
     highlight: -1,
     axisLabel: "Rating",
+    figure: { value: fmtInt(unrated), label: `never rated  ·  ${fmtPct(unrated / stats.totals.shots)}` },
     table: tableOf(
       ["Rating", "Photographs"],
-      [1, 2, 3, 4, 5].map((stars) => [`${stars} star${stars === 1 ? "" : "s"}`, stats.ratings[stars] ?? 0]),
+      [
+        ...[1, 2, 3, 4, 5].map((stars): Array<string | number> => [
+          `${stars} star${stars === 1 ? "" : "s"}`,
+          stats.ratings[stars] ?? 0,
+        ]),
+        ["Never rated", unrated],
+      ],
     ),
   };
 }
@@ -711,10 +827,7 @@ function shapeSlide(stats: DeckStats): Slide | null {
     subtitle: "Format, orientation, and what else was going on",
     headline,
     tiles,
-    note:
-      oriented < totals.shots
-        ? `Orientation known for ${fmtInt(oriented)} of ${shotsPhrase(totals.shots)}.`
-        : undefined,
+    note: oriented < totals.shots ? `Orientation known for ${fmtInt(oriented)} frames` : undefined,
     table: tableOf(
       ["Measure", "Value"],
       [
@@ -751,7 +864,7 @@ function placesSlide(stats: DeckStats): Slide | null {
       spread > 5
         ? `${spread.toFixed(0)}° of latitude, from ${coord(south)} to ${coord(north)}`
         : `Most of it around ${coord(busiest)}`,
-    note: `${fmtInt(stats.placesKnown)} of ${shotsPhrase(stats.totals.shots)} carry a GPS fix. Positions are rounded to a tenth of a degree — roughly 11km — and the frame is drawn around them rather than around the world.`,
+    note: `${fmtInt(stats.placesKnown)} frames with a fix · rounded to ~11km · framed on your photographs, not the world`,
     points: stats.places,
     table: tableOf(
       ["Position", "Photographs"],
@@ -777,7 +890,7 @@ function debutsSlide(stats: DeckStats): Slide | null {
     title: "New in the bag",
     subtitle: "First frames on gear you had not used before",
     headline: `${stats.debuts.length} ${plural(stats.debuts.length, "new piece", "new pieces")} of kit`,
-    note: "Dated by the first frame ever taken with it, anywhere in your library.",
+    note: "Dated by its first frame anywhere in your library",
     items: stats.debuts.map((debut) => ({
       label: debut.label,
       meta: `${debut.kind === "camera" ? "Camera" : "Lens"} · first frame ${formatDay(debut.day)}`,
@@ -804,7 +917,7 @@ function burstSlide(stats: DeckStats): Slide | null {
     value: fmtInt(burst.frames),
     caption: `frames in ${burst.seconds <= 1 ? "under a second" : `${fmtInt(burst.seconds)} seconds`}`,
     subtitle: `${formatDay(burst.day)}${burst.camera ? ` · ${burst.camera}` : ""}`,
-    note: "Counted as frames with no more than two seconds between them.",
+    note: "Frames no more than two seconds apart",
     tiles: [
       { label: "Frames", value: fmtInt(burst.frames) },
       { label: "Seconds", value: fmtInt(burst.seconds) },

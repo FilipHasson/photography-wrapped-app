@@ -114,6 +114,22 @@ describe("the numbers behind a slide", () => {
   });
 });
 
+describe("keepers", () => {
+  test("the frames nobody ever rated get their own figure", () => {
+    const ratings = [0, 10, 20, 30, 8, 2];
+    const deck = buildDeck(statsWith({ ratings, totals: { ...statsWith({}).totals, shots: 500, rated: 70 } }));
+    const slide = findSlide(deck.slides, "keepers");
+    assert.ok(slide && slide.kind === "columns");
+
+    // 500 photographs, 70 of them rated: the other 430 are the story, and a
+    // sixth column would flatten the five that are being compared.
+    assert.equal(slide.figure?.value, "430");
+    assert.ok(slide.figure?.label.includes("never rated"));
+    assert.equal(slide.items.length, 5);
+    assert.deepEqual(slide.table.rows.at(-1), ["Never rated", 430]);
+  });
+});
+
 describe("what the opening slide owns up to", () => {
   test("says when a start date is holding the range back", () => {
     const range = resolveRange(
@@ -135,6 +151,7 @@ describe("what the opening slide owns up to", () => {
         hiddenLenses: [tally("Unknown", 2, true)],
       }),
     );
-    assert.ok(findSlide(deck.slides, "opening")?.note?.includes("2 pieces of gear are hidden"));
+    // Footnotes are a phrase now, not a sentence — the count is still there.
+    assert.ok(findSlide(deck.slides, "opening")?.note?.includes("2 hidden"));
   });
 });

@@ -177,6 +177,7 @@ if (args.command === "stats") {
   const stats = computeStats(db, range, {
     includeVideo: config.includeVideo,
     excluded: config.excluded,
+    naming: config.naming,
   });
   const deck = buildDeck(stats, config.ownerName);
 

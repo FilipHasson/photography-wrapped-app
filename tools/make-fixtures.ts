@@ -32,6 +32,11 @@ const FUJI: Pick<ExifSpec, "make" | "model" | "serial"> = {
 
 const LENS_24_70 = { lensMake: "NIKON", lensModel: "NIKKOR Z 24-70mm f/2.8 S" };
 const LENS_70_200 = { lensMake: "NIKON", lensModel: "NIKKOR Z 70-200mm f/2.8 VR S" };
+/** The same lens with a converter on the back — one lens, used further away. */
+const LENS_70_200_TC = {
+  lensMake: "NIKON",
+  lensModel: "NIKKOR Z 70-200mm f/2.8 VR S + 1.4X Teleconverter",
+};
 const LENS_XF = { lensMake: "FUJIFILM", lensModel: "XF16-55mmF2.8 R LM WR" };
 
 export const EXPECTED = {
@@ -45,7 +50,7 @@ export const EXPECTED = {
   lenses: 3,
   topCamera: "Nikon Z 8",
   topCameraShots: 21,
-  topLens: "NIKKOR Z 24-70mm f/2.8 S",
+  topLens: "NIKKOR Z 24-70mm S",
   topLensShots: 13,
   topCombo: 13,
   daysShot: 3,
@@ -57,6 +62,8 @@ export const EXPECTED = {
   videos: 2,
   videoSeconds: 42,
   longestBurst: 10,
+  /** Frames of the 70-200 taken through a 1.4x converter. */
+  teleconverted: 2,
   shots2025: 26,
   shotsMarch2025: 16,
 } as const;
@@ -102,16 +109,18 @@ export async function makeFixtures(root: string): Promise<string> {
   // --- Shoot 2: one long burst on the telephoto, same day ------------------
   const shoot2 = path.join(root, "2025", "03-15", "afternoon");
   for (let i = 0; i < 6; i++) {
+    // The last two frames of the burst are through a 1.4x converter.
+    const converted = i >= 4;
     await write(
       path.join(shoot2, `DSC_${String(3000 + i).padStart(4, "0")}.NEF`),
       buildJpegWithExif(
         {
           ...NIKON,
-          ...LENS_70_200,
+          ...(converted ? LENS_70_200_TC : LENS_70_200),
           dateTimeOriginal: stamp("2025:03:15", 14, 0, i),
           subSec: String(200 + i),
-          focalLength: 200,
-          focalLength35: 200,
+          focalLength: converted ? 280 : 200,
+          focalLength35: converted ? 280 : 200,
           aperture: 4,
           shutter: 1 / 1000,
           iso: 800,

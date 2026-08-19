@@ -225,9 +225,28 @@ function renderRanges() {
 }
 
 function renderSettings() {
-  $("setting-owner").value = store.state.config.ownerName ?? "";
-  $("setting-merge").checked = store.state.config.mergeRawJpegPairs;
-  $("setting-video").checked = store.state.config.includeVideo;
+  const config = store.state.config;
+  $("setting-owner").value = config.ownerName ?? "";
+  $("setting-merge").checked = config.mergeRawJpegPairs;
+  $("setting-video").checked = config.includeVideo;
+  $("setting-make").checked = config.naming?.showMake ?? false;
+
+  // Naming is a display choice, so changing it rebuilds the deck rather than
+  // the index: nothing is re-read, the labels are simply written differently.
+  for (const button of $("setting-lens-style").querySelectorAll("button")) {
+    const chosen = button.dataset.style === (config.naming?.lensStyle ?? "short");
+    button.className = chosen ? "chip is-current" : "chip";
+  }
+}
+
+async function saveNaming(patch) {
+  try {
+    await api("/api/config", { method: "POST", body: patch });
+    await refreshState();
+    if (!$("view-deck").hidden) await buildDeck(true);
+  } catch (err) {
+    toast(err.message, true);
+  }
 }
 
 const isoDay = (day) =>
@@ -556,6 +575,13 @@ $("nav-home").addEventListener("click", () => show("view-home"));
 $("setting-owner").addEventListener("change", () => void saveSettings());
 $("setting-merge").addEventListener("change", () => void saveSettings());
 $("setting-video").addEventListener("change", () => void saveSettings());
+$("setting-make").addEventListener("change", (event) =>
+  void saveNaming({ showMake: event.target.checked }),
+);
+$("setting-lens-style").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-style]");
+  if (button) void saveNaming({ lensStyle: button.dataset.style });
+});
 $("setting-start").addEventListener("change", (event) => void saveStartDay(event.target.value));
 $("setting-start-clear").addEventListener("click", () => void saveStartDay(""));
 $("anchor-form").addEventListener("submit", (event) => void addAnchor(event));

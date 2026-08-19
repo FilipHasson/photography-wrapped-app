@@ -13,6 +13,7 @@ import {
   type FocalClass,
 } from "../core/units.ts";
 import { daysBetween, formatDay } from "../core/time.ts";
+import { describeCamera, describeLens, DEFAULT_NAMING, type NamingOptions } from "../core/gear.ts";
 
 /**
  * Every number a deck can show, in one pass over the index.
@@ -34,10 +35,24 @@ const TOP_N = 8;
 /** Below this the calendar heatmap gives way to a monthly timeline. */
 export const HEATMAP_MAX_DAYS = 400;
 
+export interface TeleconverterPart {
+  /** null for the bare lens. */
+  tc: string | null;
+  shots: number;
+}
+
 export interface Tally {
   key: string;
   label: string;
   shots: number;
+  /**
+   * How the count splits by teleconverter, longest bar first.
+   *
+   * Only lenses have these, and only when a converter was used: a 200-600 and
+   * the same lens with a 1.4x on the back are one row, because they are one
+   * lens — the split is a shade within the bar rather than a row of its own.
+   */
+  parts?: TeleconverterPart[];
   /** Fraction of the shots where this dimension was known, 0–1. */
   share: number;
   firstDay: number | null;
@@ -162,6 +177,8 @@ export interface StatsOptions {
   includeVideo: boolean;
   /** Camera and lens keys to leave out of every count. */
   excluded?: { cameras: string[]; lenses: string[] };
+  /** How gear should be written. Applied here, never at index time. */
+  naming?: NamingOptions;
 }
 
 /**
@@ -196,6 +213,22 @@ function scope(
   }
 
   return { where: clauses.join(" AND "), params };
+}
+
+/** A gear row as stored: the tidied name, and what the camera actually wrote. */
+interface RawNamed {
+  label: string;
+  make: string;
+  model: string;
+  raw_make: string | null;
+  raw_model: string | null;
+}
+
+interface GearRow extends RawNamed {
+  key: string;
+  n: number;
+  first: number;
+  last: number;
 }
 
 function num(value: unknown): number {
@@ -295,6 +328,21 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
     ...args,
   );
 
+  /**
+   * Bytes, from wherever they can be had.
+   *
+   * A catalog knows what a photograph is but not how big its file is, so a
+   * library indexed only from a Lightroom catalog has no sizes on the rows that
+   * count — and the slide read "0 B". The fallback totals every row in range,
+   * duplicates included, which is what "on disk" honestly means anyway.
+   */
+  const fallbackBytes = db.getAs<{ bytes: number | null }>(
+    `SELECT SUM(CASE WHEN p.size > 0 THEN p.size ELSE 0 END) AS bytes FROM photo p
+     WHERE p.present = 1 AND p.day BETWEEN ? AND ?`,
+    range.from,
+    range.to,
+  );
+
   const filesRow = db.getAs<{ n: number }>(
     `SELECT COUNT(*) AS n FROM photo p
      WHERE p.present = 1 AND p.day BETWEEN ? AND ?${options.includeVideo ? "" : " AND p.kind <> 'video'"}`,
@@ -318,7 +366,7 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
     videos: num(totalsRow?.videos),
     raws: num(totalsRow?.raws),
     jpegs: num(totalsRow?.jpegs),
-    bytes: num(totalsRow?.bytes),
+    bytes: num(totalsRow?.bytes) || num(fallbackBytes?.bytes),
     videoSeconds: Math.round(num(totalsRow?.videoSeconds)),
     daysShot: num(totalsRow?.daysShot),
     daysInRange: range.days,
@@ -336,29 +384,83 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
 
   // ------------------------------------------------------------- gear ----
 
-  const cameraRows = db.allAs<{ key: string; label: string; n: number; first: number; last: number }>(
-    `SELECT c.key AS key, c.label AS label, COUNT(*) AS n, MIN(p.day) AS first, MAX(p.day) AS last
+  // Labels are built here, from what the camera wrote, rather than read back
+  // from what the indexer happened to think a good name was that day. That is
+  // what lets a naming rule or a display setting change a library of two
+  // hundred thousand photographs without re-reading a file.
+  const naming = options.naming ?? DEFAULT_NAMING;
+  const cameraName = (row: RawNamed) =>
+    describeCamera(row.raw_make ?? row.make, row.raw_model ?? row.model, naming) || row.label;
+  const lensName = (row: RawNamed) =>
+    describeLens(row.raw_make ?? row.make, row.raw_model ?? row.model, naming) || row.label;
+
+  const cameraRows = db.allAs<GearRow>(
+    `SELECT c.key AS key, c.label AS label, c.make AS make, c.model AS model,
+            c.raw_make AS raw_make, c.raw_model AS raw_model,
+            COUNT(*) AS n, MIN(p.day) AS first, MAX(p.day) AS last
      FROM photo p JOIN camera c ON c.id = p.camera_id
      WHERE ${where} GROUP BY c.id ORDER BY n DESC, c.label`,
     ...args,
-  );
+  ).map((row) => ({ ...row, label: cameraName(row) }));
   const cameraKnown = cameraRows.reduce((sum, row) => sum + row.n, 0);
 
-  const lensRows = db.allAs<{ key: string; label: string; n: number; first: number; last: number }>(
-    `SELECT l.key AS key, l.label AS label, COUNT(*) AS n, MIN(p.day) AS first, MAX(p.day) AS last
+  const lensRows = db.allAs<GearRow>(
+    `SELECT l.key AS key, l.label AS label, l.make AS make, l.model AS model,
+            l.raw_make AS raw_make, l.raw_model AS raw_model,
+            COUNT(*) AS n, MIN(p.day) AS first, MAX(p.day) AS last
      FROM photo p JOIN lens l ON l.id = p.lens_id
      WHERE ${where} GROUP BY l.id ORDER BY n DESC, l.label`,
     ...args,
-  );
-  const lensKnown = lensRows.reduce((sum, row) => sum + row.n, 0);
+  ).map((row) => ({ ...row, label: lensName(row) }));
 
-  const comboRows = db.allAs<{ key: string; label: string; n: number; first: number; last: number }>(
-    `SELECT c.key || '+' || l.key AS key, c.label || ' + ' || l.label AS label,
-            COUNT(*) AS n, MIN(p.day) AS first, MAX(p.day) AS last
-     FROM photo p JOIN camera c ON c.id = p.camera_id JOIN lens l ON l.id = p.lens_id
-     WHERE ${where} GROUP BY c.id, l.id ORDER BY n DESC, label`,
+  // How each lens splits between bare and converted. One lens, one row; the
+  // converter is a shade inside the bar.
+  const tcRows = db.allAs<{ key: string; tc: string | null; n: number }>(
+    `SELECT l.key AS key, p.tc AS tc, COUNT(*) AS n
+     FROM photo p JOIN lens l ON l.id = p.lens_id
+     WHERE ${where} GROUP BY l.id, p.tc`,
     ...args,
   );
+  const lensParts = new Map<string, TeleconverterPart[]>();
+  for (const row of tcRows) {
+    const parts = lensParts.get(row.key) ?? [];
+    parts.push({ tc: row.tc, shots: row.n });
+    lensParts.set(row.key, parts);
+  }
+  for (const parts of lensParts.values()) {
+    // Bare glass first, then the converters in order, so the shades step
+    // outwards from the base colour the same way every time.
+    parts.sort((a, b) => (a.tc === null ? -1 : b.tc === null ? 1 : a.tc.localeCompare(b.tc)));
+  }
+  const lensKnown = lensRows.reduce((sum, row) => sum + row.n, 0);
+
+  // A pairing's name is built from the two names, so it follows the same
+  // display rules rather than being assembled in SQL from stored labels.
+  const comboRows = db
+    .allAs<{
+      key: string;
+      cameraMake: string;
+      cameraModel: string;
+      lensMake: string;
+      lensModel: string;
+      label: string;
+      n: number;
+      first: number;
+      last: number;
+    }>(
+      `SELECT c.key || '+' || l.key AS key,
+              COALESCE(c.raw_make, c.make) AS cameraMake, COALESCE(c.raw_model, c.model) AS cameraModel,
+              COALESCE(l.raw_make, l.make) AS lensMake, COALESCE(l.raw_model, l.model) AS lensModel,
+              c.label || ' + ' || l.label AS label,
+              COUNT(*) AS n, MIN(p.day) AS first, MAX(p.day) AS last
+       FROM photo p JOIN camera c ON c.id = p.camera_id JOIN lens l ON l.id = p.lens_id
+       WHERE ${where} GROUP BY c.id, l.id ORDER BY n DESC, label`,
+      ...args,
+    )
+    .map((row) => ({
+      ...row,
+      label: `${describeCamera(row.cameraMake, row.cameraModel, naming)} + ${describeLens(row.lensMake, row.lensModel, naming)}`,
+    }));
   const comboKnown = comboRows.reduce((sum, row) => sum + row.n, 0);
 
   /**
@@ -371,14 +473,18 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
   const hidden = (table: "camera" | "lens", keys: readonly string[]) => {
     if (keys.length === 0) return [];
     const open = scope(range, options, false);
-    return db.allAs<{ key: string; label: string; n: number; first: number; last: number }>(
-      `SELECT g.key AS key, g.label AS label, COUNT(*) AS n, MIN(p.day) AS first, MAX(p.day) AS last
-       FROM photo p JOIN ${table} g ON g.id = p.${table}_id
-       WHERE ${open.where} AND g.key IN (${keys.map(() => "?").join(", ")})
-       GROUP BY g.id ORDER BY n DESC, g.label`,
-      ...open.params,
-      ...keys,
-    );
+    return db
+      .allAs<GearRow>(
+        `SELECT g.key AS key, g.label AS label, g.make AS make, g.model AS model,
+                g.raw_make AS raw_make, g.raw_model AS raw_model,
+                COUNT(*) AS n, MIN(p.day) AS first, MAX(p.day) AS last
+         FROM photo p JOIN ${table} g ON g.id = p.${table}_id
+         WHERE ${open.where} AND g.key IN (${keys.map(() => "?").join(", ")})
+         GROUP BY g.id ORDER BY n DESC, g.label`,
+        ...open.params,
+        ...keys,
+      )
+      .map((row) => ({ ...row, label: table === "camera" ? cameraName(row) : lensName(row) }));
   };
 
   const hiddenCameras = hidden("camera", options.excluded?.cameras ?? []);
@@ -556,7 +662,11 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
     range,
     totals,
     cameras: tallies(cameraRows, cameraKnown),
-    lenses: tallies(lensRows, lensKnown),
+    lenses: tallies(lensRows, lensKnown).map((tally) => {
+      const parts = lensParts.get(tally.key) ?? [];
+      // A single bare part is just the bar; only a real split is worth shading.
+      return parts.length > 1 ? { ...tally, parts } : tally;
+    }),
     combos: tallies(comboRows, comboKnown),
     hiddenCameras: tallies(hiddenCameras, cameraKnown, true),
     hiddenLenses: tallies(hiddenLenses, lensKnown, true),

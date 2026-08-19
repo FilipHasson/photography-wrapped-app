@@ -2,7 +2,7 @@
 import { renderSlide } from "./chart.js";
 import { currentTheme } from "./theme.js";
 import { FORMATS, formatById } from "./formats.js";
-import { exportDeckPdf, exportSlidePng, fileNameFor } from "./export.js";
+import { exportDeckPdf, exportDeckZip, exportSlidePng, fileNameFor } from "./export.js";
 
 /**
  * The deck itself: one slide on screen, keyboard to move, a shape to post it
@@ -212,22 +212,30 @@ export function createDeck({ onExit, onToast, onExclude }) {
     }
   }
 
-  async function savePdf() {
-    const button = $("deck-pdf");
+  /**
+   * The whole deck, as one document or as one image per slide.
+   *
+   * Both go through the same renderer rather than through what is on screen, so
+   * a saved deck is the deck at full size in the shape and theme chosen — not a
+   * screenshot of a preview.
+   */
+  async function saveDeck(kind) {
+    const button = $(kind === "pdf" ? "deck-pdf" : "deck-zip");
     const label = button.textContent;
     button.disabled = true;
 
     try {
       const theme = currentTheme();
-      await exportDeckPdf(
-        deck.slides,
-        (entry, i) => renderSlide(entry, theme, `${i + 1} / ${deck.slides.length}`, format),
-        fileNameFor(deck, "pdf", format.label),
-        (done, total) => {
-          button.textContent = done < total ? `Rendering ${done + 1}/${total}…` : "Saving…";
-        },
-        format,
-      );
+      const render = (entry, i) => renderSlide(entry, theme, `${i + 1} / ${deck.slides.length}`, format);
+      const progress = (done, total) => {
+        button.textContent = done < total ? `${done + 1}/${total}…` : "Saving…";
+      };
+
+      if (kind === "pdf") {
+        await exportDeckPdf(deck.slides, render, fileNameFor(deck, "pdf", format.label), progress, format);
+      } else {
+        await exportDeckZip(deck.slides, render, fileNameFor(deck, "zip", format.label), progress, format);
+      }
       onToast(`${deck.slides.length} slides saved.`);
     } catch (err) {
       onToast(err.message, true);
@@ -240,7 +248,8 @@ export function createDeck({ onExit, onToast, onExclude }) {
   $("deck-prev").addEventListener("click", () => go(index - 1));
   $("deck-next").addEventListener("click", () => go(index + 1));
   $("deck-png").addEventListener("click", () => void savePng());
-  $("deck-pdf").addEventListener("click", () => void savePdf());
+  $("deck-pdf").addEventListener("click", () => void saveDeck("pdf"));
+  $("deck-zip").addEventListener("click", () => void saveDeck("zip"));
   $("deck-full").addEventListener("click", toggleFullscreen);
   $("deck-table-toggle").addEventListener("click", () => {
     tableOpen = !tableOpen;

@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
  */
 
 let buildPdf: (images: Array<{ width: number; height: number; bytes: Uint8Array }>) => Blob;
+let buildZip: (files: Array<{ name: string; bytes: Uint8Array }>, now?: Date) => Blob;
 let fileNameFor: (deck: { title: string; rangeLabel: string }, ext: string, slide?: string) => string;
 
 /** Stands in for a rasterised slide; the writer never looks inside. */
@@ -27,7 +28,7 @@ before(async () => {
   };
 
   // @ts-expect-error — untyped module, imported for its behaviour.
-  ({ buildPdf, fileNameFor } = await import("../src/web/export.js"));
+  ({ buildPdf, buildZip, fileNameFor } = await import("../src/web/export.js"));
 });
 
 describe("the PDF writer", () => {
@@ -79,5 +80,54 @@ describe("the PDF writer", () => {
       fileNameFor({ title: "Everything, so far", rangeLabel: "All time" }, "png", "Lenses"),
       "everything-so-far-all-time-lenses.png",
     );
+  });
+});
+
+describe("the ZIP writer", () => {
+  const file = (name: string, body: string) => ({ name, bytes: new TextEncoder().encode(body) });
+
+  test("writes an archive a reader will recognise", async () => {
+    const bytes = new Uint8Array(
+      await new Response(buildZip([file("01-cameras.png", "one"), file("02-lenses.png", "two")])).arrayBuffer(),
+    );
+    const text = new TextDecoder("latin1").decode(bytes);
+
+    // Local header, central directory, end of central directory.
+    assert.equal(text.slice(0, 4), "PK");
+    assert.ok(text.includes("PK"), "no central directory");
+    assert.ok(text.includes("PK"), "no end record");
+    assert.ok(text.includes("01-cameras.png") && text.includes("02-lenses.png"));
+  });
+
+  test("the offsets in the directory point at the files", async () => {
+    const files = [file("01-a.png", "aaaa"), file("02-b.png", "bbbbbb"), file("03-c.png", "c")];
+    const bytes = new Uint8Array(await new Response(buildZip(files)).arrayBuffer());
+    const view = new DataView(bytes.buffer);
+    const text = new TextDecoder("latin1").decode(bytes);
+
+    const endAt = text.lastIndexOf("PK");
+    assert.equal(view.getUint16(endAt + 10, true), files.length, "wrong entry count");
+
+    // Walk the central directory and check each local header it points at.
+    let at = view.getUint32(endAt + 16, true);
+    for (const expected of files) {
+      assert.equal(view.getUint32(at, true), 0x02014b50, "not a directory entry");
+      const nameLength = view.getUint16(at + 28, true);
+      const offset = view.getUint32(at + 42, true);
+
+      assert.equal(view.getUint32(offset, true), 0x04034b50, "offset misses the local header");
+      const localName = text.slice(offset + 30, offset + 30 + nameLength);
+      assert.equal(localName, expected.name);
+
+      const size = view.getUint32(offset + 22, true);
+      assert.equal(size, expected.bytes.length, `${expected.name} has the wrong size`);
+      at += 46 + nameLength;
+    }
+  });
+
+  test("the bytes come back out unchanged", async () => {
+    const body = "the exact bytes of a PNG would go here";
+    const bytes = new Uint8Array(await new Response(buildZip([file("01-x.png", body)])).arrayBuffer());
+    assert.equal(new TextDecoder("latin1").decode(bytes).split(body).length - 1, 1);
   });
 });
