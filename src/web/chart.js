@@ -269,7 +269,8 @@ function drawBars(root, plot, slide, theme, L) {
     return;
   }
 
-  const rowHeight = Math.min(plot.h / items.length, L.label * 2.6);
+  const rowHeight = Math.min(plot.h / items.length, L.label * 4);
+  const top0 = plot.y + Math.max(0, (plot.h - rowHeight * items.length) / 2);
   const thickness = Math.min(24, Math.max(6, rowHeight - L.label * 0.9));
   const valueWidth = Math.max(...items.map((item) => measure(item.valueLabel, L.value, 600))) + 20;
   const labelWidth = Math.min(plot.w * 0.36, 460);
@@ -277,7 +278,7 @@ function drawBars(root, plot, slide, theme, L) {
   const trackW = Math.max(40, plot.w - labelWidth - valueWidth - 48);
 
   items.forEach((item, i) => {
-    const mid = plot.y + i * rowHeight + rowHeight / 2;
+    const mid = top0 + i * rowHeight + rowHeight / 2;
     const width = Math.max(2, (item.value / max) * trackW);
     const fill = item.muted ? theme.axis : theme.series[0];
 
@@ -301,11 +302,15 @@ function drawBars(root, plot, slide, theme, L) {
 }
 
 function drawBarsStacked(root, plot, items, max, theme, L) {
-  const rowHeight = Math.min(plot.h / items.length, L.label * 3.4);
-  const thickness = Math.min(22, Math.max(6, rowHeight - L.label * 1.9));
+  // Rows take the space they are given. A five-camera slide in a 1920px-tall
+  // frame used to draw five thin bars in the top tenth of it and leave the rest
+  // blank; the cap only exists to stop two items becoming two enormous ones.
+  const rowHeight = Math.min(plot.h / items.length, L.label * 6);
+  const top0 = plot.y + Math.max(0, (plot.h - rowHeight * items.length) / 2);
+  const thickness = Math.min(28, Math.max(8, rowHeight - L.label * 2.2));
 
   items.forEach((item, i) => {
-    const top = plot.y + i * rowHeight;
+    const top = top0 + i * rowHeight;
     const fill = item.muted ? theme.axis : theme.series[0];
     const valueWidth = measure(item.valueLabel, L.value, 600) + 16;
 
@@ -425,7 +430,9 @@ function drawColumns(root, plot, slide, theme, L) {
 function drawClock(root, plot, slide, theme, L) {
   const cx = plot.x + plot.w / 2;
   const cy = plot.y + plot.h / 2;
-  const outer = Math.max(80, Math.min(plot.h / 2 - L.axis * 2.4, plot.w / 2 - L.axis * 2.4, 300));
+  // No fixed ceiling: the circle is as big as the shorter side allows, which is
+  // the difference between a clock face and a coin in the middle of a story.
+  const outer = Math.max(80, Math.min(plot.h / 2 - L.axis * 2.6, plot.w / 2 - L.axis * 2.6));
   const inner = outer * 0.34;
   const max = Math.max(...slide.hours, 1);
   const peak = slide.hours.indexOf(max);
@@ -548,104 +555,162 @@ const toDate = (day) =>
 
 const toKey = (date) =>
   date.getUTCFullYear() * 10000 + (date.getUTCMonth() + 1) * 100 + date.getUTCDate();
-
 /**
- * One square per day.
+ * A calendar, drawn as a grid of months.
  *
- * Weeks run left to right in a wide frame and top to bottom in a tall one:
- * fifty-three columns across 900px of phone screen is a smear, while fifty-three
- * *rows* down 1300px is a legible year.
+ * The obvious layout — one long strip of weeks, GitHub-style — is what this
+ * used to be, and it wasted a portrait frame: fifty-three columns of seven
+ * squares is a shape that only fits a wide screen, and turning it on its side
+ * gave a 190px-wide ribbon down the middle of a 1080px slide.
+ *
+ * Months tile instead. The grid is chosen by trying every column count and
+ * keeping whichever gives the biggest day square, so the same code fills a
+ * story, a square and a 16:9 slide without being told which it is drawing.
+ *
+ * Ranges longer than about a year never reach here — `stats/slides.ts` sends
+ * those to the monthly columns instead — so a block per month is always a
+ * sensible number of blocks.
  */
 function drawCalendar(root, plot, slide, theme, L) {
   const counts = new Map(slide.days.map((entry) => [entry.day, entry.shots]));
   const max = Math.max(...slide.days.map((entry) => entry.shots), 1);
 
-  const start = toDate(slide.from);
-  const end = toDate(slide.to);
-  const totalDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
-  // Back up to the Monday on or before the first day, so weeks line up.
-  const offset = (start.getUTCDay() + 6) % 7;
-  const weeks = Math.ceil((totalDays + offset) / 7);
+  const months = monthsBetween(slide.from, slide.to);
+  const legendH = L.tiny * 3.4;
+  const area = { x: plot.x, y: plot.y, w: plot.w, h: Math.max(80, plot.h - legendH) };
+  const grid = fitMonthGrid(months.length, area, L);
 
-  const gap = 3;
-  const legendH = L.tiny * 3;
-  const gutter = L.tiny * 3.2;
-  const byRow = L.tall || L.narrow;
+  // Blocks are packed to the height they actually use and the whole grid is
+  // centred in what is left. Spacing them by the height they were *allotted*
+  // strands a single month at the top of a story with 400px of nothing under it.
+  const blockContentH = grid.header + 6 * (grid.cell + grid.gap);
+  const top = area.y + Math.max(0, (area.h - grid.rows * blockContentH) / 2);
 
-  const across = byRow ? 7 : weeks;
-  const down = byRow ? weeks : 7;
-  const cell = Math.max(
-    4,
-    Math.min(
-      24,
-      Math.floor((plot.w - gutter) / across) - gap,
-      Math.floor((plot.h - legendH - gutter) / down) - gap,
+  months.forEach((month, i) => {
+    const x = area.x + (i % grid.columns) * grid.blockW;
+    const y = top + Math.floor(i / grid.columns) * blockContentH;
+    // The year is written on the first block and on each January, which is
+    // where it changes — on every block it would be noise.
+    drawMonthBlock(root, { x, y, ...grid }, { ...month, first: i === 0 }, counts, max, theme, L);
+  });
+
+  drawRampLegend(root, area.x, top + grid.rows * blockContentH + L.tiny * 0.8, max, theme, L);
+}
+
+/** Every month the range touches, oldest first. */
+function monthsBetween(from, to) {
+  const months = [];
+  let year = Math.floor(from / 10000);
+  let month = Math.floor(from / 100) % 100;
+  const lastYear = Math.floor(to / 10000);
+  const lastMonth = Math.floor(to / 100) % 100;
+
+  while (year < lastYear || (year === lastYear && month <= lastMonth)) {
+    months.push({ year, month });
+    month += 1;
+    if (month > 12) {
+      month = 1;
+      year += 1;
+    }
+    if (months.length > 24) break;
+  }
+  return months;
+}
+
+/**
+ * Picks the column count that makes the day squares biggest.
+ *
+ * Trying them all is cheaper than reasoning about it, and it means a new format
+ * needs no thought here: 12 months land as 3x4 in a story, 6x2 in 16:9.
+ */
+function fitMonthGrid(count, area, L) {
+  const gap = 2;
+  const header = L.axis * 1.5 + L.tiny * 1.6;
+  let best = { columns: 1, rows: count, blockW: area.w, blockH: area.h / count, cell: 0, header, gap };
+
+  for (let columns = 1; columns <= Math.min(6, count); columns++) {
+    const rows = Math.ceil(count / columns);
+    const blockW = area.w / columns;
+    const blockH = area.h / rows;
+    const cell = Math.min(
+      (blockW - L.tiny) / 7 - gap,
+      (blockH - header) / 6 - gap,
+    );
+    if (cell > best.cell) best = { columns, rows, blockW, blockH, cell, header, gap };
+  }
+
+  return best;
+}
+
+const WEEKDAY_INITIALS = ["M", "T", "W", "T", "F", "S", "S"];
+
+function drawMonthBlock(root, box, month, counts, max, theme, L) {
+  const { cell, gap, header } = box;
+  const width = 7 * (cell + gap) - gap;
+
+  root.append(
+    text(
+      `${MONTH_SHORT[month.month - 1]}${month.month === 1 || month.first ? ` ${month.year}` : ""}`,
+      box.x,
+      box.y + L.axis,
+      { size: L.axis, weight: 600, fill: theme.ink2 },
     ),
   );
 
-  const gridW = across * (cell + gap) - gap;
-  const gridH = down * (cell + gap) - gap;
-  const x0 = plot.x + gutter + Math.max(0, (plot.w - gutter - gridW) / 2);
-  const y0 = plot.y + gutter + Math.max(0, (plot.h - legendH - gutter - gridH) / 3);
-
-  let lastMonth = -1;
-  for (let index = 0; index < totalDays; index++) {
-    const date = new Date(start.getTime() + index * 86400000);
-    const week = Math.floor((index + offset) / 7);
-    const weekday = (index + offset) % 7;
-    const value = counts.get(toKey(date)) ?? 0;
-
-    const x = x0 + (byRow ? weekday : week) * (cell + gap);
-    const y = y0 + (byRow ? week : weekday) * (cell + gap);
-
-    root.append(
-      titled(
-        el("rect", {
-          x,
-          y,
-          width: cell,
-          height: cell,
-          rx: Math.min(3, cell / 4),
-          fill: value === 0 ? theme.rampEmpty : theme.ramp[rampStep(value, max)],
-        }),
-        `${date.getUTCDate()} ${MONTH_SHORT[date.getUTCMonth()]} ${date.getUTCFullYear()} — ${fmt(value)}`,
-      ),
-    );
-
-    // A marker where each month starts, in whichever direction weeks run.
-    if (weekday === 0 && date.getUTCMonth() !== lastMonth) {
-      lastMonth = date.getUTCMonth();
-      const label = MONTH_SHORT[lastMonth];
+  if (cell >= 12) {
+    WEEKDAY_INITIALS.forEach((initial, i) => {
       root.append(
-        byRow
-          ? text(label, x0 - gap * 2, y + cell * 0.8, { size: L.tiny, fill: theme.muted, anchor: "end" })
-          : text(label, x, y0 - gap * 3, { size: L.tiny, fill: theme.muted }),
-      );
-    }
-  }
-
-  if (!byRow) {
-    ["Mon", "Wed", "Fri", "Sun"].forEach((name, i) => {
-      root.append(
-        text(name, x0 - gap * 2, y0 + [0, 2, 4, 6][i] * (cell + gap) + cell * 0.8, {
-          size: L.tiny * 0.9,
+        text(initial, box.x + i * (cell + gap) + cell / 2, box.y + L.axis * 1.5 + L.tiny, {
+          size: L.tiny * 0.95,
           fill: theme.muted,
-          anchor: "end",
+          anchor: "middle",
         }),
       );
     });
   }
 
-  // Colour is carrying magnitude here, so the scale is spelled out.
-  const legendY = y0 + gridH + L.tiny * 1.4;
-  const swatch = L.tiny * 1.1;
-  root.append(text("fewer", x0, legendY + swatch * 0.85, { size: L.tiny, fill: theme.muted }));
-  const legendX = x0 + measure("fewer", L.tiny) + 10;
+  const top = box.y + header;
+  const days = daysInMonth(month.year, month.month);
+  // Monday first, so the weekend sits together at the end of each row.
+  const offset = (new Date(Date.UTC(month.year, month.month - 1, 1)).getUTCDay() + 6) % 7;
+
+  for (let day = 1; day <= days; day++) {
+    const index = offset + day - 1;
+    const value = counts.get(month.year * 10000 + month.month * 100 + day) ?? 0;
+
+    root.append(
+      titled(
+        el("rect", {
+          x: box.x + (index % 7) * (cell + gap),
+          y: top + Math.floor(index / 7) * (cell + gap),
+          width: cell,
+          height: cell,
+          rx: Math.min(3, cell / 5),
+          fill: value === 0 ? theme.rampEmpty : theme.ramp[rampStep(value, max)],
+        }),
+        `${day} ${MONTH_SHORT[month.month - 1]} ${month.year} — ${fmt(value)}`,
+      ),
+    );
+  }
+
+  return width;
+}
+
+function daysInMonth(year, month) {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+/** The scale, spelled out, wherever colour is carrying magnitude. */
+function drawRampLegend(root, x, y, max, theme, L) {
+  const swatch = L.tiny * 1.2;
+  root.append(text("fewer", x, y + swatch * 0.85, { size: L.tiny, fill: theme.muted }));
+
+  const start = x + measure("fewer", L.tiny) + 10;
   theme.ramp.forEach((colour, i) => {
     root.append(
       el("rect", {
-        x: legendX + i * (swatch + 4),
-        y: legendY,
+        x: start + i * (swatch + 4),
+        y,
         width: swatch,
         height: swatch,
         rx: 3,
@@ -653,16 +718,14 @@ function drawCalendar(root, plot, slide, theme, L) {
       }),
     );
   });
+
   root.append(
-    text(
-      `more (up to ${fmt(max)})`,
-      legendX + theme.ramp.length * (swatch + 4) + 6,
-      legendY + swatch * 0.85,
-      { size: L.tiny, fill: theme.muted },
-    ),
+    text(`more (up to ${fmt(max)} in a day)`, start + theme.ramp.length * (swatch + 4) + 8, y + swatch * 0.85, {
+      size: L.tiny,
+      fill: theme.muted,
+    }),
   );
 }
-
 /** Monthly columns, for ranges too long to read a day at a time. */
 function drawMonths(root, plot, slide, theme, L) {
   const months = slide.months;
@@ -799,7 +862,7 @@ function drawStack(root, plot, slide, theme, L) {
       );
       root.append(
         text(String(Math.floor(ym / 100)), cx, baseline + L.axis * 2.5, {
-          size: L.tiny * 0.9,
+          size: L.tiny,
           fill: theme.muted,
           anchor: "middle",
         }),
@@ -829,36 +892,54 @@ function drawStack(root, plot, slide, theme, L) {
   });
 }
 
-/** Latitude and longitude, plotted flat. No coastline is claimed. */
+/**
+ * Latitude and longitude, plotted flat, framed on the photographs.
+ *
+ * A world map is the wrong frame for almost every library: draw one and a
+ * year of shooting within fifty miles of home is four dots in the middle of an
+ * empty rectangle. So the box is fitted to the data — padded, squared off to
+ * the shape of the slide, and never smaller than a couple of degrees so a
+ * single afternoon does not zoom to street level and imply a precision the
+ * rounding does not have.
+ *
+ * The graticule is what keeps it honest: no coastline is drawn, because none is
+ * known, so the grid and its labels are the only claim about where this is.
+ */
 function drawMap(root, plot, slide, theme, L) {
-  const boxH = Math.min(plot.h - L.tiny * 2.5, plot.w / 2);
-  const box = {
-    x: plot.x,
-    y: plot.y + Math.max(0, (plot.h - L.tiny * 2.5 - boxH) / 2),
-    w: plot.w,
-    h: boxH,
-  };
+  const labelBand = L.tiny * 2.6;
+  const box = { x: plot.x, y: plot.y, w: plot.w, h: Math.max(120, plot.h - labelBand) };
+  const view = fitBounds(slide.points, box.w / box.h);
 
   const project = (lat, lon) => ({
-    x: box.x + ((lon + 180) / 360) * box.w,
-    y: box.y + ((90 - lat) / 180) * box.h,
+    x: box.x + ((lon - view.west) / (view.east - view.west)) * box.w,
+    y: box.y + ((view.north - lat) / (view.north - view.south)) * box.h,
   });
 
   root.append(el("rect", { x: box.x, y: box.y, width: box.w, height: box.h, fill: theme.plane, rx: 8 }));
 
-  for (let lon = -180; lon <= 180; lon += 30) {
+  const step = graticuleStep(Math.max(view.east - view.west, view.north - view.south));
+  for (let lon = Math.ceil(view.west / step) * step; lon <= view.east; lon += step) {
     const { x } = project(0, lon);
     root.append(el("line", { x1: x, y1: box.y, x2: x, y2: box.y + box.h, stroke: theme.grid }));
+    root.append(
+      text(formatLon(lon), x, box.y + box.h + L.tiny * 1.6, {
+        size: L.tiny,
+        fill: theme.muted,
+        anchor: "middle",
+      }),
+    );
   }
-  for (let lat = -60; lat <= 60; lat += 30) {
+  for (let lat = Math.ceil(view.south / step) * step; lat <= view.north; lat += step) {
     const { y } = project(lat, 0);
     root.append(el("line", { x1: box.x, y1: y, x2: box.x + box.w, y2: y, stroke: theme.grid }));
+    root.append(
+      text(formatLat(lat), box.x + 8, y - 6, { size: L.tiny, fill: theme.muted }),
+    );
   }
-  // The equator gets one step more presence than the rest of the graticule.
-  const equator = project(0, 0).y;
-  root.append(el("line", { x1: box.x, y1: equator, x2: box.x + box.w, y2: equator, stroke: theme.axis }));
 
   const max = Math.max(...slide.points.map((point) => point.shots), 1);
+  const biggest = Math.min(box.w, box.h) * 0.09;
+
   for (const point of slide.points) {
     const { x, y } = project(point.lat, point.lon);
     root.append(
@@ -866,25 +947,76 @@ function drawMap(root, plot, slide, theme, L) {
         el("circle", {
           cx: x,
           cy: y,
-          r: 4 + Math.sqrt(point.shots / max) * 14,
+          // Area, not radius, carries the count — a radius scale would make ten
+          // frames look like a hundred.
+          r: Math.max(5, Math.sqrt(point.shots / max) * biggest),
           fill: theme.series[0],
-          "fill-opacity": 0.75,
+          "fill-opacity": 0.7,
           // The surface ring keeps overlapping dots legible.
           stroke: theme.surface,
           "stroke-width": 2,
         }),
-        `${point.lat.toFixed(1)}, ${point.lon.toFixed(1)} — ${fmt(point.shots)}`,
+        `${formatLat(point.lat)}, ${formatLon(point.lon)} — ${fmt(point.shots)}`,
       ),
     );
   }
-
-  const labelY = box.y + box.h + L.tiny * 1.5;
-  root.append(text("180°W", box.x, labelY, { size: L.tiny, fill: theme.muted }));
-  root.append(
-    text("0°", box.x + box.w / 2, labelY, { size: L.tiny, fill: theme.muted, anchor: "middle" }),
-  );
-  root.append(text("180°E", box.x + box.w, labelY, { size: L.tiny, fill: theme.muted, anchor: "end" }));
 }
+
+/**
+ * A window on the world that holds every point, shaped like the slide.
+ *
+ * Padding is proportional so a tight cluster and a continent both sit inside
+ * their frame with room to breathe, and the minimum span stops a single
+ * location filling the slide at a zoom the data cannot support.
+ */
+function fitBounds(points, aspect) {
+  const lats = points.map((point) => point.lat);
+  const lons = points.map((point) => point.lon);
+
+  let south = Math.min(...lats);
+  let north = Math.max(...lats);
+  let west = Math.min(...lons);
+  let east = Math.max(...lons);
+
+  const MIN_SPAN = 2;
+  const padLat = Math.max((north - south) * 0.18, MIN_SPAN / 2);
+  const padLon = Math.max((east - west) * 0.18, MIN_SPAN / 2);
+  south -= padLat;
+  north += padLat;
+  west -= padLon;
+  east += padLon;
+
+  // Grow the short side until the window is the shape of the slide, so the
+  // degrees stay square and nothing is stretched.
+  const height = north - south;
+  const width = east - west;
+  if (width / height < aspect) {
+    const wanted = height * aspect;
+    const middle = (east + west) / 2;
+    west = middle - wanted / 2;
+    east = middle + wanted / 2;
+  } else {
+    const wanted = width / aspect;
+    const middle = (north + south) / 2;
+    south = middle - wanted / 2;
+    north = middle + wanted / 2;
+  }
+
+  return { south, north, west, east };
+}
+
+/** Grid spacing that puts three or four lines across the window. */
+function graticuleStep(span) {
+  for (const step of [90, 45, 30, 15, 10, 5, 2, 1, 0.5, 0.2, 0.1]) {
+    if (span / step >= 3) return step;
+  }
+  return 0.05;
+}
+
+const trimDegrees = (value) => (Math.abs(value) < 10 ? value.toFixed(1) : String(Math.round(value)));
+
+const formatLat = (lat) => `${trimDegrees(Math.abs(lat))}°${lat >= 0 ? "N" : "S"}`;
+const formatLon = (lon) => `${trimDegrees(Math.abs(lon))}°${lon >= 0 ? "E" : "W"}`;
 
 /**
  * How many tiles fit across, and how tall each row gets.
@@ -897,7 +1029,7 @@ function drawMap(root, plot, slide, theme, L) {
 function tileLayout(count, plot, L) {
   const columns = L.narrow ? Math.min(2, count) : Math.min(4, count);
   const rows = Math.ceil(count / columns);
-  const rowH = Math.min(plot.h / rows, L.tileValue * 3.4);
+  const rowH = Math.min(plot.h / rows, L.tileValue * (L.tall ? 5 : 3.4));
   return { columns, rows, cellW: plot.w / columns, rowH, height: rowH * rows };
 }
 
@@ -916,9 +1048,11 @@ function drawTiles(root, plot, slide, theme, L) {
   const { columns, rows, cellW, rowH, height } = tileLayout(tiles.length, plot, L);
   const top = plot.y + Math.max(0, (plot.h - height) / 2);
 
-  const labelSize = Math.min(L.tileLabel, rowH * 0.17);
-  const valueSize = Math.min(L.tileValue, rowH * 0.4, cellW * 0.24);
-  const noteSize = Math.min(L.note, rowH * 0.15);
+  // Sizes come from the room each tile actually got, so a story fills with big
+  // figures and a 16:9 slide keeps the smaller ones it has space for.
+  const labelSize = Math.min(L.tileLabel * 1.2, rowH * 0.17);
+  const valueSize = Math.min(L.tileValue * (L.tall ? 1.9 : 1.15), rowH * 0.42, cellW * 0.26);
+  const noteSize = Math.min(L.note * 1.2, rowH * 0.15);
   // The note is drawn only when all three fit with room to breathe.
   const showNote = rowH >= labelSize * 1.6 + valueSize * 1.3 + noteSize * 2.4;
 
@@ -1013,7 +1147,10 @@ function drawHero(root, plot, slide, theme, L) {
 
 /** Rows of label, meta and value — gear debuts and anything else list-shaped. */
 function drawList(root, plot, slide, theme, L) {
-  const rowHeight = Math.max(L.label * 2.2, Math.min(L.label * 2.8, plot.h / Math.max(slide.items.length, 1)));
+  const rowHeight = Math.max(
+    L.label * 2.2,
+    Math.min(L.label * (L.tall ? 6 : 4.5), plot.h / Math.max(slide.items.length, 1)),
+  );
   const fit = Math.max(1, Math.floor(plot.h / rowHeight));
   const items = slide.items.slice(0, fit);
   const valueWidth = Math.max(...items.map((item) => measure(item.value, L.value))) + L.tiny;

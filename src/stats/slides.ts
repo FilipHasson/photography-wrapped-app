@@ -751,7 +751,7 @@ function placesSlide(stats: DeckStats): Slide | null {
       spread > 5
         ? `${spread.toFixed(0)}° of latitude, from ${coord(south)} to ${coord(north)}`
         : `Most of it around ${coord(busiest)}`,
-    note: `${fmtInt(stats.placesKnown)} of ${shotsPhrase(stats.totals.shots)} carry a GPS fix. Positions are rounded to a tenth of a degree — roughly 11km.`,
+    note: `${fmtInt(stats.placesKnown)} of ${shotsPhrase(stats.totals.shots)} carry a GPS fix. Positions are rounded to a tenth of a degree — roughly 11km — and the frame is drawn around them rather than around the world.`,
     points: stats.places,
     table: tableOf(
       ["Position", "Photographs"],

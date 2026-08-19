@@ -393,7 +393,9 @@ main {
   width: auto;
   height: auto;
   max-width: 100%;
-  max-height: min(72vh, 900px);
+  /* Tall enough that a 9:16 slide is previewed at a useful size, capped so it
+     never grows past the viewport on a laptop. */
+  max-height: min(78vh, 1120px);
 }
 
 .deck-nav {

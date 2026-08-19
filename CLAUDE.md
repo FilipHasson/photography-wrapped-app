@@ -80,13 +80,26 @@ SVG through an `<img>`, which renders in isolation, so anything inherited from
 the page would silently disappear from the PNG and the PDF.
 
 Nothing in it is hard-coded to a canvas size. `web/formats.js` holds the five
-posting shapes and their type scales; the narrow ones set type *larger* relative
-to their width, not smaller, because the frame is read at thumbnail size on a
-phone. Two charts change shape rather than squeeze: ranked bars put the label
-above its own bar below ~1200px wide, and the calendar runs weeks down the frame
-instead of across it. Vertical spacing is always measured off the *larger* of two
-adjacent type sizes — that is what the overlap check in `test/render.test.ts`
-enforces, and what it caught when it was not.
+posting shapes and their type scales, and **9:16 is the default and the shape
+the layouts are tuned for**. The narrow formats set type *larger* relative to
+their width, not smaller: a 20px label reads fine across 1600px of laptop and is
+a third of the apparent size on a phone, which is the whole reason the first
+version of these slides was unusable in the place they were made for.
+
+Three rules keep a tall frame from filling with air, and all three were written
+after measuring how little of it the charts actually used:
+
+- charts take the height they are given, with caps only generous enough to stop
+  two rows becoming two enormous ones — never a fixed row height
+- the calendar tiles months into a grid whose column count is chosen by trying
+  them all and keeping the biggest day square, so one month fills a story and a
+  year fits either way up
+- the map fits its window to the points, padded and squared off to the slide,
+  rather than drawing a world with four dots in the middle of it
+
+Vertical spacing is always measured off the *larger* of two adjacent type sizes —
+that is what the overlap check in `test/render.test.ts` enforces, and what it
+caught when it was not.
 
 **`web/export.js`** — the PDF is written by hand: one JPEG XObject per page plus
 a cross-reference table. Byte offsets are tracked as chunks are appended;

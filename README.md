@@ -134,16 +134,20 @@ The deck draws itself at whatever shape you pick, and the choice sticks:
 
 | | For |
 |---|---|
-| **16:9** | Screens, projectors, the PDF |
-| **9:16** | Stories and Reels |
+| **9:16** | **Stories and Reels — the default** |
 | **4:5** | A feed post — the tallest the grid allows |
-| **4:3** | A grid post |
 | **1:1** | Square |
+| **4:3** | A grid post |
+| **16:9** | Screens, projectors, the PDF |
 
-It is a real re-layout rather than a crop: type is set larger relative to the
-frame in the narrow shapes, ranked bars put the lens name above its own bar
-instead of beside it, and the year calendar turns ninety degrees so weeks run
-down the frame instead of across it.
+It is a real re-layout rather than a crop, and 9:16 is the one it is designed
+for. Type is set *larger* relative to the frame as the frame narrows, because a
+label that is comfortable across a laptop is a third of the apparent size on a
+phone. Ranked bars put the lens name above its own bar instead of beside it. The
+calendar tiles itself as a grid of months, sized to whatever room it has: a
+monthly report becomes one big month, a year becomes twelve small ones. The map
+frames itself on your photographs rather than on the world, so a year spent
+within fifty miles of home is not four dots in an empty rectangle.
 
 - **Save slide (PNG)** — the slide you are on, at twice the format size
   (9:16 comes out 2160×3840).
