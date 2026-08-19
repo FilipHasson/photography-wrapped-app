@@ -11,6 +11,12 @@
  * are the same eight hues stepped for their own surface, and their *order* is
  * the colour-blind-safety mechanism, so they are assigned by slot and never
  * cycled or re-ordered.
+ *
+ * Eight is the whole palette, and therefore the ceiling on how many series a
+ * chart may show: a ninth is never an invented hue, it is "Everything else".
+ * Both columns pass the validator as a set — worst adjacent CVD ΔE 9.1 light /
+ * 8.4 dark, worst normal-vision ΔE 19.6 / 19.3. Three light steps sit under 3:1
+ * against the surface, which is why every chart here also has a table view.
  */
 
 const SHARED = {
@@ -28,7 +34,7 @@ export const LIGHT = {
   grid: "#e1e0d9",
   axis: "#c3c2b7",
   track: "#f0efec",
-  series: ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"],
+  series: ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"],
   /** Sequential blue, near-zero to most. One hue, light to dark. */
   ramp: ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf"],
   rampEmpty: "#f0efec",
@@ -50,7 +56,7 @@ export const DARK = {
   grid: "#2c2c2a",
   axis: "#383835",
   track: "#262624",
-  series: ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300"],
+  series: ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"],
   // Stepped for the dark surface: the darkest step still reads as "a little",
   // not as the background.
   ramp: ["#184f95", "#256abf", "#3987e5", "#6da7ec", "#9ec5f4"],

@@ -12,8 +12,9 @@ import {
   shutterBucket,
   type FocalClass,
 } from "../core/units.ts";
-import { daysBetween, formatDay } from "../core/time.ts";
+import { addDays, dayParts, daysBetween, formatDay, makeDay, todayDay } from "../core/time.ts";
 import { describeCamera, describeLens, DEFAULT_NAMING, type NamingOptions } from "../core/gear.ts";
+import { formatHour, sunTimes } from "../core/sun.ts";
 
 /**
  * Every number a deck can show, in one pass over the index.
@@ -29,8 +30,48 @@ import { describeCamera, describeLens, DEFAULT_NAMING, type NamingOptions } from
  *    know about 8,000 of your 16,000 frames", never as "50% unknown lens".
  */
 
-/** Rows returned for the ranked lists. The tail folds into "Other". */
-const TOP_N = 8;
+/**
+ * How many rows each truncating slide draws before the tail pools into one.
+ *
+ * A default, not a rule: eight bars is a chart and forty is a wall, but whose
+ * library it is decides where between those the line goes — so every slide that
+ * pools a tail offers this as a setting beside it.
+ */
+export interface RowLimits {
+  cameras?: number;
+  lenses?: number;
+  combos?: number;
+  /** Series on the gear-over-time chart. Capped by the palette, see below. */
+  gear?: number;
+}
+
+export const DEFAULT_LIMITS = { cameras: 8, lenses: 8, combos: 8, gear: 5 } as const;
+
+/** Past this a ranked slide is a table pretending to be a chart. */
+export const MAX_ROWS = 40;
+
+/**
+ * Series on one stacked chart, capped at the palette.
+ *
+ * There are eight categorical slots and a ninth is never a generated hue: past
+ * eight lenses the rest belong in "Everything else", which is also the point
+ * where a stack of monthly columns stops being readable.
+ */
+export const MAX_SERIES = 8;
+
+export function resolveLimits(limits: RowLimits = {}): Required<RowLimits> {
+  const clamp = (value: number | undefined, fallback: number, ceiling: number) =>
+    value === undefined || !Number.isFinite(value)
+      ? fallback
+      : Math.max(1, Math.min(Math.floor(value), ceiling));
+
+  return {
+    cameras: clamp(limits.cameras, DEFAULT_LIMITS.cameras, MAX_ROWS),
+    lenses: clamp(limits.lenses, DEFAULT_LIMITS.lenses, MAX_ROWS),
+    combos: clamp(limits.combos, DEFAULT_LIMITS.combos, MAX_ROWS),
+    gear: clamp(limits.gear, DEFAULT_LIMITS.gear, MAX_SERIES),
+  };
+}
 
 /** Below this the calendar heatmap gives way to a monthly timeline. */
 export const HEATMAP_MAX_DAYS = 400;
@@ -120,6 +161,14 @@ export interface Streak {
 export interface Series {
   label: string;
   values: number[];
+  /**
+   * How many of each month were shot through a teleconverter.
+   *
+   * Carried beside the totals rather than as series of their own: fifteen
+   * series on one stacked chart is unreadable, and the question here is which
+   * lens was on the camera — the converter is a shade within it.
+   */
+  converted?: number[];
 }
 
 export interface Place {
@@ -132,6 +181,50 @@ export interface Debut {
   kind: "camera" | "lens";
   label: string;
   day: number;
+  shots: number;
+}
+
+/**
+ * One year of a library, counted three ways.
+ *
+ * A year is not always a calendar year. Someone who bought their camera in
+ * August thinks in years that start in August, and the difference is not
+ * cosmetic — it decides whether one trip lands in this year or last.
+ */
+export interface YearBucket {
+  label: string;
+  from: number;
+  to: number;
+  shots: number;
+  cameras: number;
+  lenses: number;
+  /** The period has not finished yet. */
+  partial: boolean;
+}
+
+export type YearBasis = "anchor" | "calendar";
+
+/**
+ * Which hours the clock slide treats as daylight.
+ *
+ * "sun" works them out from where the photographs were taken and when; the
+ * others are fixed windows for anyone whose library has no GPS in it, or who
+ * would rather draw the line themselves.
+ */
+export type DaylightMode = "sun" | "06-18" | "07-19" | "05-21";
+
+export interface Daylight {
+  mode: DaylightMode;
+  sunrise: number;
+  sunset: number;
+  /** Where the window came from, for the slide to own up to. */
+  source: string;
+}
+
+/** Where most of the photographs were taken, when any of them said. */
+export interface Location {
+  lat: number;
+  lon: number;
   shots: number;
 }
 
@@ -171,14 +264,35 @@ export interface DeckStats {
   placesKnown: number;
   debuts: Debut[];
   burst: Burst | null;
+  /** One entry per year the range covers, on whichever basis was asked for. */
+  years: YearBucket[];
+  yearBasis: YearBasis;
+  /** The busiest place, for anything that needs to know where this happened. */
+  location: Location | null;
+  /** The hours counted as daylight, and where that came from. */
+  daylight: Daylight;
+  /** Resolved here so the slides and the settings beside them agree. */
+  limits: Required<RowLimits>;
 }
 
 export interface StatsOptions {
   includeVideo: boolean;
+  /**
+   * Whether a year runs January to December, or from the day the library
+   * starts. A slide setting rather than a config one: it is a way of looking
+   * at the same photographs, not a fact about them.
+   */
+  yearBasis?: YearBasis;
+  /** The day an anchor year begins. Usually the library start date. */
+  anchorDay?: number | null;
   /** Camera and lens keys to leave out of every count. */
   excluded?: { cameras: string[]; lenses: string[] };
   /** How gear should be written. Applied here, never at index time. */
   naming?: NamingOptions;
+  /** Which hours count as daylight on the clock slide. */
+  daylight?: DaylightMode;
+  /** How many rows the slides that pool a tail should draw. */
+  limits?: RowLimits;
 }
 
 /**
@@ -213,6 +327,106 @@ function scope(
   }
 
   return { where: clauses.join(" AND "), params };
+}
+
+/**
+ * The years a range covers, as pairs of days.
+ *
+ * On the calendar basis these are January to December. On the anchor basis they
+ * run from the anchor day — the day the library starts, usually the day a
+ * camera was bought — so "year one" is the first twelve months of owning it
+ * rather than whatever was left of the calendar.
+ *
+ * A range that begins mid-period keeps that short first period rather than
+ * hiding it: it is a real year of the library, just an incomplete one.
+ */
+export function yearPeriods(
+  range: Range,
+  basis: YearBasis,
+  anchorDay: number | null,
+  today: number,
+): Array<{ from: number; to: number; label: string; partial: boolean }> {
+  const periods: Array<{ from: number; to: number; label: string; partial: boolean }> = [];
+
+  if (basis === "calendar" || anchorDay === null) {
+    const firstYear = Math.floor(range.from / 10000);
+    const lastYear = Math.floor(range.to / 10000);
+    for (let year = firstYear; year <= lastYear; year++) {
+      const from = Math.max(range.from, makeDay(year, 1, 1));
+      const to = Math.min(range.to, makeDay(year, 12, 31));
+      if (from > to) continue;
+      periods.push({ from, to, label: String(year), partial: to >= today });
+    }
+    return periods;
+  }
+
+  const { month, day } = dayParts(anchorDay);
+  // Step back to the anchor boundary at or before the range starts, so a range
+  // that begins mid-year still lines its periods up with the anchor.
+  let year = Math.floor(range.from / 10000);
+  if (range.from < makeDay(year, month, day)) year -= 1;
+
+  for (;;) {
+    const start = makeDay(year, month, day);
+    const end = addDays(makeDay(year + 1, month, day), -1);
+    if (start > range.to) break;
+
+    const from = Math.max(range.from, start);
+    const to = Math.min(range.to, end);
+    if (from <= to) {
+      const a = String(year);
+      const b = String(year + 1).slice(2);
+      periods.push({ from, to, label: `${a}–${b}`, partial: end > range.to || end >= today });
+    }
+    year += 1;
+    if (periods.length > 60) break;
+  }
+
+  return periods;
+}
+
+/** Fixed windows, for a library with no GPS or a reader who prefers one. */
+const FIXED_DAYLIGHT: Record<string, { sunrise: number; sunset: number }> = {
+  "06-18": { sunrise: 6, sunset: 18 },
+  "07-19": { sunrise: 7, sunset: 19 },
+  "05-21": { sunrise: 5, sunset: 21 },
+};
+
+/**
+ * The hours the clock slide shades as daylight.
+ *
+ * Asked for the sun, it uses where most of the photographs were taken and the
+ * middle day of the range — one pair of hours for a period whose real sunrise
+ * moved every day, which is a stylisation the slide says out loud. Polar
+ * latitudes, where the sun may not rise at all, fall back to a fixed window
+ * rather than pretending to an answer.
+ */
+function resolveDaylight(
+  mode: DaylightMode | undefined,
+  location: Location | null,
+  range: Range,
+): Daylight {
+  const fallback = { mode: "06-18" as DaylightMode, ...FIXED_DAYLIGHT["06-18"]!, source: "06:00 to 18:00" };
+  const chosen = mode ?? "sun";
+
+  if (chosen !== "sun") {
+    const fixed = FIXED_DAYLIGHT[chosen];
+    if (!fixed) return fallback;
+    return { mode: chosen, ...fixed, source: `${formatHour(fixed.sunrise)} to ${formatHour(fixed.sunset)}` };
+  }
+
+  if (!location) return fallback;
+
+  const middle = addDays(range.from, Math.floor(daysBetween(range.from, range.to) / 2));
+  const times = sunTimes(location.lat, middle);
+  if (!times) return fallback;
+
+  const where = `${Math.abs(location.lat).toFixed(1)}°${location.lat >= 0 ? "N" : "S"}`;
+  return {
+    mode: "sun",
+    ...times,
+    source: `${formatHour(times.sunrise)} to ${formatHour(times.sunset)} at ${where}, mid-range`,
+  };
 }
 
 /** A gear row as stored: the tidied name, and what the camera actually wrote. */
@@ -463,6 +677,23 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
     }));
   const comboKnown = comboRows.reduce((sum, row) => sum + row.n, 0);
 
+  // Pairings split by converter too. A body with a 200-600, and the same body
+  // with the same lens behind a 1.4x, are one pairing used further away.
+  const comboParts = new Map<string, TeleconverterPart[]>();
+  for (const row of db.allAs<{ key: string; tc: string | null; n: number }>(
+    `SELECT c.key || '+' || l.key AS key, p.tc AS tc, COUNT(*) AS n
+     FROM photo p JOIN camera c ON c.id = p.camera_id JOIN lens l ON l.id = p.lens_id
+     WHERE ${where} GROUP BY c.id, l.id, p.tc`,
+    ...args,
+  )) {
+    const parts = comboParts.get(row.key) ?? [];
+    parts.push({ tc: row.tc, shots: row.n });
+    comboParts.set(row.key, parts);
+  }
+  for (const parts of comboParts.values()) {
+    parts.sort((a, b) => (a.tc === null ? -1 : b.tc === null ? 1 : a.tc.localeCompare(b.tc)));
+  }
+
   /**
    * Hidden gear, counted as if it were not hidden.
    *
@@ -566,38 +797,48 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
 
   // ---------------------------------------------------- gear over time ----
 
-  const topLensKeys = lensRows.slice(0, 5).map((row) => row.key);
+  const limits = resolveLimits(options.limits);
+  const topLensKeys = lensRows.slice(0, limits.gear).map((row) => row.key);
   const months = monthly.map((row) => row.ym);
   const monthIndex = new Map(months.map((ym, i) => [ym, i]));
   const series: Series[] = [];
 
   if (topLensKeys.length > 0 && months.length > 1) {
-    const byLens = new Map<string, number[]>();
-    for (const row of db.allAs<{ ym: number; key: string; n: number }>(
-      `SELECT p.ym AS ym, l.key AS key, COUNT(*) AS n
+    const byLens = new Map<string, { values: number[]; converted: number[] }>();
+    for (const row of db.allAs<{ ym: number; key: string; tc: string | null; n: number }>(
+      `SELECT p.ym AS ym, l.key AS key, p.tc AS tc, COUNT(*) AS n
        FROM photo p JOIN lens l ON l.id = p.lens_id
-       WHERE ${where} AND p.ym IS NOT NULL GROUP BY p.ym, l.id`,
+       WHERE ${where} AND p.ym IS NOT NULL GROUP BY p.ym, l.id, p.tc`,
       ...args,
     )) {
       const index = monthIndex.get(row.ym);
       if (index === undefined) continue;
       const key = topLensKeys.includes(row.key) ? row.key : "other";
-      let values = byLens.get(key);
-      if (!values) {
-        values = new Array<number>(months.length).fill(0);
-        byLens.set(key, values);
+
+      let entry = byLens.get(key);
+      if (!entry) {
+        entry = {
+          values: new Array<number>(months.length).fill(0),
+          converted: new Array<number>(months.length).fill(0),
+        };
+        byLens.set(key, entry);
       }
-      values[index] = (values[index] ?? 0) + row.n;
+      entry.values[index] = (entry.values[index] ?? 0) + row.n;
+      if (row.tc !== null) entry.converted[index] = (entry.converted[index] ?? 0) + row.n;
     }
 
+    const toSeries = (label: string, entry: { values: number[]; converted: number[] }): Series =>
+      entry.converted.some((n) => n > 0)
+        ? { label, values: entry.values, converted: entry.converted }
+        : { label, values: entry.values };
+
     for (const key of topLensKeys) {
-      const values = byLens.get(key);
-      if (!values) continue;
-      const label = lensRows.find((row) => row.key === key)?.label ?? key;
-      series.push({ label, values });
+      const entry = byLens.get(key);
+      if (!entry) continue;
+      series.push(toSeries(lensRows.find((row) => row.key === key)?.label ?? key, entry));
     }
     const other = byLens.get("other");
-    if (other) series.push({ label: "Everything else", values: other });
+    if (other) series.push(toSeries("Everything else", other));
   }
 
   // ----------------------------------------------------------- keepers ----
@@ -658,6 +899,28 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
   }
   debuts.sort((a, b) => a.day - b.day || a.label.localeCompare(b.label));
 
+  // Three numbers per year, over whichever kind of year was asked for. One
+  // small query per period — at most a couple of dozen, each a range scan on
+  // the day index, which is cheaper and far clearer than date maths in SQL.
+  const basis: YearBasis = options.yearBasis ?? "anchor";
+  const periods = yearPeriods(range, basis, options.anchorDay ?? null, todayDay());
+  const years: YearBucket[] = periods.map((period) => {
+    const row = db.getAs<{ shots: number; cameras: number; lenses: number }>(
+      `SELECT COUNT(*) AS shots, COUNT(DISTINCT p.camera_id) AS cameras,
+              COUNT(DISTINCT p.lens_id) AS lenses
+       FROM photo p WHERE ${where}`,
+      period.from,
+      period.to,
+      ...args.slice(2),
+    );
+    return {
+      ...period,
+      shots: num(row?.shots),
+      cameras: num(row?.cameras),
+      lenses: num(row?.lenses),
+    };
+  });
+
   return {
     range,
     totals,
@@ -667,7 +930,10 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
       // A single bare part is just the bar; only a real split is worth shading.
       return parts.length > 1 ? { ...tally, parts } : tally;
     }),
-    combos: tallies(comboRows, comboKnown),
+    combos: tallies(comboRows, comboKnown).map((tally) => {
+      const parts = comboParts.get(tally.key) ?? [];
+      return parts.length > 1 ? { ...tally, parts } : tally;
+    }),
     hiddenCameras: tallies(hiddenCameras, cameraKnown, true),
     hiddenLenses: tallies(hiddenLenses, lensKnown, true),
     focal: distribute(focalRows, focalBucket, formatFocal),
@@ -686,6 +952,7 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
     daily,
     monthly,
     timeline: { months, series },
+    limits,
     ratings,
     orientation: {
       landscape: num(shape?.landscape),
@@ -699,6 +966,12 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
     placesKnown: totals.withGps,
     debuts,
     burst: findLongestBurst(db, range, options),
+    years,
+    yearBasis: basis,
+    // The cluster with the most frames in it. Good enough to ask the sun about,
+    // and honest: it is where most of these photographs were taken.
+    location: places[0] ?? null,
+    daylight: resolveDaylight(options.daylight, places[0] ?? null, range),
   };
 }
 

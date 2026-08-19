@@ -13,7 +13,13 @@ import { normPath } from "../core/paths.ts";
 import { parseIsoDay } from "../core/time.ts";
 import { indexSource, indexOverview, summarizeSources, INDEX_VERSION } from "../index/source.ts";
 import { rebuildPrimaries } from "../index/dedupe.ts";
-import { availableMonths, availableYears, computeStats } from "../stats/aggregate.ts";
+import {
+  availableMonths,
+  availableYears,
+  computeStats,
+  type DaylightMode,
+  type RowLimits,
+} from "../stats/aggregate.ts";
 import { buildDeck } from "../stats/slides.ts";
 import { parseRangeSpec, resolveRange, type RangeSpec } from "../stats/range.ts";
 import { browse } from "./browse.ts";
@@ -218,10 +224,32 @@ export async function handleApi(
         lastDay: overview.lastDay,
         floorDay: ctx.config.startDay,
       });
+      // Slide settings ride in the query alongside the range: they change what
+      // the deck says, so they belong to the request rather than to the config.
+      const yearBasis = url.searchParams.get("yearBasis") === "calendar" ? "calendar" : "anchor";
+      const asked = url.searchParams.get("daylight") ?? "sun";
+      const daylight: DaylightMode = ["sun", "06-18", "07-19", "05-21"].includes(asked)
+        ? (asked as DaylightMode)
+        : "sun";
+      // `rows.lenses=20`: how many bars a slide draws before pooling the tail.
+      // Nonsense is dropped here and clamped again in `resolveLimits`, so a
+      // hand-typed query cannot ask for four hundred bars.
+      const limits: RowLimits = {};
+      for (const field of ["cameras", "lenses", "combos", "gear"] as const) {
+        const asked = Number(url.searchParams.get(`rows.${field}`));
+        if (Number.isFinite(asked) && asked >= 1) limits[field] = Math.floor(asked);
+      }
+
       const stats = computeStats(ctx.db, range, {
         includeVideo: ctx.config.includeVideo,
         excluded: ctx.config.excluded,
         naming: ctx.config.naming,
+        yearBasis,
+        daylight,
+        limits,
+        // An anchor year starts where the library does; failing that, where the
+        // photographs do.
+        anchorDay: ctx.config.startDay ?? overview.firstDay,
       });
       json(res, 200, { range, deck: buildDeck(stats, ctx.config.ownerName) });
       return true;

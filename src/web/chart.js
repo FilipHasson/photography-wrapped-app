@@ -150,7 +150,7 @@ const fmt = (n) => nf.format(Math.round(n));
  * chart that assumed two lines and got four is a chart drawn over its own
  * caveats.
  */
-function frame(slide, theme, position, L) {
+function frame(slide, theme, L) {
   const root = el("svg", {
     xmlns: NS,
     viewBox: `0 0 ${L.width} ${L.height}`,
@@ -207,17 +207,11 @@ function frame(slide, theme, position, L) {
   let noteTop = footerY;
 
   if (slide.note) {
-    const noteLines = wrap(slide.note, inner - (position ? L.width * 0.09 : 0), L.note, L.noteLines);
+    const noteLines = wrap(slide.note, inner, L.note, L.noteLines);
     noteTop = footerY - (noteLines.length - 1) * L.note * 1.35;
     noteLines.forEach((line, i) => {
       root.append(text(line, L.pad, noteTop + i * L.note * 1.35, { size: L.note, fill: theme.muted }));
     });
-  }
-
-  if (position) {
-    root.append(
-      text(position, L.width - L.pad, footerY, { size: L.note, fill: theme.muted, anchor: "end" }),
-    );
   }
 
   const top = y + L.subtitle * 1.4;
@@ -265,13 +259,18 @@ function shadeOf(index, count, theme) {
  * and season, and a slide that implied otherwise would be claiming something
  * this tool does not know. The legend says as much.
  */
-function daylight(hour) {
-  if (hour >= 8 && hour <= 16) return 1;
-  if (hour >= 20 || hour <= 4) return 0;
-  return hour < 8 ? (hour - 4) / 4 : (20 - hour) / 4;
+function daylight(hour, sunrise, sunset) {
+  // Twilight either side, so the ring turns rather than switches.
+  const dawn = 1.5;
+  if (hour >= sunrise + dawn && hour <= sunset - dawn) return 1;
+  if (hour <= sunrise - dawn || hour >= sunset + dawn) return 0;
+  return hour < sunrise + dawn
+    ? (hour - (sunrise - dawn)) / (dawn * 2)
+    : ((sunset + dawn) - hour) / (dawn * 2);
 }
 
-const hourColour = (hour, theme) => mix(theme.night, theme.day, daylight(hour));
+const hourColour = (hour, theme, sunrise, sunset) =>
+  mix(theme.night, theme.day, daylight(hour, sunrise, sunset));
 
 /** A bar: rounded at the data end, square where it leaves the baseline. */
 function bar(root, x, y, width, height, fill, label, opacity = 1) {
@@ -304,7 +303,7 @@ function column(root, x, baseline, width, height, fill, label, opacity = 1) {
  * cut down to "NIKKOR Z 24-7…".
  */
 function drawBars(root, plot, slide, theme, L) {
-  const items = slide.items.slice(0, 9);
+  const items = slide.items;
   if (items.length === 0) return;
   const max = Math.max(...items.map((item) => item.value), 1);
 
@@ -320,11 +319,46 @@ function drawBars(root, plot, slide, theme, L) {
     return;
   }
 
+  // A longer list buys its rows out of the type size rather than out of the
+  // gaps: the reader asked for twenty lenses, so twenty have to fit, and the
+  // alternative to smaller labels is labels sitting on top of each other.
+  const dense = compress(items.length, area.h, L);
+
   if (L.narrow) {
-    drawBarsStacked(root, area, items, max, theme, L);
+    drawBarsStacked(root, area, items, max, theme, dense);
     return;
   }
 
+  return drawBarRows(root, area, items, max, theme, dense);
+}
+
+/**
+ * Type stepped down to fit a list, never below what stays readable.
+ *
+ * Each row needs a little more than its own label height; below about 70% the
+ * text stops being legible on a phone, which is where these are read, so a list
+ * long enough to need more than that keeps the floor and takes the space it
+ * needs from the row height instead.
+ */
+function compress(rows, height, L) {
+  // What one row costs, in multiples of its own label: a name and a bar under
+  // it where the frame is narrow, a name beside one where it is not.
+  const perRow = L.label * (L.narrow ? 2.6 : 1.55);
+  if (rows * perRow <= height) return L;
+
+  // Never below 8px, which is where a label stops being a label — the row cap
+  // in stats/aggregate.ts is what keeps a list from ever needing to go there.
+  const scale = Math.max(8 / L.label, height / (rows * perRow));
+  return {
+    ...L,
+    label: L.label * scale,
+    value: L.value * scale,
+    tiny: L.tiny * scale,
+  };
+}
+
+/** One bar per row, name on the left, number on the right. */
+function drawBarRows(root, area, items, max, theme, L) {
   const rowHeight = Math.min(area.h / items.length, L.label * 4);
   const top0 = area.y + Math.max(0, (area.h - rowHeight * items.length) / 2);
   const thickness = Math.min(24, Math.max(6, rowHeight - L.label * 0.9));
@@ -393,6 +427,36 @@ function segmentedBar(root, x, y, width, height, item, theme) {
   });
 }
 
+/** The same, stood up: the parts stack from the baseline. */
+function segmentedColumn(root, x, baseline, width, height, item, theme) {
+  const fill = item.muted ? theme.axis : theme.series[0];
+  const parts = item.segments ?? [];
+
+  if (item.muted || parts.length < 2 || item.value <= 0) {
+    column(root, x, baseline, width, height, fill, `${item.label}: ${fmt(item.value)}`);
+    return;
+  }
+
+  let bottom = baseline;
+  parts.forEach((part, index) => {
+    const share = (part.value / item.value) * height;
+    if (share <= 0) return;
+    const last = index === parts.length - 1;
+    const shade = shadeOf(index, parts.length, theme);
+    const drawn = Math.max(1, share - (last ? 0 : 2));
+    const label = `${item.label} ${part.label}: ${fmt(part.value)}`;
+
+    if (last) {
+      column(root, x, bottom, width, drawn, shade, label);
+    } else {
+      root.append(
+        titled(el("rect", { x, y: bottom - drawn, width, height: drawn, fill: shade }), label),
+      );
+    }
+    bottom -= share;
+  });
+}
+
 /** Names the shades inside a segmented bar. */
 function drawShadeLegend(root, plot, labels, theme, L) {
   let x = plot.x;
@@ -430,9 +494,8 @@ function drawBarsAsColumns(root, plot, items, max, theme, L) {
   items.forEach((item, i) => {
     const cx = plot.x + band * (i + 0.5);
     const barHeight = item.value > 0 ? Math.max(3, (item.value / max) * height) : 0;
-    const fill = item.muted ? theme.axis : theme.series[0];
 
-    column(root, cx - thickness / 2, baseline, thickness, barHeight, fill, `${item.label}: ${fmt(item.value)}`);
+    segmentedColumn(root, cx - thickness / 2, baseline, thickness, barHeight, item, theme);
 
     root.append(
       text(fmt(item.value), cx, baseline - barHeight - L.value * 0.7, {
@@ -479,7 +542,9 @@ function drawBarsStacked(root, plot, items, max, theme, L) {
   // blank; the cap only exists to stop two items becoming two enormous ones.
   const rowHeight = Math.min(plot.h / items.length, L.label * 6);
   const top0 = plot.y + Math.max(0, (plot.h - rowHeight * items.length) / 2);
-  const thickness = Math.min(28, Math.max(8, rowHeight - L.label * 2.2));
+  // The bar takes whatever the label leaves. A long list gets thin bars rather
+  // than bars growing into the next row name.
+  const thickness = Math.min(28, Math.max(4, rowHeight - L.label * 1.9));
 
   items.forEach((item, i) => {
     const top = top0 + i * rowHeight;
@@ -501,14 +566,17 @@ function drawBarsStacked(root, plot, items, max, theme, L) {
         anchor: "end",
       }),
     );
-    bar(
+    // Segments here too. This is the layout a 9:16 deck uses, so drawing a
+    // plain bar meant the teleconverter shading never appeared in the format
+    // the deck is built for.
+    segmentedBar(
       root,
       plot.x,
-      top + L.label * 1.5,
+      top + L.label * 1.35,
       Math.max(2, (item.value / max) * plot.w),
       thickness,
-      fill,
-      `${item.label}: ${fmt(item.value)}`,
+      item,
+      theme,
     );
   });
 }
@@ -730,6 +798,10 @@ function drawStrip(root, plot, slide, theme, L) {
 
 /** Twenty-four spokes: a day, read as a clock face. */
 function drawClock(root, plot, slide, theme, L) {
+  // The window the reader chose: real sunrise and sunset where they shoot, or
+  // a fixed pair of hours.
+  const sunrise = Number.isFinite(slide.sunrise) ? slide.sunrise : 6;
+  const sunset = Number.isFinite(slide.sunset) ? slide.sunset : 18;
   const cx = plot.x + plot.w / 2;
   const cy = plot.y + plot.h / 2;
   // No fixed ceiling: the circle is as big as the shorter side allows, which is
@@ -758,7 +830,7 @@ function drawClock(root, plot, slide, theme, L) {
           y2: cy + Math.sin(angle) * (inner + length),
           // Cool at midnight, warm at midday: the spoke says when as well as
           // how many, which is the whole point of a clock face.
-          stroke: hourColour(hour, theme),
+          stroke: hourColour(hour, theme, sunrise, sunset),
           "stroke-width": thickness,
           "stroke-linecap": "round",
           opacity: hour === peak ? 1 : 0.82,
@@ -792,11 +864,11 @@ function drawClock(root, plot, slide, theme, L) {
     text("busiest hour", cx, cy + L.tiny * 1.7, { size: L.tiny, fill: theme.muted, anchor: "middle" }),
   );
 
-  drawClockLegend(root, plot, cy + outer + L.axis * 2.6, theme, L);
+  drawClockLegend(root, plot, cy + outer + L.axis * 2.6, theme, L, sunrise, sunset);
 }
 
 /** The scale for the colour, since colour is carrying the time of day. */
-function drawClockLegend(root, plot, y, theme, L) {
+function drawClockLegend(root, plot, y, theme, L, sunrise, sunset) {
   const width = Math.min(plot.w * 0.6, 420);
   const x = plot.x + (plot.w - width) / 2;
   const height = L.tiny * 0.9;
@@ -811,7 +883,7 @@ function drawClockLegend(root, plot, y, theme, L) {
         y,
         width: width / 24 + 0.5,
         height,
-        fill: hourColour(hour, theme),
+        fill: hourColour(hour, theme, sunrise, sunset),
       }),
     );
   }
@@ -1126,19 +1198,19 @@ function stackColour(series, index, theme) {
 }
 
 /** Flows legend entries across as many rows as they need. */
-function layoutLegend(series, width, L) {
+function layoutLegend(items, width, L) {
   const entries = [];
   let x = 0;
   let row = 0;
 
-  series.forEach((s, index) => {
-    const label = ellipsize(s.label, width * (L.narrow ? 0.8 : 0.4), L.axis);
+  items.forEach((item) => {
+    const label = ellipsize(item.label, width * (L.narrow ? 0.8 : 0.4), L.axis);
     const entryWidth = L.axis + measure(label, L.axis) + L.axis * 1.6;
     if (x > 0 && x + entryWidth > width) {
       row++;
       x = 0;
     }
-    entries.push({ series: s, index, label, x, row });
+    entries.push({ colour: item.colour, label, x, row });
     x += entryWidth;
   });
 
@@ -1155,8 +1227,20 @@ function drawStack(root, plot, slide, theme, L) {
 
   const band = plot.w / months.length;
   const thickness = Math.min(24, Math.max(4, band - 8));
-  // The legend is laid out first: it is the part that must not be squeezed.
-  const legend = layoutLegend(series, plot.w, L);
+  // The legend is laid out first: it is the part that must not be squeezed. A
+  // converted lens is a shade of its own colour rather than a colour of its
+  // own, so it takes one entry at the end however many lenses have one.
+  const converted = series.some((s) => (s.converted ?? []).some((n) => n > 0));
+  const legend = layoutLegend(
+    [
+      ...series.map((s, index) => ({ label: s.label, colour: stackColour(s, index, theme) })),
+      ...(converted
+        ? [{ label: "with a teleconverter", colour: mix(theme.series[0], theme.surface, 0.55) }]
+        : []),
+    ],
+    plot.w,
+    L,
+  );
   const legendH = legend.rows * L.axis * 1.9;
   const baseline = plot.y + plot.h - legendH - L.axis * 3;
   const height = Math.max(40, baseline - plot.y);
@@ -1171,19 +1255,40 @@ function drawStack(root, plot, slide, theme, L) {
       if (value <= 0) return;
       const segment = (value / ceiling) * height;
       top -= segment;
+
+      const colour = stackColour(s, index, theme);
+      const when = `${MONTH_SHORT[(ym % 100) - 1]} ${Math.floor(ym / 100)}`;
+      const drawn = Math.max(1, segment - 2);
+
       // A 2px gap in the surface colour is what separates the segments.
       root.append(
         titled(
-          el("rect", {
-            x: cx - thickness / 2,
-            y: top,
-            width: thickness,
-            height: Math.max(1, segment - 2),
-            fill: stackColour(s, index, theme),
-          }),
-          `${MONTH_SHORT[(ym % 100) - 1]} ${Math.floor(ym / 100)} · ${s.label}: ${fmt(value)}`,
+          el("rect", { x: cx - thickness / 2, y: top, width: thickness, height: drawn, fill: colour }),
+          `${when} · ${s.label}: ${fmt(value)}`,
         ),
       );
+
+      // Frames shot through a converter sit at the top of their own lens
+      // segment, in a lighter step of the same colour — the same idea as the
+      // lens slide, kept to one shade because a month column is 20px wide.
+      const converted = s.converted?.[i] ?? 0;
+      if (converted > 0) {
+        const part = Math.min(drawn, (converted / value) * drawn);
+        if (part >= 1) {
+          root.append(
+            titled(
+              el("rect", {
+                x: cx - thickness / 2,
+                y: top,
+                width: thickness,
+                height: part,
+                fill: mix(colour, theme.surface, 0.55),
+              }),
+              `${when} · ${s.label} with a converter: ${fmt(converted)}`,
+            ),
+          );
+        }
+      }
     });
 
     if (i % stride === 0) {
@@ -1219,7 +1324,7 @@ function drawStack(root, plot, slide, theme, L) {
         width: L.axis * 0.7,
         height: L.axis * 0.7,
         rx: 3,
-        fill: stackColour(entry.series, entry.index, theme),
+        fill: entry.colour,
       }),
     );
     root.append(text(entry.label, plot.x + entry.x + L.axis, y, { size: L.axis, fill: theme.ink2 }));
@@ -1479,6 +1584,100 @@ function drawHero(root, plot, slide, theme, L) {
   drawTiles(root, { x: plot.x, y: blockTop, w: plot.w, h: block.height }, slide, theme, L);
 }
 
+/**
+ * A year per row, three cards across: photographs, cameras, lenses.
+ *
+ * Deliberately not a chart. Three series of three points is nine numbers, and
+ * nine numbers read faster as nine numbers than as a grouped bar chart of them
+ * — the comparison a reader actually makes here is "this year against last",
+ * which rows of cards support and a legend does not.
+ */
+function drawYears(root, plot, slide, theme, L) {
+  const years = slide.years.slice(0, 8);
+  if (years.length === 0) return;
+
+  const gap = L.tiny * 0.9;
+  const rowGap = L.tiny * (L.tall ? 1.2 : 0.9);
+  const rowHeight = Math.min((plot.h + rowGap) / years.length - rowGap, L.tileValue * 3.2);
+  const top = plot.y + Math.max(0, (plot.h - (rowHeight + rowGap) * years.length + rowGap) / 2);
+
+  const yearWidth = Math.min(plot.w * 0.22, measure("2023–24", L.subtitle, 600) + L.tiny * 2);
+  const cardsX = plot.x + yearWidth;
+  const cardWidth = (plot.w - yearWidth - gap * 2) / 3;
+
+  const labelSize = Math.min(L.tileLabel, rowHeight * 0.2);
+  const valueSize = Math.min(L.tileValue * 1.2, rowHeight * 0.46, cardWidth * 0.34);
+
+  years.forEach((year, i) => {
+    const y = top + i * (rowHeight + rowGap);
+
+    // The year itself, set against the cards rather than inside one.
+    root.append(
+      text(year.label, plot.x, y + rowHeight / 2 + L.subtitle * 0.36, {
+        size: L.subtitle,
+        weight: 600,
+        fill: theme.ink,
+      }),
+    );
+    if (year.partial) {
+      root.append(
+        text("so far", plot.x, y + rowHeight / 2 + L.subtitle * 0.36 + L.tiny * 1.5, {
+          size: L.tiny,
+          fill: theme.muted,
+        }),
+      );
+    }
+
+    const cards = [
+      { label: "photographs", value: year.shots },
+      { label: year.cameras === 1 ? "camera" : "cameras", value: year.cameras },
+      { label: year.lenses === 1 ? "lens" : "lenses", value: year.lenses },
+    ];
+
+    cards.forEach((card, index) => {
+      const x = cardsX + index * (cardWidth + gap);
+
+      root.append(
+        titled(
+          el("rect", {
+            x,
+            y,
+            width: cardWidth,
+            height: rowHeight,
+            rx: Math.min(10, rowHeight / 6),
+            fill: theme.plane,
+            // The first column is the count everything else is a detail of, so
+            // it carries the series colour and the others stay quiet.
+            stroke: index === 0 ? theme.series[0] : theme.grid,
+            "stroke-width": index === 0 ? 2 : 1,
+          }),
+          `${year.label}: ${fmt(card.value)} ${card.label}`,
+        ),
+      );
+
+      const centre = x + cardWidth / 2;
+      const fitted =
+        measure(fmt(card.value), valueSize, 600) > cardWidth - L.tiny * 2 ? valueSize * 0.7 : valueSize;
+
+      root.append(
+        text(fmt(card.value), centre, y + rowHeight * 0.58, {
+          size: fitted,
+          weight: 600,
+          fill: index === 0 ? theme.series[0] : theme.ink,
+          anchor: "middle",
+        }),
+      );
+      root.append(
+        text(ellipsize(card.label, cardWidth - L.tiny, labelSize), centre, y + rowHeight * 0.82, {
+          size: labelSize,
+          fill: theme.muted,
+          anchor: "middle",
+        }),
+      );
+    });
+  });
+}
+
 /** Rows of label, meta and value — gear debuts and anything else list-shaped. */
 function drawList(root, plot, slide, theme, L) {
   const rowHeight = Math.max(
@@ -1522,6 +1721,7 @@ const RENDERERS = {
   bars: drawBars,
   columns: drawColumns,
   strip: drawStrip,
+  years: drawYears,
   clock: drawClock,
   week: drawWeek,
   calendar: drawCalendar,
@@ -1533,12 +1733,15 @@ const RENDERERS = {
 };
 
 /**
- * Renders one slide. `position` is the "3 / 14" marker, left off when a slide
- * is drawn on its own; `format` decides the shape of the canvas.
+ * Renders one slide, at whatever shape `format` asks for.
+ *
+ * There is deliberately no "3 of 19" in the corner: on screen the dots under
+ * the deck say where you are, and in something posted one slide at a time the
+ * number refers to a deck nobody else has seen.
  */
-export function renderSlide(slide, theme, position = "", format = DEFAULT_FORMAT) {
+export function renderSlide(slide, theme, format = DEFAULT_FORMAT) {
   const L = metrics(format);
-  const { root, plot } = frame(slide, theme, position, L);
+  const { root, plot } = frame(slide, theme, L);
   const draw = RENDERERS[slide.kind];
   if (draw) draw(root, plot, slide, theme, L);
   return root;

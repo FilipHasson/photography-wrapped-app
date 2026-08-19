@@ -69,12 +69,24 @@ async function api(path, options = {}) {
 const store = {
   /** @type {any} */ state: null,
   /** @type {any} */ range: { kind: "all" },
+  /**
+   * Choices belonging to individual slides, by setting id.
+   *
+   * They live with the request rather than in the config: they change how a
+   * deck reads, not what the library is, and two people looking at the same
+   * library should be able to disagree about them.
+   */
+  /** @type {Record<string, string>} */ slideSettings: {},
 };
 
 const deck = createDeck({
   onExit: () => show("view-home"),
   onToast: toast,
   onExclude: (dimension, key, excluded) => void setExcluded(dimension, key, excluded),
+  onSetting: (id, value) => {
+    store.slideSettings[id] = value;
+    void buildDeck(true);
+  },
 });
 
 function show(view) {
@@ -438,7 +450,10 @@ async function buildDeck(keepPosition = false) {
   button.textContent = "Counting…";
 
   try {
-    const { deck: built } = await api(`/api/deck?${rangeQuery(store.range)}`);
+    const query = new URLSearchParams(rangeQuery(store.range));
+    for (const [id, value] of Object.entries(store.slideSettings)) query.set(id, value);
+
+    const { deck: built } = await api(`/api/deck?${query.toString()}`);
     deck.show(built, { keepPosition });
     show("view-deck");
     if (built.empty) toast("Nothing was shot in that range.");

@@ -189,6 +189,7 @@ if (args.command === "stats") {
     includeVideo: config.includeVideo,
     excluded: config.excluded,
     naming: config.naming,
+    anchorDay: config.startDay ?? overview.firstDay,
   });
   const deck = buildDeck(stats, config.ownerName);
 

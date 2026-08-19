@@ -80,7 +80,7 @@ function installShim(): void {
 let root = "";
 let db: Db;
 let slides: Slide[] = [];
-let renderSlide: (slide: unknown, theme: unknown, position?: string, format?: unknown) => ShimNode;
+let renderSlide: (slide: unknown, theme: unknown, format?: unknown) => ShimNode;
 let LIGHT: unknown;
 let DARK: unknown;
 let FORMATS: Array<{ id: string; width: number; height: number }>;
@@ -106,7 +106,7 @@ before(async () => {
   // shapes asserted here are the ones this file uses.
   // @ts-expect-error — untyped module, imported for its behaviour.
   ({ renderSlide } = (await import("../src/web/chart.js")) as {
-    renderSlide: (slide: unknown, theme: unknown, position?: string, format?: unknown) => ShimNode;
+    renderSlide: (slide: unknown, theme: unknown, format?: unknown) => ShimNode;
   });
   // @ts-expect-error — untyped module, imported for its values.
   ({ FORMATS } = (await import("../src/web/formats.js")) as {
@@ -135,7 +135,7 @@ describe("rendering", () => {
     for (const format of FORMATS) {
       for (const theme of [LIGHT, DARK]) {
         for (const slide of slides) {
-          const svg = renderSlide(slide, theme, "1 / 20", format);
+          const svg = renderSlide(slide, theme, format);
           for (const node of svg.walk()) {
             for (const [key, value] of node.attrs) {
               if (!NUMERIC_ATTRS.has(key)) continue;
@@ -153,7 +153,7 @@ describe("rendering", () => {
   test("nothing is drawn outside the frame, in every shape", () => {
     for (const format of FORMATS) {
       for (const slide of slides) {
-        const svg = renderSlide(slide, LIGHT, "1 / 20", format);
+        const svg = renderSlide(slide, LIGHT, format);
         for (const node of svg.walk()) {
           if (node.tag === "svg") continue;
           const x = Number(node.attrs.get("x") ?? 0);
@@ -182,7 +182,7 @@ describe("rendering", () => {
   test("no two lines of text sit on top of each other", () => {
     for (const format of FORMATS) {
       for (const slide of slides) {
-        const svg = renderSlide(slide, LIGHT, "1 / 20", format);
+        const svg = renderSlide(slide, LIGHT, format);
         const texts = [...svg.walk()]
           .filter((node) => node.tag === "text" && node.textContent.trim() !== "")
           .map((node) => ({
@@ -246,7 +246,7 @@ describe("rendering", () => {
 
   test("the headline and title always make it onto the slide", () => {
     for (const slide of slides) {
-      const svg = renderSlide(slide, LIGHT, "3 / 20");
+      const svg = renderSlide(slide, LIGHT);
       const texts = [...svg.walk()].filter((node) => node.tag === "text").map((node) => node.textContent);
       assert.ok(
         texts.some((value) => value === slide.title.toUpperCase()),
@@ -257,5 +257,103 @@ describe("rendering", () => {
         `${slide.id} lost its headline`,
       );
     }
+  });
+});
+
+/**
+ * The reader can ask for more rows than the default eight, and every one of
+ * them has to land inside the frame with its label legible beside it. Long
+ * lists are exactly where a layout tuned for eight rows falls over, so they are
+ * checked against a manufactured slide rather than waiting for a fixture
+ * library with forty lenses in it.
+ */
+describe("lists the reader has made longer", () => {
+  const longBars = (rows: number): Slide => ({
+    kind: "bars",
+    id: "lenses",
+    title: "Lenses",
+    headline: "FE 200-600 G — 46% of your frames",
+    items: Array.from({ length: rows }, (_, i) => ({
+      label: `FE ${100 + i * 10}-${200 + i * 10}mm F2.8 GM OSS II`,
+      value: rows * 100 - i * 90,
+      valueLabel: `${(rows * 100 - i * 90).toLocaleString()}  ·  ${Math.max(1, 40 - i)}%`,
+      share: Math.max(0.01, 0.4 - i * 0.01),
+    })),
+    table: { columns: ["Lens", "Photographs"], rows: [] },
+  });
+
+  for (const rows of [12, 20, 40]) {
+    test(`${rows} bars stay inside the frame, in every shape`, () => {
+      for (const format of FORMATS) {
+        const svg = renderSlide(longBars(rows), LIGHT, format);
+        for (const node of svg.walk()) {
+          if (node.tag === "svg") continue;
+          const x = Number(node.attrs.get("x") ?? 0);
+          const y = Number(node.attrs.get("y") ?? 0);
+          const width = Number(node.attrs.get("width") ?? 0);
+          const height = Number(node.attrs.get("height") ?? 0);
+          assert.ok(Number.isFinite(x + y + width + height), `${format.id}: ${node.tag} has a NaN`);
+          assert.ok(
+            x >= -1 && x + width <= format.width + 1 && y >= -1 && y + height <= format.height + 1,
+            `${format.id}: ${rows} bars pushed a ${node.tag} out of the frame`,
+          );
+        }
+      }
+    });
+
+    test(`${rows} bars keep their labels apart, in every shape`, () => {
+      for (const format of FORMATS) {
+        const svg = renderSlide(longBars(rows), LIGHT, format);
+        const texts = [...svg.walk()]
+          .filter((node) => node.tag === "text" && node.textContent.trim() !== "")
+          .map((node) => ({
+            x: Number(node.attrs.get("x") ?? 0),
+            y: Number(node.attrs.get("y") ?? 0),
+            size: Number(node.attrs.get("font-size") ?? 16),
+            anchor: node.attrs.get("text-anchor") ?? "start",
+            value: node.textContent,
+          }));
+
+        for (let i = 0; i < texts.length; i++) {
+          for (let j = i + 1; j < texts.length; j++) {
+            const a = texts[i]!;
+            const b = texts[j]!;
+            if (a.anchor !== b.anchor || Math.abs(a.x - b.x) > 2) continue;
+            const gap = Math.abs(a.y - b.y);
+            if (gap === 0) continue;
+            const [upper, lower] = a.y < b.y ? [a, b] : [b, a];
+            assert.ok(
+              gap >= lower.size * 0.9 + upper.size * 0.12,
+              `${format.id}: "${upper.value}" and "${lower.value}" are ${gap.toFixed(1)}px apart with ${rows} rows`,
+            );
+          }
+        }
+      }
+    });
+  }
+
+  test("the eighth series still has a colour of its own", () => {
+    const slide: Slide = {
+      kind: "stack",
+      id: "timeline",
+      title: "Gear over time",
+      headline: "How your kit rotated",
+      months: [202501, 202502, 202503],
+      series: Array.from({ length: 8 }, (_, i) => ({
+        label: `Lens ${i + 1}`,
+        values: [100 - i * 5, 90 - i * 5, 80 - i * 5],
+        ...(i === 0 ? { converted: [30, 20, 10] } : {}),
+      })),
+      table: { columns: ["Month"], rows: [] },
+    };
+
+    const fills = new Set(
+      [...renderSlide(slide, LIGHT).walk()]
+        .filter((node) => node.tag === "rect")
+        .map((node) => node.attrs.get("fill")),
+    );
+    // Eight lenses, one converter shade — nine fills, none of them repeated
+    // from a slot that is already in use.
+    assert.ok(fills.size >= 9, `only ${fills.size} distinct fills for eight series`);
   });
 });

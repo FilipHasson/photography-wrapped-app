@@ -30,7 +30,7 @@ pick a range, and hit **Show me the deck**.
 ```
 npm start -- --port 8080     # a different port
 npm start -- --no-open       # don't launch a browser
-npm test                     # 116 tests, including a full index-and-count run
+npm test                     # 134 tests, including a full index-and-count run
 npm run typecheck
 ```
 
@@ -117,10 +117,10 @@ Two settings deal with that, and both are saved:
 
 ## The deck
 
-Seventeen slides at most, and only the ones that have something to say — no GPS
+Twenty slides at most, and only the ones that have something to say — no GPS
 in your library means no map, no ratings means no keepers slide.
 
-Opening totals · cameras · lenses · **camera + lens pairings** · focal length ·
+Opening totals · year by year · cameras · lenses · **camera + lens pairings** · focal length ·
 aperture · ISO · shutter speed · time of day · day of the week · a calendar of
 every day · runs and quiet spells · which lens was on the camera month by month ·
 keepers · format and orientation · where · new gear · your longest burst · a
@@ -129,10 +129,12 @@ closing summary.
 A few things the slides do rather than say:
 
 - **The clock is coloured by the time of day** — cool at midnight, warm at
-  midday. A stylised day rather than a computed sunrise, which is what the
-  scale under it says.
+  midday. Where your photographs carry GPS the light turns at the real sunrise
+  and sunset for that latitude, and the slide says which hours it used; a
+  setting beside it offers fixed windows instead.
 - **A lens used with a teleconverter is one row, not three.** The bar splits
-  into shades: bare glass, then a shade per converter.
+  into shades: bare glass, then a shade per converter — on the lens slide, on
+  pairings, and inside each month of the gear-over-time chart.
 - **Two or three cameras stand up as columns** instead of lying down as short
   bars in an empty frame.
 - **Keepers carries a figure for everything never rated**, which is usually most
@@ -141,13 +143,34 @@ A few things the slides do rather than say:
 | Key | Does |
 |---|---|
 | `→` `←` `space` | Next and previous slide |
-| `t` | **Numbers** — the table behind the slide you are looking at |
+| `a` | **All slides** — the whole deck on one page |
+| `t` | **Data** — the table behind the slide you are looking at |
 | `f` | Full screen |
 | `Esc` | Back to the library |
 
-### Numbers, and hiding what skews them
+### Settings that belong to one slide
 
-**Numbers** is not a fallback. Every value a slide draws is in its table, so
+Some choices change one slide and nothing else, so they sit beside it rather
+than in a panel of library-wide settings: whether a year runs from January or
+from the day your library starts, which hours the clock counts as daylight, and
+**how many rows a chart draws before it pools the rest into "everything else"**.
+Every slide that folds a tail away offers that last one — cameras, lenses,
+pairings, and the gear-over-time chart, which stops at eight because that is how
+many colours there are that stay apart for a colour-blind reader.
+
+Changing one rebuilds the deck from the database and comes straight back to the
+slide you were on.
+
+### All slides at once
+
+**All slides** (or `a`) lays the whole deck out as a contact sheet, sized so it
+fits the window in one screenshot — the column count is worked out from the
+shape you have chosen and the room there is. Click any of them to go to that
+slide.
+
+### Data, and hiding what skews them
+
+**Data** is not a fallback. Every value a slide draws is in its table, so
 nothing on a slide is reachable only by colour — and the table goes further than
 the chart does. Where a chart folds a tail into one "12 others" bar, the table
 lists all twelve.

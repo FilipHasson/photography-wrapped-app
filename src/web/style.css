@@ -371,6 +371,56 @@ main {
  * whatever is left — the same rule then covers 4:5, 1:1 and 4:3 without a case
  * for each.
  */
+/*
+ * Data on the left, the slide in the middle, that slide s own settings on the
+ * right. The middle column is sized by the slide rather than the other way
+ * round — a 9:16 deck should not leave 16:9 worth of empty page beside it — so
+ * the stage hugs its content and the columns either side collapse when they
+ * have nothing to show.
+ */
+.deck-body {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: start;
+}
+.deck-data,
+.deck-settings {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.deck-data[hidden],
+.deck-settings[hidden] {
+  display: none;
+}
+.deck-settings {
+  width: 232px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.deck-settings h3 {
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.setting-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.setting-options .chip {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  text-align: left;
+}
+
 .stage {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -380,9 +430,14 @@ main {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Exactly as wide as the slide it holds, and centred in what is left. */
+  width: fit-content;
+  margin-inline: auto;
 }
-.stage[data-orientation="portrait"] {
-  background: var(--plane);
+.stage[hidden],
+.deck-nav[hidden] {
+  /* Both set a display of their own, which would otherwise beat [hidden]. */
+  display: none;
 }
 .stage:focus-visible {
   outline: 2px solid var(--accent);
@@ -395,7 +450,7 @@ main {
   max-width: 100%;
   /* Tall enough that a 9:16 slide is previewed at a useful size, capped so it
      never grows past the viewport on a laptop. */
-  max-height: min(78vh, 1120px);
+  max-height: min(76vh, 1120px);
 }
 
 .deck-nav {
@@ -423,22 +478,20 @@ main {
   border-color: var(--accent);
 }
 
-.deck-table {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+.deck-data {
+  width: min(34vw, 460px);
   padding: 4px 16px 16px;
   /* A wide table scrolls inside its own box; the page never scrolls sideways. */
   overflow-x: auto;
-  max-height: 340px;
+  max-height: min(76vh, 1120px);
   overflow-y: auto;
 }
-.deck-table table {
+.deck-data table {
   border-collapse: collapse;
   width: 100%;
   font-size: 0.9rem;
 }
-.deck-table th {
+.deck-data th {
   text-align: left;
   font-weight: 600;
   color: var(--muted);
@@ -448,30 +501,30 @@ main {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
-.deck-table td {
+.deck-data td {
   padding: 6px 12px 6px 0;
   border-bottom: 1px solid var(--border);
   color: var(--ink2);
 }
-.deck-table td.numeric {
+.deck-data td.numeric {
   font-variant-numeric: tabular-nums;
   text-align: right;
   padding-right: 24px;
 }
-.deck-table th.tick,
-.deck-table td.tick {
+.deck-data th.tick,
+.deck-data td.tick {
   width: 62px;
   padding-right: 12px;
   text-align: left;
 }
-.deck-table td.tick input {
+.deck-data td.tick input {
   width: 16px;
   height: 16px;
   accent-color: var(--accent);
   cursor: pointer;
 }
 /* A hidden row stays legible — it has to be readable to be brought back. */
-.deck-table tr.is-excluded td {
+.deck-data tr.is-excluded td {
   opacity: 0.55;
   font-style: italic;
 }
@@ -483,7 +536,8 @@ main {
   justify-content: center;
 }
 .deck:fullscreen .deck-bar,
-.deck:fullscreen .deck-table {
+.deck:fullscreen .deck-data,
+.deck:fullscreen .deck-settings {
   display: none;
 }
 .deck:fullscreen .stage {
@@ -737,4 +791,35 @@ main {
 .badge.stale {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+/* Every slide at once — a contact sheet, meant to be screenshotted whole.
+   The column count is worked out in deck.js against the slide shape and the
+   window, so the sheet fits on screen without scrolling wherever it can. */
+.sheet {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 10px;
+  justify-content: center;
+  align-content: start;
+}
+.sheet[hidden] {
+  display: none;
+}
+.sheet figure {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: pointer;
+  /* No inner spacing: the slide is the tile, edge to edge. */
+  line-height: 0;
+}
+.sheet figure:hover {
+  border-color: var(--accent);
+}
+.sheet svg {
+  display: block;
+  width: 100%;
+  height: auto;
 }

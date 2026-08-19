@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { buildDeck, type Slide } from "../src/stats/slides.ts";
-import type { DeckStats, Tally } from "../src/stats/aggregate.ts";
+import { resolveLimits, type DeckStats, type Tally } from "../src/stats/aggregate.ts";
 import { resolveRange } from "../src/stats/range.ts";
 
 /**
@@ -45,6 +45,9 @@ function statsWith(overrides: Partial<DeckStats>): DeckStats {
     orientation: { landscape: 0, portrait: 0, square: 0 },
     busiestDay: null, longestStreak: null, longestGap: null,
     places: [], placesKnown: 0, debuts: [], burst: null,
+    years: [], yearBasis: "anchor", location: null,
+    daylight: { mode: "06-18", sunrise: 6, sunset: 18, source: "06:00 to 18:00" },
+    limits: resolveLimits(),
     ...overrides,
   };
 }
@@ -111,6 +114,42 @@ describe("the numbers behind a slide", () => {
 
     const opening = findSlide(deck.slides, "opening");
     assert.equal(opening?.table.rowKeys, undefined);
+  });
+});
+
+describe("year by year", () => {
+  const years = [
+    { label: "2023–24", from: 20230824, to: 20240823, shots: 10621, cameras: 1, lenses: 6, partial: false },
+    { label: "2024–25", from: 20240824, to: 20250823, shots: 97962, cameras: 3, lenses: 8, partial: false },
+    { label: "2025–26", from: 20250824, to: 20260816, shots: 51156, cameras: 3, lenses: 8, partial: true },
+  ];
+
+  test("three numbers a year, and the busiest one named", () => {
+    const slide = findSlide(buildDeck(statsWith({ years })).slides, "years");
+    assert.ok(slide && slide.kind === "years");
+    assert.equal(slide.years.length, 3);
+    assert.ok(slide.headline.includes("2024–25"), slide.headline);
+    assert.ok(slide.note?.includes("still running"), slide.note);
+  });
+
+  test("carries the choice of what a year is", () => {
+    const slide = findSlide(buildDeck(statsWith({ years })).slides, "years");
+    const setting = slide?.settings?.[0];
+    assert.equal(setting?.id, "yearBasis");
+    assert.equal(setting?.value, "anchor");
+    assert.deepEqual(setting?.options.map((option) => option.value), ["anchor", "calendar"]);
+  });
+
+  test("the table gives the boundaries the cards imply", () => {
+    const slide = findSlide(buildDeck(statsWith({ years })).slides, "years");
+    assert.deepEqual(slide?.table.columns, ["Year", "From", "To", "Photographs", "Cameras", "Lenses"]);
+    assert.deepEqual(slide?.table.rows[0], ["2023–24", "24 Aug 2023", "23 Aug 2024", 10621, 1, 6]);
+  });
+
+  test("one year is not a comparison", () => {
+    // With a single year the opening slide already says all of this.
+    assert.equal(findSlide(buildDeck(statsWith({ years: years.slice(0, 1) })).slides, "years"), undefined);
+    assert.equal(findSlide(buildDeck(statsWith({ years: [] })).slides, "years"), undefined);
   });
 });
 

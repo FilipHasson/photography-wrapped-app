@@ -18,7 +18,7 @@ import { exportDeckPdf, exportDeckZip, exportSlidePng, fileNameFor } from "./exp
 const $ = (id) => document.getElementById(id);
 const FORMAT_KEY = "wdis-format";
 
-export function createDeck({ onExit, onToast, onExclude }) {
+export function createDeck({ onExit, onToast, onExclude, onSetting }) {
   let deck = { title: "", rangeLabel: "", slides: [] };
   let index = 0;
   let tableOpen = false;
@@ -27,6 +27,8 @@ export function createDeck({ onExit, onToast, onExclude }) {
   const stage = $("stage");
   const dots = $("deck-dots");
   const table = $("deck-table");
+  const sheet = $("sheet");
+  let sheetOpen = false;
 
   const slide = () => deck.slides[index];
 
@@ -34,9 +36,27 @@ export function createDeck({ onExit, onToast, onExclude }) {
     const current = slide();
     if (!current) return;
 
+    // The sheet takes the whole body: the one-slide window, the data and the
+    // settings beside it are all chrome around a single slide, and none of them
+    // belong in a screenshot of the deck.
+    stage.hidden = sheetOpen;
+    sheet.hidden = !sheetOpen;
+    $("deck-nav").hidden = sheetOpen;
+    $("deck-sheet-toggle").setAttribute("aria-pressed", String(sheetOpen));
+    if (sheetOpen) {
+      table.hidden = true;
+      $("deck-settings").hidden = true;
+      renderFormats();
+      renderSheet();
+      return;
+    }
+
     stage.dataset.orientation = format.width >= format.height ? "landscape" : "portrait";
+    // The window is the shape of the slide and no larger: changing the aspect
+    // moves everything around it rather than leaving a letterboxed gap.
+    stage.style.setProperty("--slide-aspect", `${format.width} / ${format.height}`);
     stage.replaceChildren(
-      renderSlide(current, currentTheme(), `${index + 1} / ${deck.slides.length}`, format),
+      renderSlide(current, currentTheme(), format),
     );
 
     dots.replaceChildren(
@@ -52,7 +72,110 @@ export function createDeck({ onExit, onToast, onExclude }) {
     );
 
     renderFormats();
+    renderSettings();
     renderTable();
+  }
+
+  /**
+   * The choices belonging to the slide on screen, beside it.
+   *
+   * A setting that changes one slide does not belong in a panel of library-wide
+   * settings two screens away — and it cannot be applied in the browser either,
+   * because the numbers behind it come from the database. Changing one rebuilds
+   * the deck and comes back to the same slide.
+   */
+  function renderSettings() {
+    const panel = $("deck-settings");
+    const current = slide();
+    const settings = current?.settings ?? [];
+
+    panel.hidden = settings.length === 0;
+    if (panel.hidden) {
+      panel.replaceChildren();
+      return;
+    }
+
+    panel.replaceChildren(
+      ...settings.flatMap((setting) => {
+        const heading = document.createElement("h3");
+        heading.className = "setting-label";
+        heading.textContent = setting.label;
+
+        const list = document.createElement("div");
+        list.className = "setting-options";
+
+        for (const option of setting.options) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = option.value === setting.value ? "chip is-current" : "chip";
+
+          const label = document.createElement("span");
+          label.textContent = option.label;
+          button.append(label);
+
+          if (option.note) {
+            const note = document.createElement("span");
+            note.className = "chip-count";
+            note.textContent = option.note;
+            button.append(note);
+          }
+
+          button.addEventListener("click", () => {
+            if (option.value === setting.value) return;
+            list.querySelectorAll("button").forEach((other) => (other.disabled = true));
+            onSetting(setting.id, option.value);
+          });
+          list.append(button);
+        }
+
+        return [heading, list];
+      }),
+    );
+  }
+
+  /**
+   * How many columns put the whole deck on screen at once.
+   *
+   * The sheet exists to be screenshotted in one go, so a layout that runs off
+   * the bottom of the window has failed at its only job. Every column count is
+   * tried and the first one that fits vertically wins; when none does — twenty
+   * story-shaped slides on a short laptop screen — the widest is used and the
+   * sheet scrolls, which is still one page rather than twenty.
+   */
+  function sheetColumns(count, width, height) {
+    const gap = 10;
+    const aspect = format.width / format.height;
+
+    for (let columns = 1; columns <= count; columns++) {
+      const rows = Math.ceil(count / columns);
+      const cell = (width - gap * (columns - 1)) / columns;
+      if (rows * (cell / aspect + gap) <= height) return columns;
+    }
+    return count;
+  }
+
+  /** Every slide at once, at the shape currently chosen. */
+  function renderSheet() {
+    const theme = currentTheme();
+    // The body is the grid's own width; the height is what is left below the
+    // bar, less a little so the sheet does not sit flush against the edge.
+    const width = sheet.clientWidth || sheet.parentElement?.clientWidth || 1200;
+    const height = Math.max(320, window.innerHeight - sheet.getBoundingClientRect().top - 24);
+
+    sheet.style.gridTemplateColumns = `repeat(${sheetColumns(deck.slides.length, width, height)}, 1fr)`;
+    sheet.replaceChildren(
+      ...deck.slides.map((entry, i) => {
+        const cell = document.createElement("figure");
+        cell.title = entry.title;
+        cell.append(renderSlide(entry, theme, format));
+        // Clicking one is how you get from the sheet to the slide it came from.
+        cell.addEventListener("click", () => {
+          sheetOpen = false;
+          go(i);
+        });
+        return cell;
+      }),
+    );
   }
 
   function renderFormats() {
@@ -144,6 +267,7 @@ export function createDeck({ onExit, onToast, onExclude }) {
 
   function go(next) {
     if (deck.slides.length === 0) return;
+    sheetOpen = false;
     index = Math.max(0, Math.min(next, deck.slides.length - 1));
     render();
   }
@@ -152,6 +276,15 @@ export function createDeck({ onExit, onToast, onExclude }) {
     if (event.defaultPrevented) return;
     const tag = document.activeElement?.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA") return;
+
+    // In the sheet the arrows mean "back to one slide", not "move by one":
+    // there is no current slide on screen to move away from.
+    if (sheetOpen && ["ArrowRight", "ArrowLeft", "PageDown", "PageUp", " ", "Escape"].includes(event.key)) {
+      sheetOpen = false;
+      render();
+      event.preventDefault();
+      return;
+    }
 
     switch (event.key) {
       case "ArrowRight":
@@ -173,8 +306,15 @@ export function createDeck({ onExit, onToast, onExclude }) {
         break;
       case "t":
       case "T":
+        // The data belongs to one slide, so asking for it leaves the sheet.
         tableOpen = !tableOpen;
-        renderTable();
+        sheetOpen = false;
+        render();
+        break;
+      case "a":
+      case "A":
+        sheetOpen = !sheetOpen;
+        render();
         break;
       case "f":
       case "F":
@@ -226,7 +366,7 @@ export function createDeck({ onExit, onToast, onExclude }) {
 
     try {
       const theme = currentTheme();
-      const render = (entry, i) => renderSlide(entry, theme, `${i + 1} / ${deck.slides.length}`, format);
+      const render = (entry) => renderSlide(entry, theme, format);
       const progress = (done, total) => {
         button.textContent = done < total ? `${done + 1}/${total}…` : "Saving…";
       };
@@ -253,7 +393,18 @@ export function createDeck({ onExit, onToast, onExclude }) {
   $("deck-full").addEventListener("click", toggleFullscreen);
   $("deck-table-toggle").addEventListener("click", () => {
     tableOpen = !tableOpen;
-    renderTable();
+    sheetOpen = false;
+    render();
+  });
+  $("deck-sheet-toggle").addEventListener("click", () => {
+    sheetOpen = !sheetOpen;
+    render();
+  });
+
+  // The column count is worked out against the window, so it has to be worked
+  // out again when the window changes.
+  window.addEventListener("resize", () => {
+    if (sheetOpen && deck.slides.length > 0) renderSheet();
   });
 
   // Clicking the slide advances, which is what everyone expects of a deck.
@@ -272,6 +423,9 @@ export function createDeck({ onExit, onToast, onExclude }) {
       const previousId = slide()?.id;
       deck = next;
       index = keepPosition ? Math.max(0, deck.slides.findIndex((s) => s.id === previousId)) : 0;
+      // A fresh deck opens on its first slide; a rebuild after a setting change
+      // stays wherever the reader was, sheet included.
+      if (!keepPosition) sheetOpen = false;
       $("deck-name").textContent = deck.title;
       $("deck-range").textContent = deck.rangeLabel;
       render();

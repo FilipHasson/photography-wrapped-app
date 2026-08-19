@@ -1,5 +1,5 @@
-import { HEATMAP_MAX_DAYS } from "./aggregate.ts";
-import type { DeckStats, DayCount, Place, Series, Streak } from "./aggregate.ts";
+import { HEATMAP_MAX_DAYS, MAX_ROWS as MAX_BARS, MAX_SERIES } from "./aggregate.ts";
+import type { DeckStats, DayCount, Place, Series, Streak, YearBucket } from "./aggregate.ts";
 import { formatDay, formatYearMonth, WEEKDAYS } from "../core/time.ts";
 
 /**
@@ -40,9 +40,26 @@ export interface Tile {
   note?: string;
 }
 
+/**
+ * A choice that belongs to one slide.
+ *
+ * Not everything is a library-wide setting. Whether a year runs from January or
+ * from the day the camera arrived changes one slide and nothing else, so it
+ * lives beside that slide rather than in a settings panel three screens away.
+ * Changing it rebuilds the deck with the choice in the query.
+ */
+export interface SlideSetting {
+  id: string;
+  label: string;
+  value: string;
+  options: Array<{ value: string; label: string; note?: string }>;
+}
+
 interface Common {
   id: string;
   title: string;
+  /** Choices this slide offers, rendered beside it. */
+  settings?: SlideSetting[];
   /** The one sentence the slide exists to deliver. */
   headline: string;
   subtitle?: string;
@@ -89,7 +106,18 @@ export type Slide =
       streak: Streak | null;
       gap: Streak | null;
     })
-  | (Common & { kind: "clock"; hours: number[] })
+  | (Common & {
+      kind: "years";
+      /** One row of cards per year: photographs, cameras, lenses. */
+      years: YearBucket[];
+    })
+  | (Common & {
+      kind: "clock";
+      hours: number[];
+      /** The hours the shading treats as daylight, as fractional hours. */
+      sunrise: number;
+      sunset: number;
+    })
   | (Common & { kind: "week"; days: number[] })
   | (Common & { kind: "calendar"; days: DayCount[]; from: number; to: number })
   | (Common & { kind: "months"; months: Array<{ ym: number; shots: number }> })
@@ -195,6 +223,9 @@ export function buildDeck(stats: DeckStats, ownerName = ""): Deck {
   }
 
   slides.push(opening(stats, range.label));
+
+  const perYear = yearsSlide(stats);
+  if (perYear) slides.push(perYear);
 
   const gear = [
     ranked(stats, "cameras", "Cameras", "The body you actually reach for"),
@@ -309,8 +340,99 @@ function opening(stats: DeckStats, rangeLabel: string): Slide {
   };
 }
 
-/** Bars past this are a wall rather than a chart; the tail pools into one. */
-const TOP_BARS = 8;
+/**
+ * A year at a time: three numbers each, as cards rather than a chart.
+ *
+ * Three series of two or three points is not a chart — it is nine numbers, and
+ * a chart of it would be harder to read than the numbers themselves. Cards say
+ * them plainly, one row per year.
+ *
+ * The years can run from January or from the day the library starts, which is a
+ * choice about how to look rather than a fact about the photographs — so it is
+ * a setting on the slide.
+ */
+function yearsSlide(stats: DeckStats): Slide | null {
+  const years = stats.years.filter((year) => year.shots > 0);
+  // One year is the opening slide with extra steps.
+  if (years.length < 2) return null;
+
+  const busiest = years.reduce((best, year) => (year.shots > best.shots ? year : best));
+  const setting: SlideSetting = {
+    id: "yearBasis",
+    label: "A year runs",
+    value: stats.yearBasis,
+    options: [
+      {
+        value: "anchor",
+        label: "From my start date",
+        note: years[0] ? `${formatDay(years[0].from)} onwards` : undefined,
+      },
+      { value: "calendar", label: "January to December" },
+    ],
+  };
+
+  return {
+    kind: "years",
+    id: "years",
+    title: "Year by year",
+    subtitle: stats.yearBasis === "anchor" ? "Years from your start date" : "Calendar years",
+    headline:
+      busiest.shots > 0
+        ? `${busiest.label} was your busiest year — ${shotsPhrase(busiest.shots)}`
+        : "Year by year",
+    note: years.some((year) => year.partial) ? "The last year is still running" : undefined,
+    settings: [setting],
+    years,
+    table: tableOf(
+      ["Year", "From", "To", "Photographs", "Cameras", "Lenses"],
+      years.map((year) => [
+        year.label,
+        formatDay(year.from),
+        formatDay(year.to),
+        year.shots,
+        year.cameras,
+        year.lenses,
+      ]),
+    ),
+  };
+}
+
+/**
+ * How many rows to draw, offered beside every slide that pools a tail.
+ *
+ * Eight bars is a default rather than a rule: someone with four lenses and
+ * someone with thirty want different slides out of the same code, and the one
+ * who owns the library is the one who knows which. The ladder is trimmed to the
+ * list it applies to — offering "top 20" to somebody with eleven lenses is
+ * offering them the same slide twice — and the top of it is always the whole
+ * list, so the chart can be made to agree with the table.
+ */
+function rowsSetting(field: string, total: number, value: number, ceiling: number): SlideSetting | null {
+  // Two rows and a tail of one is not a decision worth offering.
+  if (total < 4) return null;
+
+  const most = Math.min(total, ceiling);
+  // Asking for more rows than exist is the same slide as asking for all of
+  // them, and the chip that is on has to be one the reader can see.
+  const current = Math.min(value, most);
+  const steps = [...new Set([3, 5, 8, 12, 16, 20, 30, current].filter((n) => n < most))].sort(
+    (a, b) => a - b,
+  );
+
+  return {
+    id: `rows.${field}`,
+    label: "How many to show",
+    value: String(current),
+    options: [
+      ...steps.map((n) => ({ value: String(n), label: `Top ${n}` })),
+      {
+        value: String(most),
+        label: most === total ? `All ${total}` : `Top ${most}`,
+        note: most === total ? "nothing pooled" : `the most this chart can hold`,
+      },
+    ],
+  };
+}
 
 /** Cameras, lenses and pairings differ only in wording, so they share a shape. */
 function ranked(
@@ -328,7 +450,8 @@ function ranked(
 
   // Drawn: the leaders, then everything else as one bar. A lens used with a
   // teleconverter keeps its own row and carries the split inside the bar.
-  const drawn = rows.slice(0, TOP_BARS).map((row) => ({
+  const limit = stats.limits[field];
+  const drawn = rows.slice(0, limit).map((row) => ({
     label: row.label,
     value: row.shots,
     valueLabel: `${fmtInt(row.shots)}  ·  ${fmtPct(row.share)}`,
@@ -344,7 +467,7 @@ function ranked(
       : {}),
   }));
 
-  const tail = rows.slice(TOP_BARS);
+  const tail = rows.slice(limit);
   if (tail.length > 0) {
     const shots = tail.reduce((sum, row) => sum + row.shots, 0);
     drawn.push({
@@ -373,6 +496,8 @@ function ranked(
 
   const hiddenNote = hidden.length > 0 ? `${hidden.map((row) => row.label).join(", ")} hidden` : "";
 
+  const rowsChoice = rowsSetting(field, rows.length, limit, MAX_BARS);
+
   return {
     kind: "bars",
     id: field,
@@ -380,6 +505,7 @@ function ranked(
     subtitle,
     headline,
     note: [coverage, hiddenNote].filter(Boolean).join(" · ") || undefined,
+    ...(rowsChoice ? { settings: [rowsChoice] } : {}),
     items: drawn,
     // The shades need naming wherever any bar has them.
     ...(drawn.some((item) => item.segments)
@@ -553,10 +679,30 @@ function clockSlide(stats: DeckStats): Slide | null {
     if ((stats.hours[hour] ?? 0) > (stats.hours[peak] ?? 0)) peak = hour;
   }
 
-  const night = [22, 23, 0, 1, 2, 3, 4].reduce((sum, hour) => sum + (stats.hours[hour] ?? 0), 0);
-  const morning = [5, 6, 7, 8, 9].reduce((sum, hour) => sum + (stats.hours[hour] ?? 0), 0);
+  // Counted against the daylight the reader chose, so "after dark" means what
+  // the shading means.
+  const { sunrise, sunset, source, mode } = stats.daylight;
+  const dark = stats.hours.reduce(
+    (sum, shots, hour) => (hour + 0.5 < sunrise || hour + 0.5 > sunset ? sum + shots : sum),
+    0,
+  );
 
   const hourLabel = (hour: number) => `${String(hour).padStart(2, "0")}:00`;
+  const setting: SlideSetting = {
+    id: "daylight",
+    label: "Daylight is",
+    value: mode,
+    options: [
+      {
+        value: "sun",
+        label: "Sunrise to sunset",
+        note: stats.location ? "where you shoot, mid-range" : "needs a frame with GPS",
+      },
+      { value: "06-18", label: "06:00 to 18:00" },
+      { value: "07-19", label: "07:00 to 19:00" },
+      { value: "05-21", label: "05:00 to 21:00" },
+    ],
+  };
 
   return {
     kind: "clock",
@@ -564,8 +710,11 @@ function clockSlide(stats: DeckStats): Slide | null {
     title: "Time of day",
     subtitle: "When the shutter goes",
     headline: `${hourLabel(peak)} is your hour — ${fmtPct((stats.hours[peak] ?? 0) / total)} of everything`,
-    note: `${fmtPct(morning / total)} before 10:00 · ${fmtPct(night / total)} after dark`,
+    note: `${fmtPct(dark / total)} after dark · daylight ${source}`,
+    settings: [setting],
     hours: stats.hours,
+    sunrise,
+    sunset,
     table: tableOf(
       ["Hour", "Photographs"],
       stats.hours.map((shots, hour) => [hourLabel(hour), shots]),
@@ -711,6 +860,15 @@ function timelineSlide(stats: DeckStats): Slide | null {
   const pooled = timeline.series.some((series) => series.label === "Everything else");
   const named = timeline.series.length - (pooled ? 1 : 0);
 
+  // The chart is capped by the palette rather than by taste: there are eight
+  // categorical slots and a ninth would have to be an invented hue.
+  const rowsChoice = rowsSetting(
+    "gear",
+    pooled ? stats.lenses.length : named,
+    stats.limits.gear,
+    MAX_SERIES,
+  );
+
   return {
     kind: "stack",
     id: "timeline",
@@ -721,6 +879,7 @@ function timelineSlide(stats: DeckStats): Slide | null {
         ? `${leader.label} closed out ${formatYearMonth(timeline.months[lastIndex] as number)}`
         : "How your kit rotated",
     note: pooled ? `Your ${named} most-used lenses, the rest pooled` : "Every lens you used",
+    ...(rowsChoice ? { settings: [rowsChoice] } : {}),
     months: timeline.months,
     series: timeline.series,
     table: tableOf(

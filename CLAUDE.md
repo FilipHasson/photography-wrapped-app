@@ -93,7 +93,7 @@ their width, not smaller: a 20px label reads fine across 1600px of laptop and is
 a third of the apparent size on a phone, which is the whole reason the first
 version of these slides was unusable in the place they were made for.
 
-Three rules keep a tall frame from filling with air, and all three were written
+Four rules keep a tall frame from filling with air, and all of them were written
 after measuring how little of it the charts actually used:
 
 - charts take the height they are given, with caps only generous enough to stop
@@ -103,10 +103,26 @@ after measuring how little of it the charts actually used:
   year fits either way up
 - the map fits its window to the points, padded and squared off to the slide,
   rather than drawing a world with four dots in the middle of it
+- a list the reader has made longer buys its rows out of the *type size*
+  (`compress` in `chart.js`), never out of the gaps: the row limit is a setting,
+  so twenty bars have to fit where eight did
 
 Vertical spacing is always measured off the *larger* of two adjacent type sizes —
 that is what the overlap check in `test/render.test.ts` enforces, and what it
 caught when it was not.
+
+**The contact sheet** (`renderSheet` in `web/deck.js`) draws the whole deck into
+one grid, and its column count is computed against the window so the sheet fits
+in a single screenshot — which is the only thing it is for. It renders through
+`renderSlide` like everything else, so it is the deck rather than a preview of it.
+
+**Slide settings.** A choice that changes one slide travels with that slide:
+`stats/slides.ts` attaches a `SlideSetting`, the deck renders it beside the
+frame, and picking an option puts it in the `/api/deck` query and rebuilds. The
+ids are the query parameter names — `yearBasis`, `daylight`, `rows.lenses` — so
+adding a setting is a matter of emitting one and parsing it in `server/routes.ts`.
+Row limits are resolved in exactly one place, `resolveLimits`, and ride on
+`DeckStats.limits` so the slide and the chips beside it cannot disagree.
 
 **`web/export.js`** — the PDF and the ZIP are both written by hand: one JPEG
 XObject per page for the first, stored (never deflated) PNG entries for the
@@ -134,7 +150,9 @@ re-reading a library for it.
   changed file from being counted with its old numbers.
 - The colours in `web/theme.js` are the validated categorical palette; slot
   order is the colour-blind-safety mechanism, not decoration. Assign by slot,
-  never cycle, and run the palette validator before changing a hex.
+  never cycle, and run the palette validator before changing a hex. Eight slots
+  is the whole palette and therefore the cap on series in one chart (`MAX_SERIES`);
+  a ninth lens is "Everything else", never a ninth hue.
 - Every slide carries a `table`, and the deck's `t` view renders it. Three of
   the light-mode series colours sit below 3:1 against the surface, so a value
   reachable only by colour is a defect.
@@ -161,7 +179,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 116 tests
+npm test          # 134 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```
