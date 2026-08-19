@@ -1,3 +1,4 @@
+import { recordRemovals } from "./types.ts";
 import { INDEX_VERSION, type Db } from "../core/db.ts";
 import type { SourceConfig } from "../core/config.ts";
 import { classify } from "../core/media.ts";
@@ -186,7 +187,9 @@ export async function indexFolderSource(
   });
 
   db.tx(() => {
-    // Anything not re-marked during this run is gone from disk.
+    // Counted before it is deleted: this is the only moment anything knows
+    // these photographs were ever here.
+    recordRemovals(db, row.id, run);
     const removed = db.prep("DELETE FROM photo WHERE source_id = ? AND seen_run < ?").run(row.id, run);
     stats.removed = Number(removed.changes);
     db.prep("DELETE FROM directory WHERE source_id = ? AND seen_run < ?").run(row.id, run);

@@ -324,3 +324,57 @@ describe("the rest of it", () => {
     assert.equal(deck.slides[0]?.headline, "Nothing here yet");
   });
 });
+
+
+/**
+ * A photograph deleted from a library leaves nothing behind in it — the row is
+ * simply not there next time. The sweep is the one moment anything can notice,
+ * so it counts what it is about to delete, split by how it was flagged.
+ */
+describe("what leaves the library", () => {
+  test("is counted on the way out, by flag", async () => {
+    const library = path.join(root, "removals");
+    await makeFixtures(library);
+
+    const fresh = new Db(":memory:");
+    const own = defaultConfig();
+    const source = defaultSource({ path: library, label: "Removals" });
+    own.sources = [source];
+    await indexSource(fresh, source, own);
+
+    // Flag three frames as rejects, one as a pick, then delete two rejects and
+    // the pick from disk — exactly what culling in Lightroom then emptying the
+    // trash looks like from here.
+    const files = fresh
+      .allAs<{ id: number; name: string }>("SELECT id, name FROM photo ORDER BY name LIMIT 4")
+      .map((row) => row);
+    for (const [i, file] of files.entries()) {
+      fresh.prep("UPDATE photo SET pick = ? WHERE id = ?").run(i === 3 ? 1 : -1, file.id);
+    }
+
+    const gone = [files[0], files[1], files[3]];
+    for (const file of gone) {
+      const row = fresh.getAs<{ path: string }>(
+        "SELECT d.path || '/' || p.name AS path FROM photo p JOIN directory d ON d.id = p.dir_id WHERE p.id = ?",
+        file!.id,
+      );
+      await fs.rm(row!.path, { force: true });
+    }
+
+    await indexSource(fresh, source, own);
+
+    const removals = fresh.allAs<{ removed: number; rejected: number; picked: number }>(
+      "SELECT removed, rejected, picked FROM removal",
+    );
+    assert.equal(removals.length, 1, "one sweep, one row");
+    assert.equal(removals[0]?.removed, 3);
+    assert.equal(removals[0]?.rejected, 2);
+    assert.equal(removals[0]?.picked, 1);
+
+    // And nothing is written when nothing went.
+    await indexSource(fresh, source, own);
+    assert.equal(fresh.allAs("SELECT id FROM removal").length, 1, "a quiet sweep records nothing");
+
+    fresh.close();
+  });
+});

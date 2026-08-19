@@ -30,7 +30,7 @@ pick a range, and hit **Show me the deck**.
 ```
 npm start -- --port 8080     # a different port
 npm start -- --no-open       # don't launch a browser
-npm test                     # 144 tests, including a full index-and-count run
+npm test                     # 145 tests, including a full index-and-count run
 npm run typecheck
 ```
 
@@ -117,14 +117,14 @@ Two settings deal with that, and both are saved:
 
 ## The deck
 
-Twenty slides at most, and only the ones that have something to say — no GPS
+Twenty-one slides at most, and only the ones that have something to say — no GPS
 in your library means no map, no ratings means no keepers slide.
 
-Opening totals · year by year · cameras · lenses · **camera + lens pairings** · focal length ·
-aperture · ISO · shutter speed · time of day · day of the week · a calendar of
-every day · runs and quiet spells · which lens was on the camera month by month ·
-keepers · format and orientation · where · new gear · your longest burst · a
-closing summary.
+Opening totals · year by year · cameras · lenses · **camera + lens pairings** ·
+focal length · aperture · ISO · shutter speed · time of day · day of the week ·
+a calendar of every day · streaks · which lens was on the camera month by month ·
+culling · keepers · format and orientation · where · new gear · your longest
+burst · a closing summary.
 
 A few things the slides do rather than say:
 
@@ -134,10 +134,17 @@ A few things the slides do rather than say:
   slide says which hours it used, and a setting beside it offers fixed windows
   instead. Your own position, not the GPS in your photographs — a fortnight
   abroad should not decide what "after dark" means for a year shot at home.
-- **Streaks is a wall of days**, one square each, a row of weeks per year: blue
-  where you shot, blank where you did not, a lighter blue through your longest
-  run and red through the longest silence. A setting decides whether those rows
-  are calendar years or years from the day your library starts.
+- **Streaks is a wall of days**, one square each: blue where you shot, blank
+  where you did not, a lighter blue through your longest run and red through the
+  longest silence. Days either side of the range are drawn as empty outlines, so
+  a part-week at each end reads as "not asked about" rather than as a gap. It
+  packs itself into as many rows as make the squares biggest and labels where
+  each year starts; a setting gives every year a row of its own instead, and
+  another decides whether a year runs from January or from your start date.
+- **Culling counts flags, not stars** — picked, rejected, and the ones you never
+  went back to. It also counts what has actually *left*: a photograph deleted
+  from a catalog leaves no trace in it, so the index counts what disappears each
+  time it sweeps, and the slide says how long it has been watching.
 - **Day of the week starts where you do** — Monday, Sunday or Saturday — and the
   weekend can be given a colour of its own.
 - **A lens used with a teleconverter is one row, not three.** The bar splits

@@ -1,3 +1,4 @@
+import { recordRemovals } from "./types.ts";
 import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -378,6 +379,9 @@ export async function indexLightroomSource(
   });
 
   db.tx(() => {
+    // Counted before it is deleted: this is the only moment anything knows
+    // these photographs were ever here.
+    recordRemovals(db, row.id, run);
     const removed = db.prep("DELETE FROM photo WHERE source_id = ? AND seen_run < ?").run(row.id, run);
     stats.removed = Number(removed.changes);
     db.prep("DELETE FROM directory WHERE source_id = ? AND seen_run < ?").run(row.id, run);

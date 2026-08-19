@@ -1,3 +1,5 @@
+import type { Db } from "../core/db.ts";
+
 export interface IndexError {
   path: string;
   message: string;
@@ -58,4 +60,42 @@ export function emptyStats(): IndexStats {
     durationMs: 0,
     errors: [],
   };
+}
+
+/**
+ * Counts what a sweep is about to delete, split by how it was flagged.
+ *
+ * A photograph deleted from a catalog leaves no trace in it — the row simply is
+ * not there next time — so the only chance to notice is here, in the moment
+ * before our copy goes too. Counts only: nothing is kept about a photograph the
+ * reader has thrown away, and nothing is kept at all when nothing went.
+ */
+export function recordRemovals(db: Db, sourceId: number, run: number, now = Date.now()): number {
+  const tally = db.getAs<{ removed: number; rejected: number; picked: number; unflagged: number }>(
+    `SELECT COUNT(*) AS removed,
+            SUM(pick = -1) AS rejected,
+            SUM(pick = 1) AS picked,
+            SUM(pick IS NULL OR pick = 0) AS unflagged
+     FROM photo WHERE source_id = ? AND seen_run < ?`,
+    sourceId,
+    run,
+  );
+
+  const removed = Number(tally?.removed ?? 0);
+  if (removed > 0) {
+    db.prep(
+      `INSERT INTO removal (source_id, run, at, removed, rejected, picked, unflagged)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      sourceId,
+      run,
+      now,
+      removed,
+      Number(tally?.rejected ?? 0),
+      Number(tally?.picked ?? 0),
+      Number(tally?.unflagged ?? 0),
+    );
+  }
+
+  return removed;
 }

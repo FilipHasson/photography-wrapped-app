@@ -46,7 +46,8 @@ function statsWith(overrides: Partial<DeckStats>): DeckStats {
     busiestDay: null, longestStreak: null, longestGap: null,
     places: [], placesKnown: 0, debuts: [], burst: null,
     years: [], yearBasis: "anchor", location: null, home: null,
-    weekStart: "mon", markWeekend: false,
+    weekStart: "mon", markWeekend: false, wall: "packed",
+    culling: { picked: 0, rejected: 0, unflagged: 0, removed: 0, removedRejected: 0, watchingSince: null },
     daylight: { mode: "06-18", sunrise: 6, sunset: 18, source: "06:00 to 18:00" },
     daylightHours: { sunrise: 6, sunset: 18 },
     limits: resolveLimits(),
@@ -293,31 +294,33 @@ describe("streaks", () => {
     assert.ok(slide && slide.kind === "strip");
     assert.equal(slide.title, "Streaks");
     // The stats stub covers 2025, so the year that ended in August 2024 is not
-    // part of this range and gets no band.
+    // part of this range and is not one of them.
     assert.deepEqual(
-      slide.bands.map((band) => band.label),
+      slide.years.map((year) => year.label),
       ["2024–25", "2025–26"],
     );
+    // How the days are laid out, and what a year means while they are.
     assert.deepEqual(
       slide.settings?.map((setting) => setting.id),
-      ["yearBasis"],
+      ["wall", "yearBasis"],
     );
+    assert.equal(slide.layout, "packed", "one wall by default");
   });
 
-  test("one year is one band, and nothing to choose between", () => {
+  test("one year is one wall, and nothing to choose between", () => {
     const slide = findSlide(
       buildDeck(
         statsWith({
           daily,
           longestStreak: { days: 40, from: 20250101, to: 20250209 },
           longestGap: { days: 12, from: 20250210, to: 20250222 },
-          years: YEARS.slice(0, 1),
+          years: YEARS.slice(1, 2),
         }),
       ).slides,
       "streaks",
     );
     assert.ok(slide && slide.kind === "strip");
-    assert.equal(slide.bands.length, 1);
+    assert.equal(slide.years.length, 1);
     assert.equal(slide.settings, undefined);
   });
 

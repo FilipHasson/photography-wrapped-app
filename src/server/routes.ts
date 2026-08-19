@@ -284,6 +284,7 @@ export async function handleApi(
         location: ctx.config.location,
         weekStart,
         markWeekend: url.searchParams.get("weekend") === "mark",
+        wall: url.searchParams.get("wall") === "years" ? "years" : "packed",
         // An anchor year starts where the library does; failing that, where the
         // photographs do.
         anchorDay: ctx.config.startDay ?? overview.firstDay,

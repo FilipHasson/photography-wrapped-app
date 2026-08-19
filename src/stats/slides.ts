@@ -119,8 +119,10 @@ export type Slide =
       to: number;
       streak: Streak | null;
       gap: Streak | null;
-      /** One row of weeks per year, labelled — the shape the wall is read in. */
-      bands: Array<{ label: string; from: number; to: number }>;
+      /** The years the range covers: a row each, or labels along the wall. */
+      years: Array<{ label: string; from: number; to: number }>;
+      /** "packed" fills the slide; "years" gives each year its own row. */
+      layout: "packed" | "years";
     })
   | (Common & {
       kind: "years";
@@ -275,6 +277,7 @@ export function buildDeck(stats: DeckStats, ownerName = ""): Deck {
   for (const slide of rhythm) if (slide) slides.push(slide);
 
   const extras = [
+    cullingSlide(stats),
     keepersSlide(stats),
     shapeSlide(stats),
     placesSlide(stats),
@@ -909,18 +912,17 @@ function streaksSlide(stats: DeckStats): Slide | null {
       ? `${run} days in a row`
       : `${fmtInt(quiet)} days without picking it up`;
 
-  // A row of weeks per year, on whichever kind of year the reader is thinking
-  // in. With less than two, the whole range is one band and there is nothing to
-  // choose between — so the setting is not offered.
-  const years = stats.years.filter((year) => year.to >= range.from && year.from <= range.to);
-  const bands =
-    years.length > 1
-      ? years.map((year) => ({
-          label: year.label,
-          from: Math.max(year.from, range.from),
-          to: Math.min(year.to, range.to),
-        }))
-      : [{ label: "", from: range.from, to: range.to }];
+  // The years the range covers, on whichever kind of year the reader is
+  // thinking in. They are labels along a packed wall, or rows of their own.
+  // With less than two there is nothing to choose between, so neither the basis
+  // nor the layout is offered.
+  const years = stats.years
+    .filter((year) => year.to >= range.from && year.from <= range.to)
+    .map((year) => ({
+      label: year.label,
+      from: Math.max(year.from, range.from),
+      to: Math.min(year.to, range.to),
+    }));
 
   return {
     kind: "strip",
@@ -930,13 +932,29 @@ function streaksSlide(stats: DeckStats): Slide | null {
     headline,
     // "330 of 1,090 days" said nothing about which number was which.
     note: daysOutNote(stats),
-    ...(years.length > 1 ? { settings: [yearBasisSetting(stats)] } : {}),
+    ...(years.length > 1
+      ? {
+          settings: [
+            {
+              id: "wall",
+              label: "Lay the days out",
+              value: stats.wall,
+              options: [
+                { value: "packed", label: "As one wall", note: "as large as the slide allows" },
+                { value: "years", label: "A row per year" },
+              ],
+            },
+            yearBasisSetting(stats),
+          ],
+        }
+      : {}),
     days: daily,
     from: range.from,
     to: range.to,
     streak: longestStreak,
     gap: longestGap,
-    bands,
+    years,
+    layout: years.length > 1 ? stats.wall : "packed",
     table: tableOf(
       ["Measure", "Days", "From", "To"],
       [
@@ -1004,6 +1022,86 @@ function timelineSlide(stats: DeckStats): Slide | null {
       ]),
     ),
   };
+}
+
+/**
+ * Culling: what you said yes to, what you said no to, and what you never went
+ * back to at all.
+ *
+ * Separate from the keepers slide, which is about stars. A flag is a decision
+ * made at the culling stage — a pick is "this one", a reject is "not this one"
+ * — and the number most photographers cannot guess is the third one.
+ *
+ * The deletions figure is honest about its own age: nothing in a catalog says
+ * what used to be in it, so this counts only what has vanished since this tool
+ * first looked, and the note says when that was.
+ */
+function cullingSlide(stats: DeckStats): Slide | null {
+  const { picked, rejected, unflagged, removed, removedRejected, watchingSince } = stats.culling;
+  const decided = picked + rejected;
+  // A library where nobody has ever flagged anything has nothing to say here.
+  if (decided === 0) return null;
+
+  const total = picked + rejected + unflagged;
+  const share = (n: number) => (total > 0 ? n / total : 0);
+
+  const headline =
+    rejected > picked
+      ? `You throw more out than you keep — ${fmtPct(share(rejected))} rejected`
+      : `${fmtPct(share(picked))} of your frames got a flag`;
+
+  const note = [
+    `${fmtPct(share(unflagged))} never flagged either way`,
+    removed > 0 && watchingSince
+      ? `${fmtInt(removed)} gone from the library since ${formatDay(dayOf(watchingSince))}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return {
+    kind: "columns",
+    id: "culling",
+    title: "Culling",
+    subtitle: "Picks, rejects, and the ones you never went back to",
+    headline,
+    note,
+    items: [
+      { label: "Picked", value: picked },
+      { label: "Rejected", value: rejected },
+      { label: "Neither", value: unflagged },
+    ],
+    highlight: picked >= rejected ? 0 : 1,
+    axisLabel: "Flag",
+    // What has actually left, which no column can show: these frames are not in
+    // the library any more, so they are not in the bars beside it either.
+    ...(removed > 0
+      ? {
+          figure: {
+            value: fmtInt(removed),
+            label:
+              removedRejected > 0
+                ? `deleted since indexing  ·  ${fmtInt(removedRejected)} of them rejects`
+                : "deleted since indexing",
+          },
+        }
+      : {}),
+    table: tableOf(
+      ["Flag", "Photographs", "Share"],
+      [
+        ["Picked", picked, fmtPct(share(picked))],
+        ["Rejected", rejected, fmtPct(share(rejected))],
+        ["Neither", unflagged, fmtPct(share(unflagged))],
+        ["Deleted since indexing", removed, removed > 0 ? "not in any count above" : "—"],
+      ],
+    ),
+  };
+}
+
+/** A timestamp as a day, for saying when this tool started watching. */
+function dayOf(at: number): number {
+  const date = new Date(at);
+  return date.getFullYear() * 10000 + (date.getMonth() + 1) * 100 + date.getDate();
 }
 
 function keepersSlide(stats: DeckStats): Slide | null {

@@ -63,6 +63,25 @@ CREATE TABLE IF NOT EXISTS source (
   index_version   INTEGER NOT NULL DEFAULT 0
 );
 
+-- What left the library, and when.
+--
+-- A photograph deleted from a catalog leaves no trace in it: the row is simply
+-- not there the next time it is read, and the sweep used to delete our copy
+-- without a word. Culling *is* photography, though — a rejected frame is a
+-- decision — so the sweep now counts what it removes, split by how it was
+-- flagged, before it removes it. Counts only: nothing is kept about a
+-- photograph the reader has thrown away.
+CREATE TABLE IF NOT EXISTS removal (
+  id        INTEGER PRIMARY KEY,
+  source_id INTEGER NOT NULL REFERENCES source(id) ON DELETE CASCADE,
+  run       INTEGER NOT NULL,
+  at        INTEGER NOT NULL,
+  removed   INTEGER NOT NULL,
+  rejected  INTEGER NOT NULL DEFAULT 0,
+  picked    INTEGER NOT NULL DEFAULT 0,
+  unflagged INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS directory (
   id          INTEGER PRIMARY KEY,
   source_id   INTEGER NOT NULL REFERENCES source(id) ON DELETE CASCADE,
@@ -240,6 +259,23 @@ export class Db {
     if (!columns("source").has("index_version")) {
       this.raw.exec("ALTER TABLE source ADD COLUMN index_version INTEGER NOT NULL DEFAULT 0");
     }
+
+    // `CREATE TABLE IF NOT EXISTS` in the schema covers a new database; an
+    // existing one gets the table here. No backfill is possible and none is
+    // pretended: deletions before this existed were not recorded, and the
+    // culling slide says what it has been watching since.
+    this.raw.exec(`
+      CREATE TABLE IF NOT EXISTS removal (
+        id        INTEGER PRIMARY KEY,
+        source_id INTEGER NOT NULL REFERENCES source(id) ON DELETE CASCADE,
+        run       INTEGER NOT NULL,
+        at        INTEGER NOT NULL,
+        removed   INTEGER NOT NULL,
+        rejected  INTEGER NOT NULL DEFAULT 0,
+        picked    INTEGER NOT NULL DEFAULT 0,
+        unflagged INTEGER NOT NULL DEFAULT 0
+      )
+    `);
   }
 
   /** Prepared statements are cached — an index run reuses the same few. */

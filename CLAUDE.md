@@ -126,6 +126,13 @@ changes nothing until it is restarted — and the page then shows an old deck wi
 no clue why. The newest mtime under `src/` is recorded at boot, re-checked on
 every `/api/state`, and the page puts a banner up when they differ.
 
+**Deletions are counted at the sweep or never.** Nothing in a catalog records
+what used to be in it, so `index/types.ts` → `recordRemovals` tallies rows about
+to be deleted — split by flag — into the `removal` table before the sweep drops
+them. Counts only, never anything about the photograph itself. The culling slide
+therefore always says *since when* it has been watching, and never implies it
+knows about deletions from before it was first run.
+
 **`core/cities.ts`** puts a name to a pair of coordinates without a network
 request — a short table, nearest match, and nothing at all past 120km. It also
 holds `DEFAULT_CITY`, which is where a fresh config starts.
@@ -204,7 +211,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 144 tests
+npm test          # 145 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```

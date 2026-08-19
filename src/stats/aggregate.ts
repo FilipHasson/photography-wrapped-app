@@ -208,6 +208,15 @@ export interface YearBucket {
 export type YearBasis = "anchor" | "calendar";
 
 /**
+ * How the wall of days is laid out.
+ *
+ * "packed" wraps the whole range into as many rows of weeks as make the squares
+ * biggest, which fills the slide; "years" gives each year a row of its own,
+ * which lines the years up under each other at the cost of empty space.
+ */
+export type WallLayout = "packed" | "years";
+
+/**
  * Which day a week starts on.
  *
  * Not a detail: a Sunday-first reader looking at a Monday-first chart reads the
@@ -244,6 +253,27 @@ export interface Location {
   shots?: number;
   /** What to call it on a slide. Empty for a bare pair of coordinates. */
   label?: string;
+}
+
+/**
+ * What was kept, what was thrown out, and what was never looked at.
+ *
+ * Flags rather than stars: a pick is "yes", a reject is "no", and everything
+ * else is a frame nobody has been back to. Deletions are counted separately and
+ * only from the day this tool first swept the library — see `removal` in
+ * `core/db.ts` — because a photograph deleted from a catalog leaves nothing
+ * behind to count later.
+ */
+export interface Culling {
+  picked: number;
+  rejected: number;
+  unflagged: number;
+  /** Frames that have left the library since it was first indexed. */
+  removed: number;
+  /** How many of those had been flagged as rejects. */
+  removedRejected: number;
+  /** When this tool first swept, and could first have noticed. */
+  watchingSince: number | null;
 }
 
 export interface Burst {
@@ -285,6 +315,8 @@ export interface DeckStats {
   /** One entry per year the range covers, on whichever basis was asked for. */
   years: YearBucket[];
   yearBasis: YearBasis;
+  /** Picks, rejects, and what has actually left the library. */
+  culling: Culling;
   /** The busiest place, for anything that needs to know where this happened. */
   location: Location | null;
   /** Where the reader said they are, if they have. */
@@ -294,6 +326,8 @@ export interface DeckStats {
   /** How the week slide is laid out and coloured. */
   weekStart: WeekStart;
   markWeekend: boolean;
+  /** How the wall of days is laid out. */
+  wall: WallLayout;
   /** The hours counted as daylight, and where that came from. */
   daylight: Daylight;
   /** Resolved here so the slides and the settings beside them agree. */
@@ -322,6 +356,8 @@ export interface StatsOptions {
   daylightHours?: { sunrise: number; sunset: number };
   /** Which day the day-of-the-week slide starts on. */
   weekStart?: WeekStart;
+  /** Whether the wall of days packs itself or takes a row per year. */
+  wall?: WallLayout;
   /** Colour Saturday and Sunday differently from the working week. */
   markWeekend?: boolean;
   /** How many rows the slides that pool a tail should draw. */
@@ -984,6 +1020,37 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
   }
   debuts.sort((a, b) => a.day - b.day || a.label.localeCompare(b.label));
 
+  // ------------------------------------------------------------ culling ----
+
+  const flags = db.getAs<{ picked: number; rejected: number; unflagged: number }>(
+    `SELECT SUM(p.pick = 1) AS picked,
+            SUM(p.pick = -1) AS rejected,
+            SUM(p.pick IS NULL OR p.pick = 0) AS unflagged
+     FROM photo p WHERE ${where}`,
+    ...args,
+  );
+
+  // Removals are not range-scoped: a deleted photograph has no capture date any
+  // more, only the day it was noticed missing. The slide says so.
+  const gone = db.getAs<{ removed: number; rejected: number; first: number | null }>(
+    `SELECT COALESCE(SUM(removed), 0) AS removed,
+            COALESCE(SUM(rejected), 0) AS rejected,
+            MIN(at) AS first
+     FROM removal`,
+  );
+  const firstSweep = db.getAs<{ at: number | null }>(
+    "SELECT MIN(last_indexed_at) AS at FROM source WHERE last_indexed_at IS NOT NULL",
+  );
+
+  const culling: Culling = {
+    picked: num(flags?.picked),
+    rejected: num(flags?.rejected),
+    unflagged: num(flags?.unflagged),
+    removed: num(gone?.removed),
+    removedRejected: num(gone?.rejected),
+    watchingSince: firstSweep?.at ?? gone?.first ?? null,
+  };
+
   // Three numbers per year, over whichever kind of year was asked for. One
   // small query per period — at most a couple of dozen, each a range scan on
   // the day index, which is cheaper and far clearer than date maths in SQL.
@@ -1056,6 +1123,7 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
     // The cluster with the most frames in it. Good enough to ask the sun about,
     // and honest: it is where most of these photographs were taken.
     location: places[0] ?? null,
+    culling,
     home: options.location ?? null,
     daylightHours: {
       sunrise: clampHour(options.daylightHours?.sunrise, 6),
@@ -1063,6 +1131,7 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
     },
     weekStart: options.weekStart ?? "mon",
     markWeekend: options.markWeekend ?? false,
+    wall: options.wall ?? "packed",
     daylight: resolveDaylight(
       options.daylight,
       options.location ?? null,
