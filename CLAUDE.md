@@ -8,9 +8,12 @@ for user-facing behaviour. This file is the map for changing it.
 1. **Read-only, always.** Photographs are opened for their headers and never
    written to; a Lightroom catalog is copied before it is read. Any path that
    modifies, moves or deletes media is wrong by construction.
-2. **Never claim more than was counted.** Every distribution reports how many
-   frames actually carried the field, and slides say so. Inventing a
-   denominator is the one bug that makes the whole deck untrustworthy.
+2. **Never claim more than was counted.** Share of shots on a lens is share of
+   the shots whose lens is *known* — every percentage on a slide divides by the
+   frames that carried the field, never by the library. Inventing a denominator
+   is the one bug that makes the whole deck untrustworthy. The denominators
+   themselves live in the table view rather than in a footnote under every
+   slide: "8,412 of 16,000 frames recorded one" was noise on nineteen slides.
 3. **No build step.** Node runs the TypeScript directly, so only *erasable*
    syntax: no `enum`, no `namespace`, no parameter properties, and `import type`
    for type-only imports. `npm run typecheck` enforces it via `erasableSyntaxOnly`.

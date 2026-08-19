@@ -173,7 +173,8 @@ slide.
 **Data** is not a fallback. Every value a slide draws is in its table, so
 nothing on a slide is reachable only by colour — and the table goes further than
 the chart does. Where a chart folds a tail into one "12 others" bar, the table
-lists all twelve.
+lists all twelve, and where a slide draws a percentage it is the table that says
+how many frames carried the field it divided by.
 
 Each row of gear also has a tick box. Untick it and that camera or lens leaves
 **every count on every slide**, not just the chart in front of you — which is

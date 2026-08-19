@@ -215,9 +215,12 @@ function frame(slide, theme, L) {
   }
 
   const top = y + L.subtitle * 1.4;
+  // A slide with nothing to footnote gives the space to the chart rather than
+  // leaving a band of nothing where the note would have been.
+  const bottom = slide.note ? noteTop - L.note * 1.8 : footerY;
   return {
     root,
-    plot: { x: L.pad, y: top, w: inner, h: Math.max(120, noteTop - L.note * 1.8 - top) },
+    plot: { x: L.pad, y: top, w: inner, h: Math.max(120, bottom - top) },
   };
 }
 

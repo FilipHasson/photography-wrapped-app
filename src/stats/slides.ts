@@ -491,9 +491,6 @@ function ranked(
       ? `Everything came from one ${noun}`
       : `${top.label} — ${fmtPct(top.share)} of your frames`;
 
-  const coverage =
-    known < stats.totals.shots ? `${fmtInt(known)} of ${fmtInt(stats.totals.shots)} frames recorded one` : "";
-
   const hiddenNote = hidden.length > 0 ? `${hidden.map((row) => row.label).join(", ")} hidden` : "";
 
   const rowsChoice = rowsSetting(field, rows.length, limit, MAX_BARS);
@@ -504,7 +501,7 @@ function ranked(
     title,
     subtitle,
     headline,
-    note: [coverage, hiddenNote].filter(Boolean).join(" · ") || undefined,
+    note: hiddenNote || undefined,
     ...(rowsChoice ? { settings: [rowsChoice] } : {}),
     items: drawn,
     // The shades need naming wherever any bar has them.
@@ -564,10 +561,9 @@ function focalSlide(stats: DeckStats): Slide | null {
     note: [
       widest && longest ? `${widest.label} to ${longest.label}` : "",
       topClass ? `mostly ${topClass.label}` : "",
-      `${fmtInt(focal.known)} frames`,
     ]
       .filter(Boolean)
-      .join(" · "),
+      .join(" · ") || undefined,
     items: focal.buckets.map((bucket) => ({ label: bucket.label, value: bucket.shots })),
     highlight: focal.buckets.indexOf(favourite),
     axisLabel: "Focal length",
@@ -595,7 +591,7 @@ function apertureSlide(stats: DeckStats): Slide | null {
     title: "Aperture",
     subtitle: "How much you let in",
     headline: `${aperture.favourite.label} more than any other stop`,
-    note: `${fmtPct(wideOpen / aperture.known)} at f/2 or wider · ${fmtPct(stoppedDown / aperture.known)} at f/8 or smaller · ${fmtInt(aperture.known)} frames`,
+    note: `${fmtPct(wideOpen / aperture.known)} at f/2 or wider · ${fmtPct(stoppedDown / aperture.known)} at f/8 or smaller`,
     items: aperture.buckets.map((bucket) => ({ label: bucket.label, value: bucket.shots })),
     highlight: aperture.buckets.indexOf(aperture.favourite),
     axisLabel: "Aperture",
@@ -625,10 +621,9 @@ function isoSlide(stats: DeckStats): Slide | null {
     note: [
       base && highest ? `${base.label} to ${highest.label}` : "",
       `${fmtPct(high / iso.known)} at 3200 or above`,
-      `${fmtInt(iso.known)} frames`,
     ]
       .filter(Boolean)
-      .join(" · "),
+      .join(" · ") || undefined,
     items: iso.buckets.map((bucket) => ({ label: bucket.label.replace("ISO ", ""), value: bucket.shots })),
     highlight: iso.buckets.indexOf(iso.favourite),
     axisLabel: "ISO",
@@ -656,10 +651,9 @@ function shutterSlide(stats: DeckStats): Slide | null {
     note: [
       fastest && slowest ? `${fastest.label} to ${slowest.label}` : "",
       long > 0 ? `${fmtInt(long)} at a second or longer` : "",
-      `${fmtInt(shutter.known)} frames`,
     ]
       .filter(Boolean)
-      .join(" · "),
+      .join(" · ") || undefined,
     items: shutter.buckets.map((bucket) => ({ label: bucket.label, value: bucket.shots })),
     highlight: shutter.buckets.indexOf(shutter.favourite),
     axisLabel: "Shutter speed",
@@ -989,7 +983,6 @@ function shapeSlide(stats: DeckStats): Slide | null {
     subtitle: "Format, orientation, and what else was going on",
     headline,
     tiles,
-    note: oriented < totals.shots ? `Orientation known for ${fmtInt(oriented)} frames` : undefined,
     table: tableOf(
       ["Measure", "Value"],
       [
@@ -1026,7 +1019,7 @@ function placesSlide(stats: DeckStats): Slide | null {
       spread > 5
         ? `${spread.toFixed(0)}° of latitude, from ${coord(south)} to ${coord(north)}`
         : `Most of it around ${coord(busiest)}`,
-    note: `${fmtInt(stats.placesKnown)} frames with a fix · rounded to ~11km · framed on your photographs, not the world`,
+    note: "Rounded to ~11km",
     points: stats.places,
     table: tableOf(
       ["Position", "Photographs"],
