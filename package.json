@@ -1,5 +1,5 @@
 {
-  "name": "what-did-i-shoot",
+  "name": "photography-wrapped",
   "version": "0.1.0",
   "private": true,
   "description": "Scan a photography library and turn it into a deck of stats slides — favourite lens, favourite body, favourite camera+lens combo, and the rest of the year in frames.",
@@ -8,8 +8,8 @@
     "node": ">=24.0.0"
   },
   "bin": {
-    "what-did-i-shoot": "src/cli.ts",
-    "wdis": "src/cli.ts"
+    "photography-wrapped": "src/cli.ts",
+    "wrapped": "src/cli.ts"
   },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/cli.ts",

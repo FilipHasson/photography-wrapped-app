@@ -1,4 +1,4 @@
-# What did I shoot?
+# Photography Wrapped
 
 Point it at your photographs and it counts them, then hands you a deck of
 slides: **your most-used lens, your most-used body, the pairing you actually

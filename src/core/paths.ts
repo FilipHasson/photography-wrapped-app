@@ -40,6 +40,8 @@ export function configDir(): string {
 
   const home = os.homedir();
   if (process.platform === "win32") {
+    // Deliberately the old project name: this folder holds an indexed library
+    // and a config, and renaming it would orphan both.
     return path.join(process.env.APPDATA || path.join(home, "AppData", "Roaming"), "what-did-i-shoot");
   }
   if (process.platform === "darwin") {

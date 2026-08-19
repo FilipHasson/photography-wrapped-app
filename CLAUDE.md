@@ -1,4 +1,4 @@
-# What did I shoot? — working notes
+# Photography Wrapped — working notes
 
 Counts a photography library and turns the counts into slides. See `README.md`
 for user-facing behaviour. This file is the map for changing it.

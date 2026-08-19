@@ -74,9 +74,9 @@ function parseArgs(argv: string[]): Args {
   return args;
 }
 
-const HELP = `what-did-i-shoot — turn your photography library into a deck of stats
+const HELP = `photography-wrapped — turn your photography library into a deck of stats
 
-  Usage: what-did-i-shoot [command] [options]
+  Usage: photography-wrapped [command] [options]
 
   Commands:
     (none)           Open the deck in a browser
@@ -206,7 +206,7 @@ if (args.command === "stats") {
 
 const server = await startServer(db, config);
 
-console.log(`\n  What did I shoot?  ${server.url}\n`);
+console.log(`\n  Photography Wrapped  ${server.url}\n`);
 
 // Silently moving to a free port is how you end up with a browser tab on an
 // older copy of the tool, wondering why a feature you just added is missing.

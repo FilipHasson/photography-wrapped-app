@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * What did I shoot? — local UI.
+ * Photography Wrapped — local UI.
  *
  * Plain modules, no build step and no framework. The DOM is built with `el`
  * rather than innerHTML throughout: most of what is rendered here is a
