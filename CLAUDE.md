@@ -35,7 +35,16 @@ Dependencies point one way: `web → server → stats → index → core`.
 
 ## The parts that carry the weight
 
-**`core/gear.ts`** — the whole deck rests on "the same lens is one lens". Names
+**`core/gear.ts`** — two jobs, and they must not be confused. Naming is a table
+of makers and product lines (`BRANDS`, `FAMILIES`, `MAKE_ALIASES`) plus a rule
+per maker that writes codes rather than names — Sony `ILCE-`, Panasonic `DC-`,
+Samsung `SM-`, Olympus `MarkIII`. Rules are preferred to tables wherever the
+maker has a scheme, because a table only fixes the bodies someone remembered to
+add. Where there is no scheme (DJI drone codes, Samsung flagships) the code is
+left alone rather than guessed at, and *all* of it is display-only: the key is
+the model exactly as written.
+
+Grouping is the other job. The whole deck rests on "the same lens is one lens". Names
 arrive spelled differently depending on where they were read, so every name
 splits into a **key** (aggressive normalisation, used for grouping) and a
 **label** (tidied for looks). The key drops the brand prefix, because a folder
@@ -115,7 +124,7 @@ wrong one produces a blank document rather than an error.
 ## Testing
 
 ```bash
-npm test          # 91 tests
+npm test          # 94 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```

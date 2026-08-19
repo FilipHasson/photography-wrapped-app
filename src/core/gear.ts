@@ -41,60 +41,223 @@ function keyOf(value: string): string {
 const ROMAN = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
 
 /**
- * Sony writes internal product codes where every other maker writes a name:
- * `ILCE-7M2` for an a7 II, `ILCE-9M3` for an a9 III, `DSC-RX100M7` for an
- * RX100 VII. Left alone, one shelf of Sony bodies reads as three different
- * naming schemes on the same slide.
+ * Makes that need more than a change of case. Keyed on the make with every
+ * non-alphanumeric character removed, because the punctuation varies by body
+ * even within one manufacturer.
+ */
+const MAKE_ALIASES = new Map(
+  Object.entries({
+    nikoncorporation: "Nikon",
+    olympuscorporation: "Olympus",
+    olympusimagingcorp: "Olympus",
+    olympusopticalcoltd: "Olympus",
+    omdigitalsolutions: "OM System",
+    ricohimagingcompanyltd: "Ricoh",
+    ricohimagingcompany: "Ricoh",
+    leicacameraag: "Leica",
+    eastmankodakcompany: "Kodak",
+    phaseoneas: "Phase One",
+    victorcompanyofjapanlimited: "JVC",
+    sonyericssonmobilecommunicationsab: "Sony",
+    samsungtechwin: "Samsung",
+    hmdglobal: "Nokia",
+    casiocomputercoltd: "Casio",
+    seikoepsoncorp: "Epson",
+    hewlettpackard: "HP",
+  }),
+);
+
+/**
+ * Brand names and how they are actually written, whether they turn up as the
+ * make or at the front of the model. `PENTAX K-3 Mark III` is a Ricoh body
+ * whose model names Pentax; `motorola` writes its own name in lower case.
+ */
+const BRANDS = new Map(
+  Object.entries({
+    canon: "Canon", nikon: "Nikon", sony: "Sony", fujifilm: "Fujifilm", fuji: "Fujifilm",
+    olympus: "Olympus", panasonic: "Panasonic", leica: "Leica", pentax: "Pentax",
+    ricoh: "Ricoh", sigma: "Sigma", hasselblad: "Hasselblad", kodak: "Kodak",
+    minolta: "Minolta", konica: "Konica", casio: "Casio", epson: "Epson", jvc: "JVC",
+    gopro: "GoPro", dji: "DJI", insta360: "Insta360", blackmagic: "Blackmagic",
+    apple: "Apple", samsung: "Samsung", google: "Google", motorola: "Motorola",
+    oneplus: "OnePlus", xiaomi: "Xiaomi", huawei: "Huawei", honor: "Honor",
+    oppo: "OPPO", vivo: "vivo", realme: "realme", asus: "ASUS", nokia: "Nokia",
+    nothing: "Nothing", sharp: "Sharp", lg: "LG", htc: "HTC", zte: "ZTE",
+  }),
+);
+
+/**
+ * Product lines that name their own maker. `iPhone 15 Pro` needs no "Apple" in
+ * front of it, and neither does `Pixel 8 Pro` or `Galaxy S24 Ultra` — the way
+ * people say these names is the way they should read on a slide.
+ */
+const FAMILIES = new Map(
+  Object.entries({
+    iphone: "iPhone", ipad: "iPad", ipod: "iPod",
+    pixel: "Pixel", nexus: "Nexus", galaxy: "Galaxy", xperia: "Xperia",
+    lumix: "Lumix", moto: "Moto", nord: "Nord", redmi: "Redmi", poco: "POCO",
+    // Deliberately absent: DJI Mavic, GoPro HERO, Fujifilm Instax. Those are
+    // said with the maker in front of them, so the maker stays.
+  }),
+);
+
+const brandOf = (token: string): string | undefined =>
+  BRANDS.get(token.toLowerCase().replace(/[^a-z0-9]/g, ""));
+
+const familyOf = (token: string): string | undefined =>
+  FAMILIES.get(token.toLowerCase().replace(/[^a-z0-9]/g, ""));
+
+function titleCase(value: string): string {
+  return value
+    .split(" ")
+    // A word with a digit in it is a model number — `5G`, `X100VI` — and its
+    // case is the maker's business, not ours.
+    .map((word) =>
+      /\d/.test(word) ? word : word.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase()),
+    )
+    .join(" ");
+}
+
+/** `NIKON CORPORATION` → `Nikon`, `SONY` → `Sony`, `Canon` → `Canon`. */
+function tidyMake(make: string): string {
+  const alias = MAKE_ALIASES.get(make.toLowerCase().replace(/[^a-z0-9]/g, ""));
+  if (alias) return alias;
+
+  const known = brandOf(make);
+  if (known) return known;
+
+  const trimmed = make
+    .replace(/\b(corporation|corp\.?|company|co\.?,? ?ltd\.?|imaging|inc\.?|gmbh|a\/s|ag)\b/gi, "")
+    .replace(/[,;]+\s*$/, "")
+    .trim();
+  const base = trimmed === "" ? make : trimmed;
+  // An all-caps make reads as shouting; anything mixed-case is already fine.
+  return base === base.toUpperCase() ? titleCase(base) : base;
+}
+
+/** `<code>M<n>` → `<code> <roman>`: the generation, said the way it is spoken. */
+function withGeneration(code: string): string {
+  const generation = code.match(/^(.*?)M(\d{1,2})$/i);
+  if (!generation) return code;
+  const [, stem = "", mark = ""] = generation;
+  return `${stem} ${ROMAN[Number(mark)] ?? mark}`.trim();
+}
+
+/**
+ * Sony writes internal product codes where most makers write a name: `ILCE-7M2`
+ * for an a7 II, `DSC-RX100M7` for an RX100 VII. Left alone, one shelf of Sony
+ * bodies reads as three naming schemes on the same slide.
  *
- * This is a rule rather than a lookup table on purpose — a table only fixes
- * the bodies someone remembered to add, which is exactly how `a9 III` and
- * `ILCE-7M2` ended up side by side. The `M<n>` suffix is the generation, and
- * Sony says those out loud in roman numerals.
- *
- * Display only. The grouping key stays the raw model, so this can never merge
- * two bodies that the camera itself considers different.
+ * A rule rather than a lookup table, on purpose — a table only fixes the bodies
+ * someone remembered to add, which is exactly how `a9 III` and `ILCE-7M2` ended
+ * up side by side here once already.
  */
 function sonyModelName(model: string): string | null {
   const match = model.match(/^(ILCE|ILME|DSC|ZV)-(.+)$/i);
   if (!match) return null;
 
-  const [, family = "", codeRaw = ""] = match;
-  const generation = codeRaw.match(/^(.*?)M(\d{1,2})$/i);
-  const code = generation
-    ? `${generation[1]} ${ROMAN[Number(generation[2])] ?? generation[2]}`.trim()
-    : codeRaw;
+  const [, family = "", code = ""] = match;
+  const spoken = withGeneration(code);
 
   switch (family.toUpperCase()) {
     // The Alpha line, which everyone writes with a leading "a".
     case "ILCE":
-      return `a${code}`;
+      return `a${spoken}`;
     // Cinema bodies and compacts are said as written.
     case "ILME":
     case "DSC":
-      return code;
+      return spoken;
     case "ZV":
-      return `ZV-${code}`;
+      return `ZV-${spoken}`;
     default:
       return null;
   }
 }
 
-function titleCase(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/\b[a-z]/g, (c) => c.toUpperCase())
-    .replace(/\bDji\b/g, "DJI")
-    .replace(/\bGopro\b/g, "GoPro");
+/** `DC-S5M2` → `Lumix S5 II`, `DMC-GH4` → `Lumix GH4`. Panasonic's own scheme. */
+function panasonicModelName(model: string): string | null {
+  const match = model.match(/^(?:DC|DMC)-(.+)$/i);
+  return match ? `Lumix ${withGeneration(match[1] as string)}` : null;
 }
 
-/** `NIKON CORPORATION` → `Nikon`, `SONY` → `Sony`, `Canon` → `Canon`. */
-function tidyMake(make: string): string {
-  const trimmed = make
-    .replace(/\b(corporation|corp\.?|company|co\.?,? ?ltd\.?|imaging|inc\.?)\b/gi, "")
-    .trim();
-  const base = trimmed === "" ? make : trimmed;
-  // An all-caps make reads as shouting; anything mixed-case is already fine.
-  return base === base.toUpperCase() ? titleCase(base) : base;
+/** `E-M1MarkIII` → `E-M1 Mark III`. Olympus runs the words together. */
+function olympusModelName(model: string): string | null {
+  const match = model.match(/^(E-[A-Z]?\d+|PEN-F|TG-\d+)\s*Mark\s*([IVX]+)$/i);
+  if (match) return `${match[1]} Mark ${(match[2] as string).toUpperCase()}`;
+  return null;
+}
+
+/**
+ * Samsung phones report a service code — `SM-S928B` for a Galaxy S24 Ultra —
+ * and there is no rule to derive the name from it, so this is the one place a
+ * table is unavoidable.
+ *
+ * Only codes worth being sure about are listed; anything else keeps the code it
+ * came with rather than being guessed at. The trailing letter is the regional
+ * variant and is ignored.
+ */
+const SAMSUNG_MODELS = new Map(
+  Object.entries({
+    "SM-G980": "Galaxy S20", "SM-G981": "Galaxy S20", "SM-G985": "Galaxy S20+",
+    "SM-G986": "Galaxy S20+", "SM-G988": "Galaxy S20 Ultra",
+    "SM-G990": "Galaxy S21 FE", "SM-G991": "Galaxy S21", "SM-G996": "Galaxy S21+",
+    "SM-G998": "Galaxy S21 Ultra",
+    "SM-S901": "Galaxy S22", "SM-S906": "Galaxy S22+", "SM-S908": "Galaxy S22 Ultra",
+    "SM-S911": "Galaxy S23", "SM-S916": "Galaxy S23+", "SM-S918": "Galaxy S23 Ultra",
+    "SM-S921": "Galaxy S24", "SM-S926": "Galaxy S24+", "SM-S928": "Galaxy S24 Ultra",
+    "SM-S931": "Galaxy S25", "SM-S936": "Galaxy S25+", "SM-S938": "Galaxy S25 Ultra",
+    "SM-N970": "Galaxy Note10", "SM-N975": "Galaxy Note10+",
+    "SM-N981": "Galaxy Note20", "SM-N986": "Galaxy Note20 Ultra",
+    "SM-F926": "Galaxy Z Fold3", "SM-F936": "Galaxy Z Fold4", "SM-F946": "Galaxy Z Fold5",
+    "SM-F956": "Galaxy Z Fold6",
+    "SM-F711": "Galaxy Z Flip3", "SM-F721": "Galaxy Z Flip4", "SM-F731": "Galaxy Z Flip5",
+    "SM-F741": "Galaxy Z Flip6",
+  }),
+);
+
+function samsungModelName(model: string): string | null {
+  const code = model.match(/^(SM-[A-Z]\d{3})/i);
+  if (!code) return null;
+
+  const known = SAMSUNG_MODELS.get((code[1] as string).toUpperCase());
+  if (known) return known;
+
+  // The mid-range lines do follow a rule: the two digits after the letter are
+  // the model number, so SM-A546 is a Galaxy A54 and SM-M356 a Galaxy M35. The
+  // flagship letters are left to the table, where G, S, N and F mean nothing
+  // so tidy.
+  const series = model.match(/^SM-([AM])(\d{2})\d/i);
+  if (!series) return null;
+  return `Galaxy ${(series[1] as string).toUpperCase()}${series[2]}`;
+}
+
+/**
+ * Fixes the case of a leading brand or family word — `PENTAX K-3` reads as
+ * `Pentax K-3`, `iphone 15 pro` as `iPhone 15 Pro` — and leaves the rest of the
+ * model exactly as the camera wrote it, since `X-T5` and `EOS R5` and
+ * `HERO11 Black` are all already right.
+ */
+function tidyModel(model: string): string {
+  // A model whose words are all lower case is a maker writing quietly —
+  // Motorola ships `moto g stylus`. Anything with a capital in it is left
+  // exactly as written, because `EOS R5`, `HERO11 Black` and Sigma's lower-case
+  // `fp` are already right and no rule can tell them apart.
+  //
+  // Words containing digits do not count as evidence either way: they are model
+  // numbers (`5G`, `X-T5`, `GFX100S`), and shouting is how they are written.
+  const words = model.split(" ").filter((word) => !/\d/.test(word));
+  const quiet = words.length > 0 && !/[A-Z]/.test(words.join(" "));
+  const spoken = quiet ? titleCase(model) : model;
+
+  const [first = "", ...rest] = spoken.split(" ");
+  const known = brandOf(first) ?? familyOf(first);
+  return known ? [known, ...rest].join(" ") : spoken;
+}
+
+/** True when the model already says whose it is, so the make would repeat it. */
+function namesItsOwnMaker(model: string): boolean {
+  const first = model.split(" ")[0] ?? "";
+  return brandOf(first) !== undefined || familyOf(first) !== undefined;
 }
 
 /**
@@ -114,17 +277,18 @@ export function normalizeCamera(makeRaw: unknown, modelRaw: unknown): GearName |
   if (isPlaceholder(trimmedModel)) trimmedModel = model;
 
   const displayMake = make === "" ? "" : tidyMake(make);
-  let displayModel = sonyModelName(trimmedModel) ?? trimmedModel;
-
-  // `NIKON Z 8` with make `Nikon` should read `Nikon Z 8`, not keep shouting.
-  if (displayMake !== "" && displayModel.toLowerCase().startsWith(displayMake.toLowerCase())) {
-    displayModel = displayMake + displayModel.slice(displayMake.length);
-  }
+  const displayModel = tidyModel(
+    sonyModelName(trimmedModel) ??
+      panasonicModelName(trimmedModel) ??
+      samsungModelName(trimmedModel) ??
+      olympusModelName(trimmedModel) ??
+      trimmedModel,
+  );
 
   const label =
-    displayMake !== "" && !displayModel.toLowerCase().startsWith(displayMake.toLowerCase())
-      ? `${displayMake} ${displayModel}`
-      : displayModel;
+    displayMake === "" || namesItsOwnMaker(displayModel)
+      ? displayModel
+      : `${displayMake} ${displayModel}`;
 
   return {
     // Built from the model exactly as written, and never from the make.

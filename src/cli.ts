@@ -194,6 +194,17 @@ if (args.command === "stats") {
 const server = await startServer(db, config);
 
 console.log(`\n  What did I shoot?  ${server.url}\n`);
+
+// Silently moving to a free port is how you end up with a browser tab on an
+// older copy of the tool, wondering why a feature you just added is missing.
+if (server.movedPort) {
+  console.log(
+    `  Port ${config.port} was taken, so this copy is on ${server.port}. Another copy is
+  probably still running: close it, and reload anything pointing at
+  http://127.0.0.1:${config.port} — that tab is being served by the old one.\n`,
+  );
+}
+
 if (config.sources.length === 0) {
   console.log("  No sources yet — the page will walk you through adding one.\n");
 }

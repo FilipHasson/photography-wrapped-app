@@ -30,7 +30,7 @@ pick a range, and hit **Show me the deck**.
 ```
 npm start -- --port 8080     # a different port
 npm start -- --no-open       # don't launch a browser
-npm test                     # 91 tests, including a full index-and-count run
+npm test                     # 94 tests, including a full index-and-count run
 npm run typecheck
 ```
 
@@ -185,10 +185,23 @@ picker. It is not a service to expose.
 - **A lens listed twice.** Two spellings that normalisation did not merge.
   `src/core/gear.ts` is where that lives, and `test/gear.test.ts` is where a
   new case goes.
-- **A camera named like a part number.** Sony writes `ILCE-7M2` where everyone
-  else writes a name; those are rewritten to `a7 II` by rule, so the whole
-  shelf reads the same way. The grouping key is still the raw model, so the
-  renaming can never merge two bodies.
+- **A camera named like a part number.** Several makers write service codes
+  rather than names, and they are rewritten to what people say:
+
+  | Written as | Shown as |
+  |---|---|
+  | `ILCE-7M2`, `DSC-RX100M7` | Sony a7 II, Sony RX100 VII |
+  | `DC-S5M2`, `DMC-GH4` | Lumix S5 II, Lumix GH4 |
+  | `SM-S928B`, `SM-A546E` | Galaxy S24 Ultra, Galaxy A54 |
+  | `E-M1MarkIII` | Olympus E-M1 Mark III |
+  | `PENTAX K-3 Mark III` under make `RICOH IMAGING COMPANY, LTD.` | Pentax K-3 Mark III |
+  | `iPhone 15 Pro` under make `Apple` | iPhone 15 Pro — the maker is not said twice |
+
+  A code with no rule behind it — DJI's `FC3582`, an unlisted Samsung flagship —
+  keeps the code it came with rather than being guessed at. All of this is
+  display only: the grouping key is the model as written, so renaming can never
+  merge two bodies. Add a case in `src/core/gear.ts`, with a test row in
+  `test/gear.test.ts`.
 - **Everything in one year, decades ago.** A camera with a dead clock battery.
   Capture times before 1990 are treated as unknown; a stuck clock inside that
   range is believed.

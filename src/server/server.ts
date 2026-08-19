@@ -87,6 +87,14 @@ function serveEvents(jobs: JobManager, req: IncomingMessage, res: ServerResponse
 export interface StartedServer {
   url: string;
   port: number;
+  /**
+   * True when the configured port was taken and a free one was used instead.
+   *
+   * Worth knowing about loudly: the usual reason is that another copy is
+   * already running, and a browser tab pointed at the old one keeps working
+   * while showing a version of the tool that no longer matches the code.
+   */
+  movedPort: boolean;
   close: () => Promise<void>;
 }
 
@@ -134,6 +142,7 @@ export async function startServer(db: Db, config: AppConfig): Promise<StartedSer
   return {
     url: `http://${HOST}:${port}`,
     port,
+    movedPort: config.port !== 0 && port !== config.port,
     close: () =>
       new Promise<void>((resolve, reject) =>
         server.close((err) => (err ? reject(err) : resolve())),
