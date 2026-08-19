@@ -723,3 +723,18 @@ main {
   font-family: var(--mono);
   font-size: 0.74rem;
 }
+
+/* An index built by an older version — usable, just missing something. */
+.source-stale {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  font-size: 0.86rem;
+  color: var(--ink2);
+}
+.badge.stale {
+  border-color: var(--accent);
+  color: var(--accent);
+}

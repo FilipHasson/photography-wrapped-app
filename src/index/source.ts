@@ -1,4 +1,4 @@
-import type { Db } from "../core/db.ts";
+import { gainsSince, INDEX_VERSION, type Db } from "../core/db.ts";
 import type { AppConfig, SourceConfig } from "../core/config.ts";
 import { indexFolderSource } from "./folder.ts";
 import { indexLightroomSource } from "./lightroom.ts";
@@ -54,6 +54,10 @@ export interface SourceSummary {
   withMetadata: number;
   lastIndexedAt: number | null;
   stats: IndexStats | null;
+  /** The index format this source was last built under. */
+  indexVersion: number;
+  /** What re-indexing it would add. Empty when it is current. */
+  gains: string[];
 }
 
 export function summarizeSources(db: Db): SourceSummary[] {
@@ -70,8 +74,13 @@ export function summarizeSources(db: Db): SourceSummary[] {
       )?.n ?? 0,
     lastIndexedAt: row.last_indexed_at,
     stats: row.stats ? (JSON.parse(row.stats) as IndexStats) : null,
+    indexVersion: row.index_version,
+    gains: gainsSince(row.index_version),
   }));
 }
+
+/** The format the running code writes. Sources below it are worth rebuilding. */
+export { INDEX_VERSION };
 
 /** Photographs in the index once duplicates are set aside, with the span. */
 export function indexOverview(db: Db): { shots: number; firstDay: number | null; lastDay: number | null } {

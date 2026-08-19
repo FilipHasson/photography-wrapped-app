@@ -131,12 +131,23 @@ function renderSources() {
                 (stats?.errors?.length ? ` · ${num(stats.errors.length)} unreadable` : "")
               : "not indexed yet",
           }),
+          // A source built by an older version is still perfectly usable; it is
+          // just missing whatever that version learned to read. Saying which is
+          // the difference between a nag and a reason.
+          summary?.gains?.length
+            ? el(
+                "div",
+                { class: "source-stale" },
+                el("span", { class: "badge stale", text: "older index" }),
+                `Re-index for ${summary.gains.join("; ")}.`,
+              )
+            : null,
         ),
         el(
           "div",
           { class: "source-actions" },
           el("button", {
-            class: summary ? "ghost" : "primary",
+            class: summary && !summary.gains?.length ? "ghost" : "primary",
             type: "button",
             text: summary ? "Re-index" : "Index",
             onclick: () => startIndex([source.key], false),

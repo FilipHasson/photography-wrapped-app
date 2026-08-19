@@ -680,7 +680,10 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
     shutter: distribute(shutterRows, shutterBucket, formatShutter),
     hours,
     weekdays,
-    daily: range.days <= HEATMAP_MAX_DAYS ? daily : [],
+    // Always the whole list. It is one row per day the camera came out, which
+    // is small even for twenty years, and the streaks slide needs it however
+    // long the range is — the calendar is the one that switches to months.
+    daily,
     monthly,
     timeline: { months, series },
     ratings,

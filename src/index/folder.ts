@@ -1,4 +1,4 @@
-import type { Db } from "../core/db.ts";
+import { INDEX_VERSION, type Db } from "../core/db.ts";
 import type { SourceConfig } from "../core/config.ts";
 import { classify } from "../core/media.ts";
 import { normPath, pathKey, stemOf, extOf } from "../core/paths.ts";
@@ -231,12 +231,9 @@ export async function indexFolderSource(
     )?.n ?? 0;
   stats.durationMs = Math.round(performance.now() - started);
 
-  db.prep("UPDATE source SET run = ?, last_indexed_at = ?, stats = ? WHERE id = ?").run(
-    run,
-    Date.now(),
-    JSON.stringify(stats),
-    row.id,
-  );
+  db.prep(
+    "UPDATE source SET run = ?, last_indexed_at = ?, stats = ?, index_version = ? WHERE id = ?",
+  ).run(run, Date.now(), JSON.stringify(stats), INDEX_VERSION, row.id);
 
   options.onProgress?.({
     phase: "done",

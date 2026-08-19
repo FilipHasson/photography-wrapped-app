@@ -116,6 +116,14 @@ shipping a compressor. Byte offsets are tracked as chunks are appended, and
 thing it claims — a wrong one gives a blank document or an unopenable archive
 rather than an error.
 
+**Two ways to catch up with a change.** `core/db.ts` holds `INDEX_VERSION` and
+`INDEX_CHANGES`; every source stores the version it was built under, and the
+Sources list shows what re-indexing a stale one would add. Bump the version only
+for changes that genuinely need a file re-read. Everything else belongs in
+`index/repair.ts`, which runs at startup, is idempotent, and fixes rows in place
+— the teleconverter split went in there precisely so nobody had to spend an hour
+re-reading a library for it.
+
 ## Invariants worth not breaking
 
 - A photograph is a `is_primary` row. Every count, in every slide, filters on
@@ -153,7 +161,7 @@ rather than an error.
 ## Testing
 
 ```bash
-npm test          # 109 tests
+npm test          # 116 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```

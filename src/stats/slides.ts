@@ -1,3 +1,4 @@
+import { HEATMAP_MAX_DAYS } from "./aggregate.ts";
 import type { DeckStats, DayCount, Place, Series, Streak } from "./aggregate.ts";
 import { formatDay, formatYearMonth, WEEKDAYS } from "../core/time.ts";
 
@@ -603,7 +604,9 @@ function calendarSlide(stats: DeckStats): Slide | null {
 
   const headline = `${formatDay(busiestDay.day)} — ${shotsPhrase(busiestDay.shots)} in one day`;
 
-  if (stats.daily.length > 0) {
+  // A calendar is only legible up to about a year; past that the months carry
+  // the shape and the day-by-day view moves to the streaks slide.
+  if (stats.daily.length > 0 && range.days <= HEATMAP_MAX_DAYS) {
     return {
       kind: "calendar",
       id: "calendar",

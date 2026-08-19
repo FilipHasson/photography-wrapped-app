@@ -11,7 +11,7 @@ import {
 } from "../core/config.ts";
 import { normPath } from "../core/paths.ts";
 import { parseIsoDay } from "../core/time.ts";
-import { indexSource, indexOverview, summarizeSources } from "../index/source.ts";
+import { indexSource, indexOverview, summarizeSources, INDEX_VERSION } from "../index/source.ts";
 import { rebuildPrimaries } from "../index/dedupe.ts";
 import { availableMonths, availableYears, computeStats } from "../stats/aggregate.ts";
 import { buildDeck } from "../stats/slides.ts";
@@ -80,6 +80,7 @@ function appState(ctx: AppContext) {
     years: availableYears(ctx.db, floor),
     months: availableMonths(ctx.db, floor),
     problems,
+    indexVersion: INDEX_VERSION,
     ready: overview.shots > 0,
     activeJob: ctx.jobs.active,
     platform: process.platform,

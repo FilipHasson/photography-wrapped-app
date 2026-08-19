@@ -30,7 +30,7 @@ pick a range, and hit **Show me the deck**.
 ```
 npm start -- --port 8080     # a different port
 npm start -- --no-open       # don't launch a browser
-npm test                     # 109 tests, including a full index-and-count run
+npm test                     # 116 tests, including a full index-and-count run
 npm run typecheck
 ```
 
@@ -211,8 +211,33 @@ The local server binds to loopback only and refuses any request whose `Host`
 header is not local, because it can browse your filesystem for the source
 picker. It is not a service to expose.
 
+## Keeping an index up to date
+
+Two things happen when this tool changes under an index you already built.
+
+**What can be fixed in place, is.** A repair pass runs at startup and rewrites
+what it can without opening a file — when teleconverters became part of the
+model, for instance, the lens rows that had a converter in their *name* were
+folded back into the lens they belong to, and every frame gained the converter
+it was taken through. It is idempotent, it takes milliseconds, and it prints a
+line when it does something.
+
+**What cannot be fixed in place is versioned.** Each source records the index
+format it was last built under. When the running code writes a newer one, the
+source is marked in the Sources list with what re-indexing it would add — not a
+nag, a reason:
+
+> **older index** · Re-index for teleconverters read from each frame, and gear
+> names kept exactly as the camera wrote them.
+
+A source below the current version still works. It is just missing whatever that
+version learned to read.
+
 ## When numbers look wrong
 
+- **Nothing changed after an update.** Check the terminal: a second copy of the
+  tool holding the port used to make this tool move quietly to another one,
+  leaving a browser tab served by the old copy. It now refuses to start instead.
 - **Fewer photographs than files.** That is the point — see the table above.
   The opening slide says how many files those photographs came from.
 - **"Known for 8,000 of 16,000 frames."** Some cameras, and most exports,

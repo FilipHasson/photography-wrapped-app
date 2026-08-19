@@ -18,6 +18,33 @@ import type { GearName } from "./gear.ts";
  * comparing text a million times.
  */
 
+/**
+ * The version of the index *format*.
+ *
+ * Bumped whenever a change means the rows already written are missing something
+ * only a re-read can supply — a new column filled from a file's metadata, or a
+ * different way of deriving one. Every source records the version it was built
+ * under, so the page can say which are behind and what re-indexing would buy.
+ *
+ * It is deliberately not bumped for changes that can be applied to rows already
+ * written: those belong in `index/repair.ts`, which runs at startup and costs
+ * nobody an hour of reading headers.
+ */
+export const INDEX_VERSION = 2;
+
+/** What a re-index gains, listed against the version that introduced it. */
+export const INDEX_CHANGES: ReadonlyArray<{ version: number; gains: string }> = [
+  {
+    version: 2,
+    gains: "teleconverters read from each frame, and gear names kept exactly as the camera wrote them",
+  },
+];
+
+/** The reasons a source built at `version` is worth re-indexing. */
+export function gainsSince(version: number): string[] {
+  return INDEX_CHANGES.filter((change) => change.version > version).map((change) => change.gains);
+}
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
@@ -32,7 +59,8 @@ CREATE TABLE IF NOT EXISTS source (
   root            TEXT NOT NULL,
   run             INTEGER NOT NULL DEFAULT 0,
   last_indexed_at INTEGER,
-  stats           TEXT
+  stats           TEXT,
+  index_version   INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS directory (
@@ -138,6 +166,8 @@ export interface SourceRow {
   run: number;
   last_indexed_at: number | null;
   stats: string | null;
+  /** The format version this source was last built under. */
+  index_version: number;
 }
 
 /** What SQLite will accept as a bound parameter. */
@@ -203,6 +233,12 @@ export class Db {
 
     if (!columns("photo").has("tc")) {
       this.raw.exec("ALTER TABLE photo ADD COLUMN tc TEXT");
+    }
+
+    // Sources indexed before versions existed are version 0 — which is true:
+    // they predate everything the version is there to track.
+    if (!columns("source").has("index_version")) {
+      this.raw.exec("ALTER TABLE source ADD COLUMN index_version INTEGER NOT NULL DEFAULT 0");
     }
   }
 

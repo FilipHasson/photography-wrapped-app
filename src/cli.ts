@@ -14,6 +14,7 @@ import { loadConfig } from "./core/config.ts";
 import { openDb, closeDb } from "./core/db.ts";
 import { configFile, dbFile } from "./core/paths.ts";
 import { indexSource, indexOverview } from "./index/source.ts";
+import { repairIndex } from "./index/repair.ts";
 import { computeStats } from "./stats/aggregate.ts";
 import { buildDeck } from "./stats/slides.ts";
 import { parseRangeSpec, resolveRange, type RangeSpec } from "./stats/range.ts";
@@ -129,6 +130,16 @@ if (args.help) {
 const config = await loadConfig();
 if (args.port !== undefined) config.port = args.port;
 const db = openDb();
+
+// Rules that changed after an index was built are applied once, here, rather
+// than asking anyone to re-read a library because of them.
+const repaired = repairIndex(db);
+if (repaired.teleconverters > 0) {
+  const entries = repaired.teleconverters === 1 ? "entry" : "entries";
+  console.log(
+    `\n  Folded ${repaired.teleconverters} teleconverter ${entries} back into the lenses they belong to.`,
+  );
+}
 
 if (args.command === "index") {
   const sources = config.sources.filter((source) => source.enabled);

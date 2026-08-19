@@ -150,13 +150,26 @@ export async function startServer(db: Db, config: AppConfig): Promise<StartedSer
   };
 }
 
-/** Uses the configured port, falling back to any free one if it is taken. */
+/**
+ * Binds the configured port, and refuses to quietly use a different one.
+ *
+ * Moving to a free port silently is how someone ends up reading a browser tab
+ * served by an older copy of this tool, wondering why a setting they just
+ * changed does nothing. That happened, and it cost an evening. A busy port now
+ * stops the process and says what to do about it; `--port 0` still asks for any
+ * free port, because then it was actually asked for.
+ */
 function listen(server: http.Server, preferred: number): Promise<number> {
   return new Promise((resolve, reject) => {
     const onError = (err: NodeJS.ErrnoException) => {
       if (err.code === "EADDRINUSE" && preferred !== 0) {
-        server.removeListener("error", onError);
-        server.listen(0, HOST, () => resolve((server.address() as { port: number }).port));
+        reject(
+          new Error(
+            `Port ${preferred} is already in use — almost certainly another copy of this tool.\n` +
+              `  Close it and start again, or run with --port 0 for any free port.\n` +
+              `  Leaving both running means a browser tab keeps being served the older one.`,
+          ),
+        );
         return;
       }
       reject(err);
