@@ -419,3 +419,73 @@ describe("a config written before the toggles", () => {
     assert.deepEqual(coerceNaming({}), DEFAULT_NAMING);
   });
 });
+
+/**
+ * A Lightroom catalog stores a model and no maker at all, which left the maker
+ * setting with nothing to switch: the name it offered to put in front did not
+ * exist anywhere in the row.
+ */
+describe("a maker the file never gave", () => {
+  const withMake = (make: string, model: string) =>
+    describeCamera(make, model, { ...DEFAULT_NAMING, showMake: true });
+  const lensWith = (make: string, model: string) =>
+    describeLens(make, model, { ...DEFAULT_NAMING, showMake: true });
+
+  test("a product code says who made the body", () => {
+    assert.equal(withMake("", "ILCE-7M2"), "Sony a7 II");
+    // Lightroom tidies the newer ones itself, and `a9 III` is still Sony's.
+    assert.equal(withMake("", "a9 III"), "Sony a9 III");
+    assert.equal(withMake("", "EOS R5"), "Canon EOS R5");
+    assert.equal(withMake("", "X-T5"), "Fujifilm X-T5");
+  });
+
+  test("and what is written on the barrel says who ground the glass", () => {
+    assert.equal(lensWith("", "FE 200-600mm F5.6-6.3 G OSS"), "Sony FE 200-600mm G");
+    assert.equal(lensWith("", "RF100-500mm F4.5-7.1 L IS USM"), "Canon RF 100-500mm L");
+    assert.equal(lensWith("", "24-70mm F2.8 DG DN | Art 019"), "Sigma 24-70mm Art");
+  });
+
+  test("the mount is not the maker", () => {
+    // A Tamron on a Sony body reports the Sony mount and its own release code.
+    // Reading the mount as the maker would put the wrong name on the lens.
+    assert.equal(lensWith("", "E 28-200mm F2.8-5.6 A071"), "Tamron E 28-200mm");
+    assert.equal(lensWith("", "28-75mm F/2.8 Di III VXD G2"), "Tamron 28-75mm G2");
+  });
+
+  test("a name that already says it is left alone", () => {
+    assert.equal(withMake("", "iPhone 16 Pro"), "iPhone 16 Pro");
+    assert.equal(withMake("", "SM-G950W"), "Galaxy S8");
+    assert.equal(lensWith("", "NIKKOR Z 24-70mm f/2.8 S"), "NIKKOR Z 24-70mm S");
+  });
+
+  test("a scheme nobody recognises stays unattributed", () => {
+    assert.equal(withMake("", "Widget 9000"), "Widget 9000");
+    // Nothing in front of it, and the aperture still goes: the rules are
+    // independent, which is the whole point of them being separate.
+    assert.equal(lensWith("", "35mm F1.4"), "35mm");
+  });
+
+  test("what the file does say always wins", () => {
+    // An inference never overrides a maker that was actually recorded.
+    assert.equal(withMake("NIKON CORPORATION", "NIKON Z 8"), "Nikon Z 8");
+    assert.equal(lensWith("SIGMA", "24-70mm F2.8 DG DN | Art 019"), "Sigma 24-70mm Art");
+  });
+
+  test("the toggle still takes it off", () => {
+    const bare = { ...DEFAULT_NAMING, showMake: false };
+    assert.equal(describeCamera("", "ILCE-7M2", bare), "a7 II");
+    assert.equal(describeLens("", "FE 200-600mm F5.6-6.3 G OSS", bare), "FE 200-600mm G");
+  });
+
+  test("and none of it moves a key", () => {
+    // The whole point: this is a label, worked out when a deck is built. The
+    // index still holds exactly what the camera wrote.
+    assert.equal(normalizeCamera("", "ILCE-7M2")?.key, normalizeCamera("SONY", "ILCE-7M2")?.key);
+    assert.equal(
+      normalizeLens("", "FE 200-600mm F5.6-6.3 G OSS")?.key,
+      normalizeLens("SONY", "FE 200-600mm F5.6-6.3 G OSS")?.key,
+    );
+    // And the stored label is untouched, so an old row and a new one agree.
+    assert.equal(normalizeCamera("", "ILCE-7M2")?.label, "a7 II");
+  });
+});

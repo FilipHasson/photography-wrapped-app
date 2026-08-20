@@ -45,6 +45,15 @@ options. That is why a naming rule added today fixes a library indexed months
 ago, and why the settings panel can re-label two hundred thousand photographs
 without re-reading a file. Keys never move: they are still the model as written.
 
+**A maker can be inferred, never invented.** `inferMaker` reads the maker off a
+naming scheme for the rows that carry none — a catalog stores a model and
+nothing else, which left the maker toggle with no name to put in front. Only
+schemes belonging to exactly one maker are in `MAKER_SCHEMES`, the third-party
+designations are checked first (`A071` is Tamron's whatever mount it is on), and
+the mount is never read as the maker. It runs in `describeCamera`/`describeLens`
+at read time, not in `normalizeCamera`/`normalizeLens`: the index keeps what the
+camera wrote, and a scheme added today reaches a library indexed months ago.
+
 **Naming is six switches, one rule each.** `NamingOptions` is a set of booleans
 and `applyNaming` runs one function per part of a name — aperture, jargon,
 mount, grade, version — in that order, which is not arbitrary: the aperture goes
@@ -246,7 +255,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 199 tests
+npm test          # 207 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```

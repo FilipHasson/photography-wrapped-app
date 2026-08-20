@@ -265,6 +265,51 @@ function tidyModel(model: string): string {
   return known ? [known, ...rest].join(" ") : spoken;
 }
 
+/**
+ * Who made it, worked out from the naming scheme, for the files that never say.
+ *
+ * A Lightroom catalog stores a model and nothing else: `ILCE-7M2` with no
+ * `Sony` anywhere near it, `FE 200-600mm F5.6-6.3 G OSS` with no maker beside
+ * it. That is most of a library for anyone who indexes a catalog, and it left
+ * the maker setting with nothing to switch — the name it offered to put in
+ * front did not exist.
+ *
+ * Only schemes that belong to exactly one maker are in here. `ILCE` is Sony's
+ * and nobody else's; `EOS` is Canon's. What is deliberately *not* here is the
+ * mount: `E 28-200mm F2.8-5.6 A071` is a Tamron on a Sony body, and reading the
+ * mount as the maker would put the wrong name on it. So the maker's own
+ * vocabulary is checked first — `A071` and `Di` are Tamron's, `DG DN` and `Art`
+ * are Sigma's — and a bare `E` is left unattributed, because it genuinely does
+ * not say.
+ */
+const MAKER_SCHEMES: Array<[RegExp, string]> = [
+  // Third parties first: their designations survive on any mount, and the
+  // mount underneath would otherwise claim them.
+  [/\b(a0\d\d|di\s+ii+|di\s+iii|vxd|rxd|pzd)\b/i, "Tamron"],
+  [/\b(dg\s+(?:dn|hsm|os)|dc\s+(?:dn|hsm)|art|sports|contemporary)\b/i, "Sigma"],
+
+  // Sony: the product codes, the branding it puts on its own glass, and the
+  // full-frame E-mount prefix nobody else writes.
+  [/^(?:ilce|ilme|nex|slt-a|dslr-a|zv|sel|sal)[-\d]/i, "Sony"],
+  [/^a\d/i, "Sony"],
+  [/^fe\s|\b(?:gm|oss)\b/i, "Sony"],
+
+  [/^(?:eos|powershot|ixus)\b|^(?:rf|ef)(?:-s|-m)?[\s\d]/i, "Canon"],
+  [/^nikkor\b|^af-[sp]\b|^z\s?\d|^d[1-9]\d{2,3}$|^df$/i, "Nikon"],
+  [/^(?:xf|xc|gf)[\s\d]|^x-[a-z]|^x\d{3}|^gfx/i, "Fujifilm"],
+  [/^om-/i, "OM System"],
+  [/^(?:e-m|pen-|tg-)/i, "Olympus"],
+  [/^k-?\d/i, "Pentax"],
+  [/^hero\d?/i, "GoPro"],
+  [/^fc\d{3,4}$/i, "DJI"],
+];
+
+/** The maker a model names without naming it, or `""` when it does not. */
+export function inferMaker(model: string): string {
+  const found = MAKER_SCHEMES.find(([scheme]) => scheme.test(model));
+  return found ? found[1] : "";
+}
+
 /** True when the model already says whose it is, so the make would repeat it. */
 function namesItsOwnMaker(model: string): boolean {
   const first = model.split(" ")[0] ?? "";
@@ -680,6 +725,30 @@ export function shortLensName(name: string): string {
  * indexer runs — so a name stored a year ago is written the way the rules say
  * today. Grouping is untouched: this only ever produces a string.
  */
+/**
+ * The name with a maker in front of it, including one the file never gave.
+ *
+ * At read time rather than at index time, like every other naming rule: the
+ * index keeps what the camera wrote, and a scheme learned about today reaches a
+ * library indexed months ago without re-reading a file. A model that already
+ * names its own maker is left exactly as it is — `Nikon NIKKOR Z 24-70mm` and
+ * `Apple iPhone 13` are what happens to anyone who forgets to check.
+ */
+function withMaker(model: string, make: string, label: string): string {
+  if (make !== "") return label;
+
+  const maker = inferMaker(model);
+  if (maker === "") return label;
+
+  const named =
+    model.toLowerCase().includes(maker.toLowerCase()) ||
+    brandOf(model.split(" ")[0] ?? "") !== undefined ||
+    familyOf(model.split(" ")[0] ?? "") !== undefined ||
+    model !== stripBrandPrefix(model);
+
+  return named ? label : `${maker} ${model}`;
+}
+
 export function describeLens(
   makeRaw: string,
   modelRaw: string,
@@ -688,7 +757,8 @@ export function describeLens(
   const name = normalizeLens(makeRaw, modelRaw);
   if (!name) return modelRaw;
 
-  return applyNaming(options.showMake ? name.label : name.model, options);
+  const written = options.showMake ? withMaker(name.model, name.make, name.label) : name.model;
+  return applyNaming(written, options);
 }
 
 /** The body as it should appear. */
@@ -699,7 +769,7 @@ export function describeCamera(
 ): string {
   const name = normalizeCamera(makeRaw, modelRaw);
   if (!name) return modelRaw;
-  return options.showMake ? name.label : name.model;
+  return options.showMake ? withMaker(name.model, name.make, name.label) : name.model;
 }
 
 /** The pairing the deck is really about: one body, one lens. */

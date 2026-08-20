@@ -103,6 +103,14 @@ Under them is a preview of two of your own lenses and one of your bodies,
 rewritten as you flick each switch — the only way to know what a toggle does is
 to watch it happen to something you recognise.
 
+**Maker works even when the file never said one.** A Lightroom catalog stores
+`ILCE-7M2` and `FE 200-600mm F5.6-6.3 G OSS` with no maker anywhere near them,
+so the maker is worked out from the naming scheme: `ILCE` is Sony's and nobody
+else's, `EOS` is Canon's, `A071` and `Di III` are Tamron's, `DG DN` and `Art`
+are Sigma's. The mount is deliberately *not* read as the maker — a Tamron on a
+Sony body reports the Sony mount, and `E 28-200mm F2.8-5.6 A071` is a Tamron.
+Anything unrecognised is left unattributed rather than guessed at.
+
 Out of the box: the maker, the mount, the grade and the version, without the
 aperture or the engineering — `FE 200-600mm F5.6-6.3 G OSS` reads as
 `FE 200-600mm G`, which is what people say out loud. A config from before the
