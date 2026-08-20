@@ -190,6 +190,7 @@ if (args.command === "stats") {
     excluded: config.excluded,
     naming: config.naming,
     anchorDay: config.startDay ?? overview.firstDay,
+    anchors: config.anchors,
   });
   const deck = buildDeck(stats, config.ownerName);
 

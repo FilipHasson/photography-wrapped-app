@@ -14,7 +14,7 @@ import {
 } from "../core/units.ts";
 import { addDays, dayParts, daysBetween, formatDay, makeDay, todayDay } from "../core/time.ts";
 import { describeCamera, describeLens, DEFAULT_NAMING, type NamingOptions } from "../core/gear.ts";
-import type { GearDimension } from "../core/config.ts";
+import type { Anchor, AnchorKind, GearDimension } from "../core/config.ts";
 import { formatHour, sunTimes } from "../core/sun.ts";
 
 /**
@@ -181,9 +181,36 @@ export interface Place {
 
 export interface Debut {
   kind: "camera" | "lens";
+  /** The grouping key, so a milestone about this gear can be found. */
+  key: string;
   label: string;
   day: number;
   shots: number;
+}
+
+/**
+ * A milestone the reader saved, with its pointer followed.
+ *
+ * The config stores a key; this is the thing that key names — written the way
+ * the reader's naming settings write it, and carrying what this range knows
+ * about it. Gear that has since left the index keeps the milestone and loses
+ * the gear: the day it happened is still true.
+ */
+export interface Milestone {
+  id: string;
+  /** What the reader called it. This is what any label on a chart says. */
+  label: string;
+  day: number;
+  kind: AnchorKind;
+  gear: {
+    dimension: GearDimension;
+    key: string;
+    label: string;
+    /** Inside this range. Zero is a real answer; the gear was simply not used. */
+    shots: number;
+    firstDay: number | null;
+    lastDay: number | null;
+  } | null;
 }
 
 /**
@@ -312,6 +339,8 @@ export interface DeckStats {
   places: Place[];
   placesKnown: number;
   debuts: Debut[];
+  /** Saved milestones falling inside the range, oldest first. */
+  milestones: Milestone[];
   burst: Burst | null;
   /** One entry per year the range covers, on whichever basis was asked for. */
   years: YearBucket[];
@@ -363,6 +392,11 @@ export interface StatsOptions {
   markWeekend?: boolean;
   /** How many rows the slides that pool a tail should draw. */
   limits?: RowLimits;
+  /**
+   * The reader's saved milestones. Only those inside the range reach the deck:
+   * a mark on a chart has to be somewhere the chart is drawing.
+   */
+  anchors?: readonly Anchor[];
 }
 
 /**
@@ -1008,18 +1042,35 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
     ["camera", "camera"],
     ["lens", "lens"],
   ] as const) {
-    for (const row of db.allAs<{ label: string; day: number; n: number }>(
-      `SELECT g.label AS label, MIN(p.day) AS day, COUNT(*) AS n
+    for (const row of db.allAs<RawNamed & { key: string; day: number; n: number }>(
+      `SELECT g.key AS key, g.label AS label, g.make AS make, g.model AS model,
+              g.raw_make AS raw_make, g.raw_model AS raw_model,
+              MIN(p.day) AS day, COUNT(*) AS n
        FROM photo p JOIN ${table} g ON g.id = p.${kind}_id
        WHERE p.is_primary = 1 AND p.present = 1 AND p.day IS NOT NULL
        GROUP BY g.id HAVING day BETWEEN ? AND ?`,
       range.from,
       range.to,
     )) {
-      debuts.push({ kind, label: row.label, day: row.day, shots: row.n });
+      // Named the way every other slide names it, rather than by whatever the
+      // indexer wrote the day it first saw the body.
+      debuts.push({
+        kind,
+        key: row.key,
+        label: kind === "camera" ? cameraName(row) : lensName(row),
+        day: row.day,
+        shots: row.n,
+      });
     }
   }
   debuts.sort((a, b) => a.day - b.day || a.label.localeCompare(b.label));
+
+  // --------------------------------------------------------- milestones ----
+
+  const milestones = resolveMilestones(db, options.anchors ?? [], range, naming, {
+    camera: cameraRows,
+    lens: lensRows,
+  });
 
   // ------------------------------------------------------------ culling ----
 
@@ -1118,6 +1169,7 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
     places,
     placesKnown: totals.withGps,
     debuts,
+    milestones,
     burst: findLongestBurst(db, range, options),
     years,
     yearBasis: basis,
@@ -1252,6 +1304,100 @@ export function availableMonths(
     floorDay ?? 0,
     limit,
   );
+}
+
+/**
+ * Milestones inside the range, with the gear they point at looked up.
+ *
+ * Names come from the `camera` and `lens` tables rather than from a count, so a
+ * milestone about gear that was never used inside this range still says what it
+ * is about — you can buy a lens in March and not touch it until June. The
+ * counts do come from the range, and from the same rows every other slide
+ * counts, which is why a hidden camera's milestone reports nothing: hiding is
+ * meant to remove a body from every number on every slide.
+ */
+function resolveMilestones(
+  db: Db,
+  anchors: readonly Anchor[],
+  range: Range,
+  naming: NamingOptions,
+  rows: { camera: GearRow[]; lens: GearRow[] },
+): Milestone[] {
+  const inRange = anchors.filter((a) => a.day >= range.from && a.day <= range.to);
+  if (inRange.length === 0) return [];
+
+  const names = new Map<string, string>();
+  const counted = new Map<string, { shots: number; firstDay: number | null; lastDay: number | null }>();
+
+  for (const [dimension, table, describe] of [
+    ["camera", "camera", describeCamera],
+    ["lens", "lens", describeLens],
+  ] as const) {
+    // The name table, not a count of it: a lens bought last week has no frames
+    // on it yet and is still the lens it is.
+    for (const row of db.allAs<RawNamed & { key: string }>(
+      `SELECT key, label, make, model, raw_make, raw_model FROM ${table}`,
+    )) {
+      names.set(
+        `${dimension}:${row.key}`,
+        describe(row.raw_make ?? row.make, row.raw_model ?? row.model, naming) || row.label,
+      );
+    }
+    for (const row of rows[dimension]) {
+      counted.set(`${dimension}:${row.key}`, {
+        shots: row.n,
+        firstDay: row.first ?? null,
+        lastDay: row.last ?? null,
+      });
+    }
+  }
+
+  // Converters are named by what they are — there is nothing else to call a
+  // 1.4x — and counted straight off the frames that went through one.
+  if (inRange.some((a) => a.gear?.dimension === "teleconverter")) {
+    const { where, params } = scope(range, { includeVideo: true });
+    for (const row of db.allAs<{ tc: string; n: number; first: number; last: number }>(
+      `SELECT p.tc AS tc, COUNT(*) AS n, MIN(p.day) AS first, MAX(p.day) AS last
+       FROM photo p WHERE ${where} AND p.tc IS NOT NULL GROUP BY p.tc`,
+      ...params,
+    )) {
+      counted.set(`teleconverter:${row.tc}`, {
+        shots: row.n,
+        firstDay: row.first ?? null,
+        lastDay: row.last ?? null,
+      });
+    }
+  }
+
+  return inRange
+    .map((anchor): Milestone => {
+      const at = anchor.gear ? `${anchor.gear.dimension}:${anchor.gear.key}` : null;
+      const label =
+        at === null
+          ? null
+          : anchor.gear?.dimension === "teleconverter"
+            ? `${anchor.gear.key} teleconverter`
+            : (names.get(at) ?? null);
+
+      return {
+        id: anchor.id,
+        label: anchor.label,
+        day: anchor.day,
+        kind: anchor.kind,
+        gear:
+          anchor.gear && at !== null && label !== null
+            ? {
+                dimension: anchor.gear.dimension,
+                key: anchor.gear.key,
+                label,
+                shots: counted.get(at)?.shots ?? 0,
+                firstDay: counted.get(at)?.firstDay ?? null,
+                lastDay: counted.get(at)?.lastDay ?? null,
+              }
+            : null,
+      };
+    })
+    .sort((a, b) => a.day - b.day);
 }
 
 // ----------------------------------------------------------- catalog ------

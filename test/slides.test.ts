@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { buildDeck, type Slide } from "../src/stats/slides.ts";
-import { resolveLimits, type DeckStats, type Tally } from "../src/stats/aggregate.ts";
+import { buildDeck, fmtSpan, type Slide } from "../src/stats/slides.ts";
+import { resolveLimits, type DeckStats, type Milestone, type Tally } from "../src/stats/aggregate.ts";
 import { resolveRange } from "../src/stats/range.ts";
 
 /**
@@ -44,7 +44,7 @@ function statsWith(overrides: Partial<DeckStats>): DeckStats {
     ratings: new Array(6).fill(0),
     orientation: { landscape: 0, portrait: 0, square: 0 },
     busiestDay: null, longestStreak: null, longestGap: null,
-    places: [], placesKnown: 0, debuts: [], burst: null,
+    places: [], placesKnown: 0, debuts: [], milestones: [], burst: null,
     years: [], yearBasis: "anchor", location: null, home: null,
     weekStart: "mon", markWeekend: false, wall: "packed",
     culling: { picked: 0, rejected: 0, unflagged: 0, removed: 0, removedRejected: 0, watchingSince: null },
@@ -337,5 +337,164 @@ describe("streaks", () => {
     );
     // The old note read "20 of 365 days", which said neither.
     assert.equal(slide?.note, "You were out on 20 days, 5% of the period");
+  });
+});
+
+/**
+ * A milestone stops being only a range boundary once it points at real gear:
+ * the same fact annotates the charts and answers questions no photograph can.
+ */
+const milestone = (
+  id: string,
+  label: string,
+  day: number,
+  kind: "bought" | "sold" | "custom",
+  gear?: { dimension: "camera" | "lens" | "teleconverter"; key: string; label: string; shots?: number },
+): Milestone => ({
+  id,
+  label,
+  day,
+  kind,
+  gear: gear
+    ? { ...gear, shots: gear.shots ?? 0, firstDay: day, lastDay: 20251231 }
+    : null,
+});
+
+/** Oldest first, which is the order `computeStats` promises. */
+const KIT: Milestone[] = [
+  milestone("b1", "Bought the a9 III", 20250110, "bought", {
+    dimension: "camera", key: "ilce9m3", label: "a9 III", shots: 4000,
+  }),
+  milestone("b2", "Bought the FE 200-600mm G", 20250120, "bought", {
+    dimension: "lens", key: "fe200600", label: "FE 200-600mm G", shots: 3000,
+  }),
+  milestone("s1", "Sold the a7 II", 20250301, "sold", {
+    dimension: "camera", key: "ilce7m2", label: "a7 II", shots: 900,
+  }),
+  milestone("c1", "Moved to Lisbon", 20250401, "custom"),
+  milestone("b3", "Bought the 1.4x teleconverter", 20250601, "bought", {
+    dimension: "teleconverter", key: "1.4x", label: "1.4x teleconverter", shots: 500,
+  }),
+];
+
+describe("milestones on the charts", () => {
+  const daily = Array.from({ length: 20 }, (_, i) => ({ day: 20250101 + i, shots: 5 }));
+  const marked = () =>
+    buildDeck(
+      statsWith({
+        milestones: KIT,
+        daily,
+        monthly: [
+          { ym: 202501, shots: 60 },
+          { ym: 202503, shots: 20 },
+          { ym: 202506, shots: 40 },
+        ],
+        longestStreak: { days: 40, from: 20250101, to: 20250209 },
+        longestGap: { days: 12, from: 20250210, to: 20250222 },
+        timeline: {
+          months: [202501, 202503, 202506],
+          series: [
+            { label: "FE 200-600mm G", values: [40, 10, 20] },
+            { label: "FE 70-200mm GM II", values: [20, 10, 20] },
+          ],
+        },
+      }),
+    ).slides;
+
+  test("reach the slides whose axis is time", () => {
+    for (const id of ["timeline", "streaks"]) {
+      const slide = findSlide(marked(), id);
+      assert.equal(slide?.marks?.length, KIT.length, `${id} is missing its marks`);
+    }
+  });
+
+  test("say the gear rather than the sentence", () => {
+    const marks = findSlide(marked(), "streaks")?.marks ?? [];
+    assert.deepEqual(
+      marks.map((mark) => mark.label),
+      ["+ a9 III", "+ FE 200-600mm G", "− a7 II", "Moved to Lisbon", "+ 1.4x teleconverter"],
+    );
+    // The hover keeps the whole thing, because the chart label is a compression.
+    assert.equal(marks[0]?.full, "Bought the a9 III · 10 Jan 2025");
+  });
+
+  test("a slide with no milestones carries none", () => {
+    assert.equal(findSlide(buildDeck(statsWith({ daily })).slides, "streaks")?.marks, undefined);
+  });
+});
+
+describe("kit history", () => {
+  const kit = (milestones: Milestone[]) => findSlide(buildDeck(statsWith({ milestones })).slides, "kit");
+
+  test("needs more than one piece of gear to be a history", () => {
+    assert.equal(kit([]), undefined);
+    assert.equal(kit(KIT.slice(0, 1)), undefined);
+    // A milestone about nothing in particular cannot be in it.
+    assert.equal(kit([KIT[0] as Milestone, KIT[3] as Milestone]), undefined);
+    assert.ok(kit(KIT));
+  });
+
+  test("answers what a photograph cannot", () => {
+    const slide = kit(KIT);
+    assert.ok(slide && slide.kind === "list");
+
+    const facts = slide.items.map((item) => `${item.meta} → ${item.label} → ${item.value}`);
+    assert.match(String(facts[0]), /^First body you bought · 10 Jan 2025 → a9 III → 4,000 frames/);
+    assert.ok(facts.some((fact) => /First lens you bought .* FE 200-600mm G/.test(fact)));
+    assert.ok(facts.some((fact) => /First thing you sold .* a7 II/.test(fact)));
+    assert.ok(facts.some((fact) => /Longest you went without buying anything/.test(fact)));
+  });
+
+  test("counts the sold body as gone and the rest as still yours", () => {
+    const slide = kit(KIT);
+    const held = slide?.kind === "list" ? slide.items.find((i) => i.meta.startsWith("Owned longest")) : null;
+    // The a9 III is the earliest purchase that was never sold. The a7 II was
+    // bought before the range and sold inside it, so it is not still yours.
+    assert.equal(held?.label, "a9 III");
+  });
+
+  test("every date on it comes from a milestone, and it says so", () => {
+    const slide = kit(KIT);
+    assert.equal(slide?.subtitle, "Dated by you, not guessed from a first frame");
+    for (const item of slide?.kind === "list" ? slide.items : []) {
+      assert.match(item.meta, /\d{4}/, `"${item.meta}" shows no date`);
+    }
+  });
+});
+
+describe("new in the bag", () => {
+  const debuts = [
+    { kind: "camera" as const, key: "ilce9m3", label: "a9 III", day: 20250115, shots: 4000 },
+    { kind: "lens" as const, key: "fe70200", label: "FE 70-200mm GM II", day: 20250220, shots: 800 },
+  ];
+
+  test("a milestone beats a first frame, and the row says which it used", () => {
+    const slide = findSlide(buildDeck(statsWith({ debuts, milestones: KIT })).slides, "debuts");
+    assert.ok(slide && slide.kind === "list");
+
+    // The a9 III has a purchase date; the lens has only the day it first fired.
+    assert.match(String(slide.items[0]?.meta), /bought 10 Jan 2025/);
+    assert.match(String(slide.items[1]?.meta), /first frame 20 Feb 2025/);
+    assert.equal(
+      slide.note,
+      "Dated by your milestones where you have one, and by a first frame otherwise",
+    );
+  });
+
+  test("with nothing saved it is honest about guessing", () => {
+    const slide = findSlide(buildDeck(statsWith({ debuts })).slides, "debuts");
+    assert.equal(slide?.note, "Dated by its first frame anywhere in your library");
+  });
+});
+
+describe("spans of time", () => {
+  test("are said the way people say them", () => {
+    assert.equal(fmtSpan(0), "0 days");
+    assert.equal(fmtSpan(1), "1 day");
+    assert.equal(fmtSpan(44), "44 days");
+    assert.equal(fmtSpan(60), "2 months");
+    assert.equal(fmtSpan(365), "12 months");
+    assert.equal(fmtSpan(730), "2 years");
+    assert.equal(fmtSpan(1000), "2 years 9 months");
   });
 });

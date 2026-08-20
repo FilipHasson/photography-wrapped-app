@@ -204,6 +204,13 @@ re-reading a library for it.
   have hidden from the deck is still gear you bought. Old milestones carry no
   category at all and must keep working — `coerceAnchor` degrades anything it
   does not recognise to a plain dated label rather than dropping it.
+- **A milestone annotates; it never becomes a series.** `Mark`s ride on
+  `Slide.marks` and only the renderers whose x axis is time read them, as a
+  dashed hairline in `ink2` with a name where one fits — never a colour from the
+  palette, which belongs to the data. Which of them get named is decided by the
+  same left-to-right collision rule the column labels use, and on the wall of
+  days the year labels claim their space first: knowing which year you are
+  looking at comes before knowing which week a lens arrived.
 - A teleconverter is stored beside the lens (`photo.tc`), never inside its name.
   One lens is one row and one bar; the converter is a shade within it. The key
   is computed from the optics with the converter stripped, so bare and converted
@@ -221,7 +228,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 164 tests
+npm test          # 178 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```

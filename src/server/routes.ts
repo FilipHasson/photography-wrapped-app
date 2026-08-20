@@ -318,6 +318,9 @@ export async function handleApi(
         // An anchor year starts where the library does; failing that, where the
         // photographs do.
         anchorDay: ctx.config.startDay ?? overview.firstDay,
+        // The saved milestones. Which of them the deck can use is decided
+        // there — a mark has to land inside what a slide is drawing.
+        anchors: ctx.config.anchors,
       });
       json(res, 200, { range, deck: buildDeck(stats, ctx.config.ownerName) });
       return true;

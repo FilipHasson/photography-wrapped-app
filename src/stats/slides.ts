@@ -2,13 +2,15 @@ import { HEATMAP_MAX_DAYS, MAX_ROWS as MAX_BARS, MAX_SERIES } from "./aggregate.
 import type {
   DeckStats,
   DayCount,
+  Debut,
+  Milestone,
   Place,
   Series,
   Streak,
   WeekStart,
   YearBucket,
 } from "./aggregate.ts";
-import { formatDay, formatYearMonth, WEEKDAYS } from "../core/time.ts";
+import { daysBetween, formatDay, formatYearMonth, WEEKDAYS } from "../core/time.ts";
 
 /**
  * Turning numbers into slides.
@@ -69,9 +71,32 @@ export interface SlideSetting {
   hours?: { shownWhen: string; fromId: string; from: number; toId: string; to: number };
 }
 
+/**
+ * A milestone as a chart draws it.
+ *
+ * Two forms of the same thing: `label` is what fits on a chart, `full` is what
+ * the reader wrote. A mark is context — it never becomes a series, and it never
+ * takes a colour.
+ */
+export interface Mark {
+  day: number;
+  /** Short enough to sit above an axis: `+ FE 200-600mm G`. */
+  label: string;
+  /** The whole milestone, for the hover title. */
+  full: string;
+}
+
 interface Common {
   id: string;
   title: string;
+  /**
+   * Milestones falling inside what this slide draws.
+   *
+   * Only the slides whose x axis is time read it; the rest ignore it. It lives
+   * on every slide rather than on three of them because which slides can carry
+   * a mark is a drawing decision, not a shape of data.
+   */
+  marks?: Mark[];
   /** Choices this slide offers, rendered beside it. */
   settings?: SlideSetting[];
   /** The one sentence the slide exists to deliver. */
@@ -210,6 +235,50 @@ export function fmtDuration(seconds: number): string {
 
 const plural = (n: number, one: string, many = `${one}s`): string => (n === 1 ? one : many);
 
+/**
+ * A span of days, said the way people say it.
+ *
+ * Days up to a month and a half, then months, then years — nobody says "eight
+ * hundred and forty days", and nobody means 2.3 years either.
+ */
+export function fmtSpan(days: number): string {
+  if (!Number.isFinite(days) || days < 0) return "—";
+  if (days < 45) return `${fmtInt(days)} ${plural(days, "day")}`;
+
+  const months = Math.max(1, Math.round(days / 30.44));
+  if (months < 24) return `${months} ${plural(months, "month")}`;
+
+  const years = Math.floor(months / 12);
+  const rest = months % 12;
+  return rest === 0
+    ? `${years} ${plural(years, "year")}`
+    : `${years} ${plural(years, "year")} ${rest} ${plural(rest, "month")}`;
+}
+
+/**
+ * A milestone at chart size.
+ *
+ * "Bought the FE 200-600mm G" is a sentence and a chart has room for a name, so
+ * the verb becomes a sign. A milestone about nothing in particular keeps its own
+ * words — there is nothing else it could say.
+ */
+function markLabel(milestone: Milestone): string {
+  const name = milestone.gear?.label;
+  if (milestone.kind === "bought") return `+ ${name ?? milestone.label.replace(/^bought (the )?/i, "")}`;
+  if (milestone.kind === "sold") return `− ${name ?? milestone.label.replace(/^sold (the )?/i, "")}`;
+  return milestone.label;
+}
+
+/** Marks for the slides that draw time, or nothing at all for the rest. */
+function marksFor(stats: DeckStats): Mark[] | undefined {
+  if (stats.milestones.length === 0) return undefined;
+  return stats.milestones.map((milestone) => ({
+    day: milestone.day,
+    label: markLabel(milestone),
+    full: `${milestone.label} · ${formatDay(milestone.day)}`,
+  }));
+}
+
 /** `2,481 photographs` — the phrase that appears in half the headlines. */
 const shotsPhrase = (n: number): string => `${fmtInt(n)} ${plural(n, "photograph")}`;
 
@@ -294,6 +363,7 @@ export function buildDeck(stats: DeckStats, ownerName = ""): Deck {
     keepersSlide(stats),
     shapeSlide(stats),
     placesSlide(stats),
+    kitSlide(stats),
     debutsSlide(stats),
     burstSlide(stats),
   ];
@@ -893,6 +963,7 @@ function calendarSlide(stats: DeckStats): Slide | null {
     id: "calendar",
     title: "Month by month",
     subtitle: "The long view",
+    marks: marksFor(stats),
     headline,
     note: daysOutNote(stats),
     months: stats.monthly,
@@ -942,6 +1013,7 @@ function streaksSlide(stats: DeckStats): Slide | null {
     id: "streaks",
     title: "Streaks",
     subtitle: "Every day in the range, shot or not",
+    marks: marksFor(stats),
     headline,
     // "330 of 1,090 days" said nothing about which number was which.
     note: daysOutNote(stats),
@@ -1019,6 +1091,7 @@ function timelineSlide(stats: DeckStats): Slide | null {
     id: "timeline",
     title: "Gear over time",
     subtitle: "What was on the camera, month by month",
+    marks: marksFor(stats),
     headline:
       leader && (leader.values[lastIndex] ?? 0) > 0
         ? `${leader.label} closed out ${formatYearMonth(timeline.months[lastIndex] as number)}`
@@ -1272,6 +1345,121 @@ function placesSlide(stats: DeckStats): Slide | null {
   };
 }
 
+/**
+ * What the milestones add up to.
+ *
+ * Every date here was entered by the reader rather than inferred from a first
+ * frame, which is exactly why this slide can answer things the rest of the deck
+ * cannot: "the first lens you bought" is not a question a photograph can answer,
+ * and neither is "how long you went without buying anything".
+ *
+ * Nothing about money. This tool does not know what anything cost and has no
+ * business asking.
+ */
+function kitSlide(stats: DeckStats): Slide | null {
+  const gear = stats.milestones.filter((m) => m.gear !== null);
+  // One purchase is a fact. Two is a history.
+  if (gear.length < 2) return null;
+
+  const bought = gear.filter((m) => m.kind === "bought");
+  const sold = gear.filter((m) => m.kind === "sold");
+  const isGlass = (m: Milestone) => m.gear?.dimension !== "camera";
+
+  const items: Array<{ label: string; meta: string; value: string }> = [];
+  const rows: Array<Array<string | number>> = [];
+
+  const add = (fact: string, thing: string, when: string, value: string, extra = "") => {
+    items.push({
+      label: thing,
+      meta: `${fact} · ${when}${extra === "" ? "" : ` · ${extra}`}`,
+      value,
+    });
+    rows.push([fact, thing, when, value]);
+  };
+
+  const frames = (m: Milestone) =>
+    `${fmtInt(m.gear?.shots ?? 0)} ${plural(m.gear?.shots ?? 0, "frame")}`;
+
+  const firstBody = bought.find((m) => m.gear?.dimension === "camera");
+  if (firstBody) {
+    add("First body you bought", firstBody.gear?.label ?? "", formatDay(firstBody.day), frames(firstBody));
+  }
+
+  const firstGlass = bought.find(isGlass);
+  if (firstGlass) {
+    add("First lens you bought", firstGlass.gear?.label ?? "", formatDay(firstGlass.day), frames(firstGlass));
+  }
+
+  const firstSale = sold[0];
+  if (firstSale) {
+    // What it did while you had it — which is the only interesting thing about
+    // a sale, and the one number a sale slide can honestly give.
+    const owned = firstSale.gear?.firstDay
+      ? fmtSpan(daysBetween(firstSale.gear.firstDay, firstSale.day))
+      : "";
+    add(
+      "First thing you sold",
+      firstSale.gear?.label ?? "",
+      formatDay(firstSale.day),
+      frames(firstSale),
+      owned === "" ? "" : `${owned} of shooting`,
+    );
+  }
+
+  // Still yours: bought, and never sold afterwards. Measured to the end of the
+  // range rather than to today, because that is what this deck is about.
+  const soldAfter = (m: Milestone) =>
+    sold.some((s) => s.gear?.key === m.gear?.key && s.gear?.dimension === m.gear?.dimension && s.day >= m.day);
+  const kept = bought.filter((m) => !soldAfter(m));
+  const longestHeld = kept[0];
+  if (longestHeld) {
+    add(
+      "Owned longest",
+      longestHeld.gear?.label ?? "",
+      `yours since ${formatDay(longestHeld.day)}`,
+      fmtSpan(daysBetween(longestHeld.day, stats.range.to)),
+    );
+  }
+
+  // The gaps between one purchase and the next. Two purchases make one gap,
+  // which is a fact about a pair rather than a habit, so it takes three.
+  if (bought.length >= 3) {
+    const gaps = bought.slice(1).map((m, i) => ({
+      from: bought[i] as Milestone,
+      to: m,
+      days: daysBetween((bought[i] as Milestone).day, m.day),
+    }));
+    const longest = gaps.reduce((best, gap) => (gap.days > best.days ? gap : best));
+    const shortest = gaps.reduce((best, gap) => (gap.days < best.days ? gap : best));
+
+    const pair = (gap: (typeof gaps)[number]) =>
+      `${gap.from.gear?.label ?? "?"} → ${gap.to.gear?.label ?? "?"}`;
+
+    const span = (gap: (typeof gaps)[number]) => `${formatDay(gap.from.day)} to ${formatDay(gap.to.day)}`;
+
+    add("Longest you went without buying anything", pair(longest), span(longest), fmtSpan(longest.days));
+    if (shortest !== longest) {
+      add("Shortest between two purchases", pair(shortest), span(shortest), fmtSpan(shortest.days));
+    }
+  }
+
+  if (items.length === 0) return null;
+
+  const headline = `${fmtInt(bought.length)} ${plural(bought.length, "purchase")}${
+    sold.length > 0 ? ` and ${fmtInt(sold.length)} ${plural(sold.length, "sale")}` : ""
+  }, in your own words`;
+
+  return {
+    kind: "list",
+    id: "kit",
+    title: "Kit history",
+    subtitle: "Dated by you, not guessed from a first frame",
+    headline,
+    items,
+    table: tableOf(["Fact", "Gear", "When", "Measure"], rows),
+  };
+}
+
 function debutsSlide(stats: DeckStats): Slide | null {
   if (stats.debuts.length === 0) return null;
   if (stats.range.spec.kind === "all" && stats.debuts.length > 12) return null;
@@ -1279,21 +1467,51 @@ function debutsSlide(stats: DeckStats): Slide | null {
   const first = stats.debuts[0];
   if (!first) return null;
 
+  // A milestone beats a first frame, and the row says which it used. One is a
+  // date the reader knows; the other is this tool guessing from a photograph,
+  // and the two are not the same kind of claim.
+  const bought = new Map(
+    stats.milestones
+      .filter((m) => m.kind === "bought" && m.gear !== null)
+      .map((m) => [`${m.gear?.dimension}:${m.gear?.key}`, m.day] as const),
+  );
+  const purchase = (debut: Debut) => bought.get(`${debut.kind}:${debut.key}`) ?? null;
+  const told = stats.debuts.filter((debut) => purchase(debut) !== null).length;
+
   return {
     kind: "list",
     id: "debuts",
     title: "New in the bag",
     subtitle: "First frames on gear you had not used before",
     headline: `${stats.debuts.length} ${plural(stats.debuts.length, "new piece", "new pieces")} of kit`,
-    note: "Dated by its first frame anywhere in your library",
-    items: stats.debuts.map((debut) => ({
-      label: debut.label,
-      meta: `${debut.kind === "camera" ? "Camera" : "Lens"} · first frame ${formatDay(debut.day)}`,
-      value: `${fmtInt(debut.shots)} ${plural(debut.shots, "frame")} since`,
-    })),
+    note:
+      told === stats.debuts.length
+        ? "Dated by the milestones you saved"
+        : told > 0
+          ? "Dated by your milestones where you have one, and by a first frame otherwise"
+          : "Dated by its first frame anywhere in your library",
+    items: stats.debuts.map((debut) => {
+      const day = purchase(debut);
+      return {
+        label: debut.label,
+        meta: `${debut.kind === "camera" ? "Camera" : "Lens"} · ${
+          day === null ? `first frame ${formatDay(debut.day)}` : `bought ${formatDay(day)}`
+        }`,
+        value: `${fmtInt(debut.shots)} ${plural(debut.shots, "frame")} since`,
+      };
+    }),
     table: tableOf(
-      ["Gear", "Kind", "First frame", "Frames since"],
-      stats.debuts.map((debut) => [debut.label, debut.kind, formatDay(debut.day), debut.shots]),
+      ["Gear", "Kind", "When", "Dated by", "Frames since"],
+      stats.debuts.map((debut) => {
+        const day = purchase(debut);
+        return [
+          debut.label,
+          debut.kind,
+          formatDay(day ?? debut.day),
+          day === null ? "first frame" : "a milestone",
+          debut.shots,
+        ];
+      }),
     ),
   };
 }

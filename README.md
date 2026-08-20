@@ -128,16 +128,29 @@ Two settings deal with that, and both are saved:
 
 ## The deck
 
-Twenty-one slides at most, and only the ones that have something to say — no GPS
+Twenty-two slides at most, and only the ones that have something to say — no GPS
 in your library means no map, no ratings means no keepers slide.
 
 Opening totals · year by year · cameras · lenses · **camera + lens pairings** ·
 focal length · aperture · ISO · shutter speed · time of day · day of the week ·
 a calendar of every day · streaks · which lens was on the camera month by month ·
-culling · keepers · format and orientation · where · new gear · your longest
-burst · a closing summary.
+culling · keepers · format and orientation · where · kit history · new gear ·
+your longest burst · a closing summary.
 
 A few things the slides do rather than say:
+
+- **Your milestones turn up on the charts.** A milestone inside the range is a
+  hairline on gear over time, on month by month, and a ringed day on the wall of
+  streaks — so a series appearing, or three months of silence, has a reason
+  beside it rather than looking like missing data. Each is named where there is
+  room and hovers for the rest.
+- **Kit history** is the slide only your milestones can fill: the first body and
+  the first lens you bought, the first thing you sold and what it shot while you
+  had it, the longest and shortest you went between purchases, and what you have
+  owned longest. Every date on it is one you entered — where you have a
+  milestone for a piece of gear, **New in the bag** uses it too and says so,
+  rather than guessing the day from its first frame. Nothing about money: this
+  tool does not know what anything cost and does not ask.
 
 - **The clock is coloured by the time of day** — cool at midnight, warm at
   midday. Tell it where you are (Settings, or one click of **Use my location**)

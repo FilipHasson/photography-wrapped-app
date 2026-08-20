@@ -499,6 +499,76 @@ function drawKeyLegend(root, at, items, theme, L) {
  * is room for the name *under* a column, and a column half a slide tall says
  * "this is the one" in a way a 24px bar never will.
  */
+/**
+ * Milestones on a chart whose x axis is time.
+ *
+ * A hairline and a word: a mark is context, and the moment it competes with the
+ * data it annotates it has failed. Dashed, and in `ink2` rather than the axis
+ * colour, because it has to cross the bars it is explaining — a pale rule
+ * disappears the instant a column is drawn over it, in one theme or the other.
+ *
+ * Labels are placed left to right and only where the space beside the last one
+ * is free, the same rule the column labels follow. Every mark inside the chart
+ * gets its rule; a cluster of purchases in one month names as many as fit and
+ * leaves the rest to the hover title.
+ *
+ * `xOf` returns null for a day the chart is not drawing.
+ */
+function drawMarks(root, area, marks, xOf, theme, L, reserve = 0) {
+  if (!marks || marks.length === 0) return;
+
+  const size = Math.max(9, Math.min(L.tiny, area.h * 0.12));
+  const top = area.y + size * 1.35;
+  // Whatever else already lives on this line — an axis ceiling sits at the top
+  // right of a bar chart, and a mark name ran straight through it.
+  const edge = area.x + area.w - reserve;
+  let free = -Infinity;
+
+  for (const mark of [...marks].sort((a, b) => a.day - b.day)) {
+    const x = xOf(mark.day);
+    if (x === null || !Number.isFinite(x) || x < area.x - 1 || x > area.x + area.w + 1) continue;
+
+    root.append(
+      titled(
+        el("line", {
+          x1: x,
+          y1: top,
+          x2: x,
+          y2: area.y + area.h,
+          stroke: theme.ink2,
+          "stroke-dasharray": "3 4",
+          opacity: 0.5,
+        }),
+        mark.full,
+      ),
+    );
+    // A square rather than a circle, so the frame check can see where it is.
+    root.append(
+      el("rect", { x: x - 1.5, y: top - 1.5, width: 3, height: 3, fill: theme.ink2, opacity: 0.7 }),
+    );
+
+    if (x < free) continue;
+    const width = measure(mark.label, size);
+    if (x + size * 0.4 + width > edge) continue;
+    free = x + size * 0.4 + width + size;
+
+    root.append(text(mark.label, x + size * 0.4, area.y + size, { size, fill: theme.ink2 }));
+  }
+}
+
+/** Where a day sits along a run of months, a whole month wide plus the day in it. */
+function monthAxis(months, x0, band) {
+  const index = new Map(months.map((ym, i) => [ym, i]));
+  return (day) => {
+    const ym = Math.floor(day / 100);
+    const at = index.get(ym);
+    if (at === undefined) return null;
+    const into = (day % 100) - 1;
+    const span = daysInMonth(Math.floor(ym / 100), ym % 100);
+    return x0 + band * (at + Math.min(1, Math.max(0, into / span)));
+  };
+}
+
 function drawBarsAsColumns(root, plot, items, max, theme, L) {
   const band = plot.w / items.length;
   const thickness = Math.min(band * 0.5, plot.w * 0.22);
@@ -1008,9 +1078,15 @@ function drawStrip(root, plot, slide, theme, L) {
     return best;
   }
 
+  const marks = slide.marks ?? [];
   const widest = rows.length > 1 ? Math.max(...rows.map(weeksIn), 1) : layout.perBand;
   const perRow = usable / (rows.length > 1 ? rows.length : layout.bands);
-  const labelH = rows.some((row) => row.label !== "") || years.length > 1 ? Math.min(L.tiny * 1.7, perRow * 0.18) : 0;
+  // The strip above each band carries the year labels and the milestones; a
+  // wall with neither gives the space back to the squares.
+  const labelH =
+    rows.some((row) => row.label !== "") || years.length > 1 || marks.length > 0
+      ? Math.min(L.tiny * 1.7, perRow * 0.18)
+      : 0;
   const gap = Math.min(L.tiny * 0.9, perRow * 0.08);
 
   const cell = Math.max(2, Math.min(plot.w / widest, (perRow - labelH - gap) / 7));
@@ -1068,6 +1144,48 @@ function drawStrip(root, plot, slide, theme, L) {
     );
   };
 
+  /**
+   * A milestone on the wall: the day itself ringed, and named above its column
+   * where the label strip is not already spoken for.
+   *
+   * The ring is drawn on the square rather than around it — a day here can be
+   * four pixels across, and an outline that grew by two would swallow its
+   * neighbours. Whatever the size, the hover title says what happened.
+   */
+  const markDays = (locate, claimed) => {
+    const labelSize = Math.min(L.tiny, Math.max(9, labelH * 0.85));
+
+    for (const mark of marks) {
+      const at = locate(mark.day);
+      if (!at) continue;
+
+      root.append(
+        titled(
+          el("rect", {
+            x: at.x,
+            y: at.y,
+            width: size,
+            height: size,
+            rx: Math.min(2, size / 3),
+            fill: "none",
+            stroke: theme.ink,
+            "stroke-width": Math.max(1, Math.min(2, size * 0.18)),
+          }),
+          mark.full,
+        ),
+      );
+
+      if (labelH === 0) continue;
+      const edge = claimed.get(at.band) ?? -Infinity;
+      if (at.x < edge) continue;
+      claimed.set(at.band, at.x + measure(mark.label, labelSize) + labelSize * 0.8);
+
+      root.append(
+        text(mark.label, at.x, topOf(at.band) - gap * 0.6, { size: labelSize, fill: theme.ink2 }),
+      );
+    }
+  };
+
   if (rows.length > 1) {
     rows.forEach((row, index) => {
       const first = toDate(row.from);
@@ -1087,6 +1205,22 @@ function drawStrip(root, plot, slide, theme, L) {
         square(left0 + Math.floor(i / 7) * cell, top + (i % 7) * cell, key, date, key >= row.from && key <= row.to);
       }
     });
+
+    // A row per year: the milestone's own year is the row it lands in.
+    markDays((day) => {
+      const index = rows.findIndex((row) => day >= row.from && day <= row.to);
+      const row = rows[index];
+      if (!row) return null;
+
+      const first = toDate(row.from);
+      const offset =
+        Math.round((toDate(day).getTime() - first.getTime()) / 86400000) + ((first.getUTCDay() + 6) % 7);
+      return {
+        x: left0 + Math.floor(offset / 7) * cell,
+        y: topOf(index) + (offset % 7) * cell,
+        band: index,
+      };
+    }, new Map(rows.map((_, index) => [index, left0 + measure(rows[index]?.label ?? "", Math.min(L.tiny, Math.max(9, labelH * 0.85))) + L.tiny])));
   } else {
     const first = toDate(slide.from);
     const lead = (first.getUTCDay() + 6) % 7;
@@ -1111,6 +1245,10 @@ function drawStrip(root, plot, slide, theme, L) {
     // Where each year begins, written above the wall at the week it starts.
     // The years are labels here rather than rows — the same information, at the
     // size the packed layout buys.
+    //
+    // Years claim their space first and milestones fill what is left: on a wall
+    // of six years, knowing which year you are looking at comes before knowing
+    // which week a lens arrived.
     const claimed = new Map();
     for (const year of years) {
       const offset = Math.round((toDate(year.from).getTime() - first.getTime()) / 86400000) + lead;
@@ -1126,6 +1264,15 @@ function drawStrip(root, plot, slide, theme, L) {
 
       root.append(text(year.label, x, topOf(band) - gap * 0.6, { size: size2, fill: theme.muted }));
     }
+
+    markDays((day) => {
+      const offset = Math.round((toDate(day).getTime() - first.getTime()) / 86400000) + lead;
+      if (offset < 0) return null;
+      const week = Math.floor(offset / 7);
+      const band = Math.floor(week / perBand);
+      if (band >= layout.bands) return null;
+      return { x: left0 + (week - band * perBand) * cell, y: topOf(band) + (offset % 7) * cell, band };
+    }, claimed);
   }
 
   const key = [
@@ -1508,7 +1655,8 @@ function drawMonths(root, plot, slide, theme, L) {
   const band = plot.w / months.length;
   const thickness = Math.min(24, Math.max(3, band - 6));
   const baseline = plot.y + plot.h - L.axis * 2.4;
-  const height = Math.max(40, baseline - plot.y - L.axis * 2);
+  const markH = slide.marks?.length ? L.tiny * 1.9 : 0;
+  const height = Math.max(40, baseline - plot.y - L.axis * 2 - markH);
 
   const gridY = baseline - height;
   root.append(el("line", { x1: plot.x, y1: gridY, x2: plot.x + plot.w, y2: gridY, stroke: theme.grid }));
@@ -1552,6 +1700,20 @@ function drawMonths(root, plot, slide, theme, L) {
 
   root.append(
     el("line", { x1: plot.x, y1: baseline, x2: plot.x + plot.w, y2: baseline, stroke: theme.axis }),
+  );
+
+  drawMarks(
+    root,
+    { x: plot.x, y: gridY - markH, w: plot.w, h: height + markH },
+    slide.marks,
+    monthAxis(
+      months.map((entry) => entry.ym),
+      plot.x,
+      band,
+    ),
+    theme,
+    L,
+    measure(fmt(ceiling), L.axis) + L.tiny,
   );
 }
 
@@ -1617,7 +1779,11 @@ function drawStack(root, plot, slide, theme, L) {
   }
   const legendH = legend.rows * legendL.axis * 1.9;
   const baseline = plot.y + plot.h - legendH - L.axis * 3;
-  const height = Math.max(40, baseline - plot.y);
+  // Room above the columns for the milestone labels, taken from the chart
+  // rather than found afterwards: a label squeezed into whatever was left is
+  // the bug the keepers card was written to stop repeating.
+  const markH = slide.marks?.length ? L.tiny * 1.9 : 0;
+  const height = Math.max(40, baseline - plot.y - markH);
   const stride = Math.max(1, Math.ceil(months.length / (L.narrow ? 6 : 12)));
 
   months.forEach((ym, i) => {
@@ -1685,6 +1851,17 @@ function drawStack(root, plot, slide, theme, L) {
 
   root.append(
     el("line", { x1: plot.x, y1: baseline, x2: plot.x + plot.w, y2: baseline, stroke: theme.axis }),
+  );
+
+  // Drawn over the columns rather than under them: a series appearing in March
+  // is only explained by the mark if the mark is still visible in March.
+  drawMarks(
+    root,
+    { x: plot.x, y: baseline - height - markH, w: plot.w, h: height + markH },
+    slide.marks,
+    monthAxis(months, plot.x, band),
+    theme,
+    L,
   );
 
   // A legend is not optional once there is more than one series.

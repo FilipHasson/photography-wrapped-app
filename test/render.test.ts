@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Db } from "../src/core/db.ts";
-import { defaultConfig, defaultSource } from "../src/core/config.ts";
+import { defaultConfig, defaultSource, makeAnchor } from "../src/core/config.ts";
 import { indexSource, indexOverview } from "../src/index/source.ts";
 import { computeStats } from "../src/stats/aggregate.ts";
 import { buildDeck, type Slide } from "../src/stats/slides.ts";
@@ -61,6 +61,9 @@ function measureText(value: string, size: number): { width: number } {
   return { width: value.length * size * 0.52 };
 }
 
+/** The same approximation, for tests that need to know how wide a label came out. */
+const measureShim = (value: string, size: number) => measureText(value, size).width;
+
 function installShim(): void {
   const canvasContext = {
     font: "16px sans",
@@ -102,7 +105,18 @@ before(async () => {
 
   const overview = indexOverview(db);
   const range = resolveRange({ kind: "all" }, { firstDay: overview.firstDay, lastDay: overview.lastDay });
-  slides = buildDeck(computeStats(db, range, { includeVideo: true }), "Filip").slides;
+
+  // Milestones on days the fixtures actually hold, so every slide that draws
+  // time is checked with its annotations on rather than without them.
+  const anchors = [
+    makeAnchor("Bought the Nikon Z 8", overview.firstDay ?? 20250101, [], {
+      kind: "bought",
+      gear: { dimension: "camera", key: "nikonz8" },
+    }),
+    makeAnchor("Moved to Lisbon", overview.lastDay ?? 20251231, []),
+  ];
+
+  slides = buildDeck(computeStats(db, range, { includeVideo: true, anchors }), "Filip").slides;
 
   // The web modules are plain JS with `// @ts-check` for the editor's benefit;
   // `npm run typecheck` covers the TypeScript, as in the sibling project. The
@@ -392,6 +406,108 @@ describe("colours past the palette", () => {
       for (const hex of colours) assert.match(hex, /^#[0-9a-f]{6}$/);
     }
   });
+});
+
+/**
+ * Milestones annotate the slides that draw time, and a chart full of them is
+ * where an annotation layer falls over: labels overlapping each other, a rule
+ * outside the plot, a name running off the right edge. Twelve of them across a
+ * two-year range is more than anyone has, which is the point.
+ */
+describe("a chart with milestones on it", () => {
+  const marks = Array.from({ length: 12 }, (_, i) => ({
+    day: 20250101 + i * 200,
+    label: `+ FE ${100 + i * 10}-${300 + i * 10}mm F2.8 GM OSS II`,
+    full: `Bought the FE ${100 + i * 10}-${300 + i * 10}mm F2.8 GM OSS II · 1 January 2025`,
+  })).map((mark) => ({ ...mark, day: mark.day > 20251231 ? mark.day - 1200 + 10000 : mark.day }));
+
+  const months = Array.from({ length: 24 }, (_, i) => 202501 + (i % 12) + Math.floor(i / 12) * 100);
+
+  const annotated: Slide[] = [
+    {
+      kind: "stack",
+      id: "timeline",
+      title: "Gear over time",
+      headline: "How your kit rotated",
+      marks,
+      months,
+      series: [
+        { label: "FE 200-600mm G", values: months.map((_, i) => 100 - i) },
+        { label: "FE 24-70mm GM II", values: months.map((_, i) => 40 + i) },
+      ],
+      table: { columns: ["Month"], rows: [] },
+    },
+    {
+      kind: "strip",
+      id: "streaks",
+      title: "Streaks",
+      headline: "40 days in a row",
+      marks,
+      days: Array.from({ length: 400 }, (_, i) => ({ day: 20250101 + i, shots: i % 3 })),
+      from: 20250101,
+      to: 20261231,
+      streak: { days: 40, from: 20250101, to: 20250209 },
+      gap: { days: 12, from: 20250401, to: 20250413 },
+      years: [
+        { label: "2025", from: 20250101, to: 20251231 },
+        { label: "2026", from: 20260101, to: 20261231 },
+      ],
+      layout: "packed",
+      table: { columns: ["Day"], rows: [] },
+    },
+  ];
+
+  for (const slide of annotated) {
+    test(`${slide.id} keeps every mark inside the frame`, () => {
+      for (const format of FORMATS) {
+        for (const theme of [LIGHT, DARK]) {
+          const svg = renderSlide(slide, theme, format);
+          for (const node of svg.walk()) {
+            if (node.tag === "svg") continue;
+            const x = Number(node.attrs.get("x") ?? 0);
+            const y = Number(node.attrs.get("y") ?? 0);
+            const width = Number(node.attrs.get("width") ?? 0);
+            const height = Number(node.attrs.get("height") ?? 0);
+            assert.ok(Number.isFinite(x + y + width + height), `${format.id}: ${node.tag} has a NaN`);
+            assert.ok(
+              x >= -1 && x + width <= format.width + 1 && y >= -1 && y + height <= format.height + 1,
+              `${format.id}/${slide.id}: a ${node.tag} left the frame at ${x},${y}`,
+            );
+          }
+        }
+      }
+    });
+
+    test(`${slide.id} never labels one mark on top of another`, () => {
+      for (const format of FORMATS) {
+        const texts = [...renderSlide(slide, LIGHT, format).walk()]
+          .filter((node) => node.tag === "text" && node.textContent.trim() !== "")
+          .map((node) => ({
+            x: Number(node.attrs.get("x") ?? 0),
+            y: Number(node.attrs.get("y") ?? 0),
+            size: Number(node.attrs.get("font-size") ?? 16),
+            width: measureShim(node.textContent, Number(node.attrs.get("font-size") ?? 16)),
+            value: node.textContent,
+          }));
+
+        // Marks are the labels drawn on one line, so a pair of them sharing a
+        // baseline must not share any of the space along it either.
+        const row = texts.filter((t) => t.value.startsWith("+ FE "));
+        for (let i = 0; i < row.length; i++) {
+          for (let j = i + 1; j < row.length; j++) {
+            const a = row[i]!;
+            const b = row[j]!;
+            if (Math.abs(a.y - b.y) > 1) continue;
+            const [left, right] = a.x < b.x ? [a, b] : [b, a];
+            assert.ok(
+              left.x + left.width <= right.x,
+              `${format.id}: "${left.value}" runs into "${right.value}"`,
+            );
+          }
+        }
+      }
+    });
+  }
 });
 
 /**
