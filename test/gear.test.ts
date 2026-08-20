@@ -1,6 +1,9 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import {
+  applyNaming,
+  DEFAULT_NAMING,
+  VERBATIM_NAMING,
   describeCamera,
   describeLens,
   normalizeCamera,
@@ -8,7 +11,9 @@ import {
   lensNameFromSpec,
   shortLensName,
   splitTeleconverter,
+  type NamingOptions,
 } from "../src/core/gear.ts";
+import { coerceNaming } from "../src/core/config.ts";
 
 /**
  * The invariant these tests exist for: the same piece of kit must produce the
@@ -213,7 +218,7 @@ describe("teleconverters", () => {
 describe("how a name is written", () => {
   test("short names say what a photographer says", () => {
     const short = (make: string, model: string) =>
-      describeLens(make, model, { lensStyle: "short", showMake: false });
+      describeLens(make, model, { ...DEFAULT_NAMING, showMake: false });
 
     assert.equal(short("SONY", "FE 200-600mm F5.6-6.3 G OSS"), "FE 200-600mm G");
     assert.equal(short("SONY", "FE 70-200mm F2.8 GM OSS II"), "FE 70-200mm GM II");
@@ -225,18 +230,18 @@ describe("how a name is written", () => {
 
   test("the full name is still the full name", () => {
     assert.equal(
-      describeLens("SONY", "FE 200-600mm F5.6-6.3 G OSS", { lensStyle: "full", showMake: false }),
+      describeLens("SONY", "FE 200-600mm F5.6-6.3 G OSS", { ...VERBATIM_NAMING, showMake: false }),
       "FE 200-600mm F5.6-6.3 G OSS",
     );
   });
 
   test("the maker can be left off, or kept", () => {
     const model = "FE 24-70mm F2.8 GM II";
-    assert.equal(describeLens("SONY", model, { lensStyle: "short", showMake: true }), "Sony FE 24-70mm GM II");
-    assert.equal(describeLens("SONY", model, { lensStyle: "short", showMake: false }), "FE 24-70mm GM II");
+    assert.equal(describeLens("SONY", model, { ...DEFAULT_NAMING, showMake: true }), "Sony FE 24-70mm GM II");
+    assert.equal(describeLens("SONY", model, { ...DEFAULT_NAMING, showMake: false }), "FE 24-70mm GM II");
 
-    assert.equal(describeCamera("SONY", "ILCE-9M3", { lensStyle: "short", showMake: true }), "Sony a9 III");
-    assert.equal(describeCamera("SONY", "ILCE-9M3", { lensStyle: "short", showMake: false }), "a9 III");
+    assert.equal(describeCamera("SONY", "ILCE-9M3", { ...DEFAULT_NAMING, showMake: true }), "Sony a9 III");
+    assert.equal(describeCamera("SONY", "ILCE-9M3", { ...DEFAULT_NAMING, showMake: false }), "a9 III");
   });
 
   test("shortening never leaves nothing behind", () => {
@@ -248,6 +253,169 @@ describe("how a name is written", () => {
   test("a stale label is rewritten, not re-indexed", () => {
     // The point of describing from the raw name: a body indexed before the
     // Sony rule existed reads correctly the next time a deck is built.
-    assert.equal(describeCamera("SONY", "ILCE-7M2", { lensStyle: "short", showMake: true }), "Sony a7 II");
+    assert.equal(describeCamera("SONY", "ILCE-7M2", { ...DEFAULT_NAMING, showMake: true }), "Sony a7 II");
+  });
+});
+
+/**
+ * One toggle, one change. The rules are separate because the decisions are:
+ * wanting the mount without the aperture is an ordinary preference, and the old
+ * short-or-long switch could not express it.
+ */
+describe("one toggle at a time", () => {
+  const naming = (options: Partial<NamingOptions>): NamingOptions => ({
+    ...VERBATIM_NAMING,
+    showMake: false,
+    ...options,
+  });
+  const written = (make: string, model: string, options: Partial<NamingOptions> = {}) =>
+    describeLens(make, model, naming(options));
+
+  test("the mount comes off, and only the mount", () => {
+    assert.equal(written("SONY", "FE 24-70mm F2.8 GM II", { showMount: false }), "24-70mm F2.8 GM II");
+    assert.equal(written("SONY", "E 18-135mm F3.5-5.6 OSS", { showMount: false }), "18-135mm F3.5-5.6 OSS");
+    // Nikon puts the mount in the middle and the grade at the end, so position
+    // decides which is which: the `Z` goes and the `S` stays.
+    assert.equal(written("NIKON", "NIKKOR Z 24-70mm f/2.8 S", { showMount: false }), "NIKKOR 24-70mm f/2.8 S");
+  });
+
+  test("the grade comes off, and only the grade", () => {
+    assert.equal(written("SONY", "FE 24-70mm F2.8 GM II", { showGrade: false }), "FE 24-70mm F2.8 II");
+    assert.equal(written("NIKON", "NIKKOR Z 24-70mm f/2.8 S", { showGrade: false }), "NIKKOR Z 24-70mm f/2.8");
+    assert.equal(written("SIGMA", "24-70mm F2.8 DG DN | Art 019", { showGrade: false }), "24-70mm F2.8 DG DN 019");
+  });
+
+  test("the aperture comes off, and the designation stuck to it stays", () => {
+    assert.equal(written("SONY", "FE 200-600mm F5.6-6.3 G OSS", { showAperture: false }), "FE 200-600mm G OSS");
+    // `f/2.8L` is one word to a camera and two facts to a photographer.
+    assert.equal(written("Canon", "EF24-70mm f/2.8L II USM", { showAperture: false }), "EF 24-70mm L II USM");
+    // Fujifilm writes it straight onto the millimetres.
+    assert.equal(written("FUJIFILM", "XF16-55mmF2.8 R LM WR", { showAperture: false }), "XF 16-55mm R LM WR");
+  });
+
+  test("the jargon comes off, paired designations included", () => {
+    assert.equal(written("SONY", "FE 70-200mm F2.8 GM OSS II", { showJargon: false }), "FE 70-200mm F2.8 GM II");
+    // Half of `DG DN` is worse than all of it, so the pair leaves together.
+    assert.equal(written("SIGMA", "24-70mm F2.8 DG DN | Art 019", { showJargon: false }), "24-70mm F2.8 Art");
+    assert.equal(written("TAMRON", "28-75mm F/2.8 Di III VXD G2", { showJargon: false }), "28-75mm F/2.8 G2");
+  });
+
+  test("the version comes off, wherever the maker put it", () => {
+    assert.equal(written("SONY", "FE 70-200mm F2.8 GM OSS II", { showVersion: false }), "FE 70-200mm F2.8 GM OSS");
+    // Canon writes the motor after the mark.
+    assert.equal(written("Canon", "EF24-70mm f/2.8L II USM", { showVersion: false }), "EF 24-70mm f/2.8L USM");
+    // Tamron counts its generations with a G.
+    assert.equal(written("TAMRON", "28-75mm F/2.8 Di III VXD G2", { showVersion: false }), "28-75mm F/2.8 Di III VXD");
+    // `Di III` is a format, not a third edition: the numeral belongs to it.
+    assert.match(written("TAMRON", "28-75mm F/2.8 Di III VXD", { showVersion: false }), /Di III/);
+  });
+
+  test("the maker comes off without touching the rest", () => {
+    assert.equal(describeLens("SONY", "FE 24-70mm F2.8 GM II", naming({ showMake: true })), "Sony FE 24-70mm F2.8 GM II");
+    assert.equal(describeLens("SONY", "FE 24-70mm F2.8 GM II", naming({})), "FE 24-70mm F2.8 GM II");
+  });
+
+  test("two at once do both things and nothing else", () => {
+    assert.equal(
+      written("SONY", "FE 200-600mm F5.6-6.3 G OSS", { showAperture: false, showJargon: false }),
+      "FE 200-600mm G",
+    );
+    assert.equal(
+      written("Canon", "RF100-500mm F4.5-7.1 L IS USM", { showMount: false, showGrade: false }),
+      "100-500mm F4.5-7.1 IS USM",
+    );
+    assert.equal(
+      written("SONY", "FE 70-200mm F2.8 GM OSS II", {
+        showMount: false,
+        showGrade: false,
+        showAperture: false,
+        showJargon: false,
+        showVersion: false,
+      }),
+      "70-200mm",
+    );
+  });
+
+  test("everything on is what the camera wrote", () => {
+    for (const [make, model] of [
+      ["SONY", "FE 200-600mm F5.6-6.3 G OSS"],
+      ["NIKON", "NIKKOR Z 24-70mm f/2.8 S"],
+      ["FUJIFILM", "XF16-55mmF2.8 R LM WR"],
+    ] as Array<[string, string]>) {
+      const verbatim = written(make, model);
+      assert.match(verbatim, /\d/);
+      // Nothing has been taken out: every word of the tidied name survives.
+      for (const word of model.replace(/\s*\|\s*/g, " ").split(" ")) {
+        if (word === "" || /^\d{3}$/.test(word)) continue;
+        assert.ok(verbatim.includes(word.replace(/^XF/, "")), `${model} lost "${word}"`);
+      }
+    }
+  });
+
+  test("a name is never shortened into nothing", () => {
+    assert.equal(shortLensName("OSS"), "OSS");
+    assert.equal(shortLensName("f/2.8"), "f/2.8");
+    assert.equal(applyNaming("FE", { ...VERBATIM_NAMING, showMount: false }), "FE");
+  });
+
+  test("no toggle moves a key", () => {
+    // The invariant the whole deck rests on. Display rules rewrite the label;
+    // the key is built by `normalizeLens` and never sees these options at all.
+    const model = "FE 70-200mm F2.8 GM OSS II";
+    const key = normalizeLens("SONY", model)?.key;
+
+    for (const option of Object.keys(VERBATIM_NAMING) as Array<keyof NamingOptions>) {
+      describeLens("SONY", model, naming({ [option]: false }));
+      assert.equal(normalizeLens("SONY", model)?.key, key, `${option} moved the key`);
+    }
+  });
+});
+
+/**
+ * Nobody's deck changes under them. The old switch had two settings and both
+ * have to keep producing exactly the names they produced.
+ */
+describe("a config written before the toggles", () => {
+  const lenses = [
+    "FE 200-600mm F5.6-6.3 G OSS",
+    "FE 70-200mm F2.8 GM OSS II",
+    "NIKKOR Z 24-70mm f/2.8 S",
+    "RF100-500mm F4.5-7.1 L IS USM",
+    "24-70mm F2.8 DG DN | Art 019",
+  ];
+
+  test("reads short as the six flags it stood for", () => {
+    const naming = coerceNaming({ lensStyle: "short", showMake: true });
+    assert.deepEqual(naming, DEFAULT_NAMING);
+
+    assert.deepEqual(
+      lenses.map((model) => describeLens("SONY", model, { ...naming, showMake: false })),
+      ["FE 200-600mm G", "FE 70-200mm GM II", "NIKKOR Z 24-70mm S", "RF 100-500mm L", "24-70mm Art"],
+    );
+  });
+
+  test("reads as written as every part kept", () => {
+    const naming = coerceNaming({ lensStyle: "full", showMake: false });
+    assert.equal(naming.showAperture, true);
+    assert.equal(naming.showJargon, true);
+    assert.equal(naming.showMake, false);
+
+    assert.equal(
+      describeLens("SONY", "FE 200-600mm F5.6-6.3 G OSS", naming),
+      "FE 200-600mm F5.6-6.3 G OSS",
+    );
+  });
+
+  test("a config with the flags in it is left alone", () => {
+    const naming = coerceNaming({ showMount: false, showGrade: false, lensStyle: "full" });
+    assert.equal(naming.showMount, false);
+    assert.equal(naming.showGrade, false);
+    // The flags win: `lensStyle` is what a file says when it has never seen them.
+    assert.equal(naming.showAperture, DEFAULT_NAMING.showAperture);
+  });
+
+  test("a config with no naming at all gets the defaults", () => {
+    assert.deepEqual(coerceNaming(undefined), DEFAULT_NAMING);
+    assert.deepEqual(coerceNaming({}), DEFAULT_NAMING);
   });
 });

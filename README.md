@@ -88,13 +88,25 @@ Gear names are written when a deck is built, not when a file is indexed, so
 changing any of this re-labels a library of two hundred thousand photographs
 instantly and re-reads nothing:
 
-- **Lens names — short or as written.** Short drops what nobody says out loud:
-  `FE 200-600mm F5.6-6.3 G OSS` becomes `FE 200-600mm G`, and
-  `FE 70-200mm F2.8 GM OSS II` becomes `FE 70-200mm GM II`. Series marks
-  (`G`, `GM`, `L`, `S`, `Art`) and version numerals stay, because those
-  are what people do say.
-- **The maker in front, or not.** `Sony FE 24-70mm GM II` or
-  `FE 24-70mm GM II`; `Sony a9 III` or `a9 III`.
+One switch per part of the name, because they are separate decisions:
+
+| Toggle | On | Off |
+|---|---|---|
+| **Maker** | `Sony FE 24-70mm GM II` | `FE 24-70mm GM II` |
+| **Mount** | `FE 24-70mm GM II` | `24-70mm GM II` |
+| **Grade** | `24-70mm GM II` | `24-70mm II` |
+| **Aperture** | `24-70mm F2.8 GM II` | `24-70mm GM II` |
+| **Jargon** | `200-600mm G OSS` | `200-600mm G` |
+| **Version** | `24-70mm GM II` | `24-70mm GM` |
+
+Under them is a preview of two of your own lenses and one of your bodies,
+rewritten as you flick each switch — the only way to know what a toggle does is
+to watch it happen to something you recognise.
+
+Out of the box: the maker, the mount, the grade and the version, without the
+aperture or the engineering — `FE 200-600mm F5.6-6.3 G OSS` reads as
+`FE 200-600mm G`, which is what people say out loud. A config from before the
+toggles existed keeps producing exactly the names it produced.
 
 Grouping never depends on any of it — the key is the name the camera wrote — so
 a display setting can never merge or split two pieces of kit.

@@ -8,6 +8,7 @@ import { defaultConfig, defaultSource, type AppConfig } from "../src/core/config
 import { indexSource, indexOverview } from "../src/index/source.ts";
 import { rebuildPrimaries } from "../src/index/dedupe.ts";
 import { computeStats, gearCatalog } from "../src/stats/aggregate.ts";
+import { DEFAULT_NAMING, VERBATIM_NAMING } from "../src/core/gear.ts";
 import { buildDeck } from "../src/stats/slides.ts";
 import { resolveRange } from "../src/stats/range.ts";
 import { EXPECTED, makeFixtures } from "../tools/make-fixtures.ts";
@@ -207,8 +208,8 @@ describe("the gear catalog", () => {
   });
 
   test("names follow the reader's naming options", () => {
-    const short = gearCatalog(db, { lensStyle: "short", showMake: true });
-    const written = gearCatalog(db, { lensStyle: "full", showMake: true });
+    const short = gearCatalog(db, { ...DEFAULT_NAMING, showMake: true });
+    const written = gearCatalog(db, { ...VERBATIM_NAMING, showMake: true });
 
     assert.ok(short.lenses.some((lens) => lens.label === EXPECTED.topLens));
     assert.ok(written.lenses.some((lens) => lens.label.includes("f/2.8")));

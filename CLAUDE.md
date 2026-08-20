@@ -45,6 +45,17 @@ options. That is why a naming rule added today fixes a library indexed months
 ago, and why the settings panel can re-label two hundred thousand photographs
 without re-reading a file. Keys never move: they are still the model as written.
 
+**Naming is six switches, one rule each.** `NamingOptions` is a set of booleans
+and `applyNaming` runs one function per part of a name — aperture, jargon,
+mount, grade, version — in that order, which is not arbitrary: the aperture goes
+first because a grade can be glued to it (`f/2.8L`), and mount and grade are
+decided by *position* relative to the focal length, which is only stable once
+the engineering words are gone. Nikon is the case that proves it: `NIKKOR Z
+24-70mm f/2.8 S` has the mount before the millimetres and the grade after them.
+The defaults reproduce the old `lensStyle: "short"` exactly, and `coerceNaming`
+reads that old key back as the flags it stood for, because a default that moved
+would re-label everybody's deck the first time they opened it.
+
 **`core/gear.ts`** — two jobs, and they must not be confused. Naming is a table
 of makers and product lines (`BRANDS`, `FAMILIES`, `MAKE_ALIASES`) plus a rule
 per maker that writes codes rather than names — Sony `ILCE-`, Panasonic `DC-`,
@@ -235,7 +246,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 185 tests
+npm test          # 199 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```

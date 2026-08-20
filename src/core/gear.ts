@@ -472,57 +472,205 @@ export function normalizeLens(makeRaw: unknown, modelRaw: unknown, spec?: unknow
  * applied when a deck is built rather than when a file is indexed — changing
  * one re-labels a library of two hundred thousand photographs instantly, and
  * the keys everything is grouped by never move.
+ *
+ * One switch per part of the name, because they are separate decisions: the
+ * mount and the grade carry different information, and wanting `FE 24-70mm GM`
+ * with the mount but without the aperture is an ordinary preference that a
+ * single short-or-long button could not express.
  */
 export interface NamingOptions {
-  /** `short` drops what a photographer never says out loud. */
-  lensStyle: "full" | "short";
   /** Whether `Sony` belongs in front of `FE 24-70mm GM II`. */
   showMake: boolean;
+  /** The mount or format the lens is for: `FE`, `E`, `RF`, `Z`, `XF`. */
+  showMount: boolean;
+  /** The series it belongs to: `G`, `GM`, `L`, `S`, `Art`, `Sports`. */
+  showGrade: boolean;
+  /** `F2.8`, `f/5.6-6.3`. */
+  showAperture: boolean;
+  /** Stabilisation, motors, coatings, formats: `OSS`, `USM`, `ED`, `DG DN`. */
+  showJargon: boolean;
+  /** Which generation of the lens it is: `II`, `III`. */
+  showVersion: boolean;
 }
 
-// Short names by default, because the jargon in a lens name is not what anyone
-// calls it; the maker stays by default, because "X-T5" alone is a part number
-// until you know whose it is. Both are one toggle away.
-export const DEFAULT_NAMING: NamingOptions = { lensStyle: "short", showMake: true };
+/**
+ * What a photographer says out loud.
+ *
+ * The maker stays because "X-T5" alone is a part number until you know whose it
+ * is; the mount, the grade and the generation stay because those are what tell
+ * two lenses apart in conversation. The aperture and the engineering go, because
+ * nobody says "the 200-600 G OSS" — they say "the 200-600".
+ *
+ * This is also exactly what the old `lensStyle: "short"` produced, and it has to
+ * stay that way: a default that moved would re-label everybody's deck the first
+ * time they opened it.
+ */
+export const DEFAULT_NAMING: NamingOptions = {
+  showMake: true,
+  showMount: true,
+  showGrade: true,
+  showAperture: false,
+  showJargon: false,
+  showVersion: true,
+};
+
+/** Every part left in: what the camera wrote, tidied and nothing more. */
+export const VERBATIM_NAMING: NamingOptions = {
+  showMake: true,
+  showMount: true,
+  showGrade: true,
+  showAperture: true,
+  showJargon: true,
+  showVersion: true,
+};
 
 /**
  * The parts of a lens name that describe the engineering rather than the lens:
- * stabilisation, motor type, coatings, element counts. Nobody says "the 200-600
- * G OSS"; they say "the 200-600".
+ * stabilisation, motor type, coatings, element counts.
  *
- * Deliberately not dropped: the series marks — `G`, `GM`, `L`, `S`, `Art`,
- * `Sports` — and version numerals, because those are what people *do* say, and
- * what tells two generations of one lens apart.
+ * Deliberately not in here: the series marks — `G`, `GM`, `L`, `S`, `Art`,
+ * `Sports` — and version numerals, which have toggles of their own because they
+ * are what people *do* say.
  */
 const LENS_JARGON =
   /\b(oss|ois|os|vr|vc|is|usm|ssm|sam|stm|lm|wr|xd|rxd|vxd|pz|if|apo|asph|aspherical|ed|hsm|nano|hri|ldh|uld)\b/gi;
 
 /**
- * Line names that only mean anything as a pair. Dropping half of "DG DN", or
- * half of "Di III" and leaving a stranded numeral that was never a version, is
- * worse than leaving both alone.
+ * Format designations that only mean anything as a pair — `DG` is full frame,
+ * `DN` is mirrorless, `Di III` is both at once. Dropping half of one and leaving
+ * a stranded numeral that was never a version is worse than leaving both alone,
+ * so they are matched and removed together.
  */
 const LENS_LINES = /\b(dg\s+(?:dn|hsm|os)|dc\s+(?:dn|hsm)|di\s+ii+|di\s+iii)\b/gi;
 
-/** `FE 200-600mm F5.6-6.3 G OSS` → `FE 200-600mm G`. */
-export function shortLensName(name: string): string {
-  const trimmed = name
-    .replace(LENS_LINES, " ")
-    // Aperture goes, but a designation stuck to it stays: `f/2.8L` → `L`.
-    //
-    // The prefix in the match is what keeps `XF16-55mm` intact: an aperture
-    // follows a space or the focal length, never a letter, and the `F16` inside
-    // a mount name would otherwise read as f/16 and be deleted.
-    .replace(/(^|\s|mm)f\s*\/?\s*\d[\d.]*(?:\s*-\s*\d[\d.]*)?([A-Za-z])?/gi, "$1$2")
-    .replace(LENS_JARGON, " ")
-    // Sigma and Tamron release codes: `019`, `A036`.
-    .replace(/(^|\s)[a-z]?\d{3}(?=\s|$)(?!\s*mm)/gi, " ")
-    .replace(/\s{2,}/g, " ")
-    .trim();
+/** Sigma and Tamron stamp a release code on the barrel: `019`, `A036`. */
+const LENS_CODES = /(^|\s)[a-z]?\d{3}(?=\s|$)(?!\s*mm)/gi;
 
-  // Never shorten a name into nothing: a lens called only by its aperture keeps
-  // what it had.
-  return trimmed === "" || !/\d/.test(trimmed) ? name : trimmed;
+/**
+ * What a mount or format prefix looks like, whoever makes it.
+ *
+ * Per-maker vocabulary, so it lives here beside `BRANDS` rather than in the UI:
+ * the settings panel offers the toggle, never the list.
+ */
+const MOUNTS = new Set([
+  "fe", "e", "rf", "rf-s", "ef", "ef-s", "ef-m", "z", "dx", "fx", "dt", "da", "fa", "xf", "xc",
+]);
+
+/** The series marks. `G` is Sony's, `S` is Nikon's, `Art` is Sigma's. */
+const GRADES = new Set(["g", "gm", "gn", "l", "s", "art", "sports", "contemporary", "pro", "sp"]);
+
+/**
+ * The focal length, which is the fixed point every other rule is placed
+ * against. Unanchored at the end on purpose: Fujifilm writes the aperture
+ * straight onto it, `XF16-55mmF2.8`, and that is still the millimetres.
+ */
+const FOCAL = /^\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?mm/i;
+const token = (word: string) => word.toLowerCase().replace(/[.,]+$/, "");
+
+/**
+ * The aperture, and only the aperture.
+ *
+ * The prefix in the match is what keeps `XF16-55mm` intact: an aperture follows
+ * a space or the focal length, never a letter, and the `F16` inside a mount name
+ * would otherwise read as f/16 and be deleted. A designation stuck to the end of
+ * one survives it, so `f/2.8L` leaves the `L` behind.
+ */
+function dropAperture(name: string): string {
+  return name.replace(/(^|\s|mm)f\s*\/?\s*\d[\d.]*(?:\s*-\s*\d[\d.]*)?([A-Za-z])?/gi, "$1$2");
+}
+
+function dropJargon(name: string): string {
+  return name.replace(LENS_LINES, " ").replace(LENS_JARGON, " ").replace(LENS_CODES, " ");
+}
+
+/**
+ * The mount, which is whatever sits in front of the focal length.
+ *
+ * Position matters as much as the word: Nikon writes `NIKKOR Z 24-70mm f/2.8 S`,
+ * where the `Z` is the mount and the `S` at the other end is the grade. Only
+ * what comes before the millimetres is a candidate.
+ */
+function dropMount(name: string): string {
+  const words = name.split(" ");
+  const focal = words.findIndex((word) => FOCAL.test(word));
+  if (focal < 0) return name;
+
+  return words.filter((word, i) => i >= focal || !MOUNTS.has(token(word))).join(" ");
+}
+
+/** The grade, which is whatever sits after it — for the same reason. */
+function dropGrade(name: string): string {
+  const words = name.split(" ");
+  const focal = words.findIndex((word) => FOCAL.test(word));
+
+  return words.filter((word, i) => i < focal || !GRADES.has(token(word))).join(" ");
+}
+
+/**
+ * How the makers write a generation: a roman numeral, or Tamron's `G2`.
+ *
+ * Single letters are deliberately absent. A lone `V` or `X` is a numeral in
+ * theory and a designation in practice, and guessing wrong renames a lens.
+ */
+const VERSION = /^(?:II|III|IV|VI|VII|VIII|IX|G\d)$/i;
+
+/** Format designations whose numeral is part of the name, not a second edition. */
+const NOT_VERSIONS = new Set(["di", "dg", "dc"]);
+
+/**
+ * The generation, wherever the maker put it.
+ *
+ * Not always at the end: Canon writes `EF 24-70mm f/2.8L II USM`, with the motor
+ * after the mark. `Di III` is a format designation rather than a third edition,
+ * so a numeral only counts as a version when the word before it is not one of
+ * those — and `Mark III` leaves with its numeral, since `Mark` alone says even
+ * less than `III` alone.
+ */
+function dropVersion(name: string): string {
+  const words = name.split(" ");
+  const focal = words.findIndex((word) => FOCAL.test(word));
+  const kept: string[] = [];
+
+  words.forEach((word, i) => {
+    const previous = token(words[i - 1] ?? "");
+    const version = focal >= 0 && i > focal && VERSION.test(token(word)) && !NOT_VERSIONS.has(previous);
+
+    if (!version) {
+      kept.push(word);
+      return;
+    }
+    if (previous === "mark") kept.pop();
+  });
+
+  return kept.join(" ");
+}
+
+/**
+ * One rule per toggle, applied in order.
+ *
+ * The order is not arbitrary. The aperture goes first because a grade can be
+ * glued to it (`f/2.8L`), and removing it is what leaves the grade standing on
+ * its own to be found; the mount and the grade are then decided by position,
+ * which is only stable once the engineering words are out of the way.
+ */
+export function applyNaming(name: string, options: NamingOptions): string {
+  let out = name;
+  if (!options.showAperture) out = dropAperture(out);
+  if (!options.showJargon) out = dropJargon(out);
+  if (!options.showMount) out = dropMount(out);
+  if (!options.showGrade) out = dropGrade(out);
+  if (!options.showVersion) out = dropVersion(out);
+
+  out = out.replace(/\s{2,}/g, " ").trim();
+
+  // Never shorten a name into nothing: a lens called only by its aperture, or
+  // by nothing but jargon, keeps what it had.
+  return out === "" || !/\d/.test(out) ? name : out;
+}
+
+/** `FE 200-600mm F5.6-6.3 G OSS` becomes `FE 200-600mm G`, the default rules. */
+export function shortLensName(name: string): string {
+  return applyNaming(name, DEFAULT_NAMING);
 }
 
 /**
@@ -540,8 +688,7 @@ export function describeLens(
   const name = normalizeLens(makeRaw, modelRaw);
   if (!name) return modelRaw;
 
-  const base = options.showMake ? name.label : name.model;
-  return options.lensStyle === "short" ? shortLensName(base) : base;
+  return applyNaming(options.showMake ? name.label : name.model, options);
 }
 
 /** The body as it should appear. */

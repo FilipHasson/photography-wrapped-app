@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { configDir, configFile, normPath } from "./paths.ts";
 import { isValidDay } from "./time.ts";
-import { DEFAULT_NAMING, type NamingOptions } from "./gear.ts";
+import { DEFAULT_NAMING, VERBATIM_NAMING, type NamingOptions } from "./gear.ts";
 import { DEFAULT_CITY } from "./cities.ts";
 
 export type SourceKind = "folder" | "lightroom";
@@ -160,6 +160,29 @@ export function coercePlace(value: unknown): Place | null {
   };
 }
 
+/**
+ * Naming preferences, including from a config written before there were six.
+ *
+ * `lensStyle` was one switch with two opinions inside it — "short" dropped the
+ * aperture and the engineering words together, "full" kept both. Reading it back
+ * as the flags it stood for is what keeps an existing deck reading exactly as it
+ * did the day before this shipped.
+ */
+export function coerceNaming(value: unknown): NamingOptions {
+  const raw = (typeof value === "object" && value !== null ? value : {}) as Record<string, unknown>;
+
+  if (typeof raw.lensStyle === "string" && !("showMount" in raw)) {
+    const base = raw.lensStyle === "full" ? VERBATIM_NAMING : DEFAULT_NAMING;
+    return { ...base, showMake: raw.showMake !== false };
+  }
+
+  const naming = { ...DEFAULT_NAMING };
+  for (const key of Object.keys(naming) as Array<keyof NamingOptions>) {
+    if (typeof raw[key] === "boolean") naming[key] = raw[key] as boolean;
+  }
+  return naming;
+}
+
 /** Slugify a label into a short stable key. */
 export function makeKey(label: string, taken: readonly string[] = []): string {
   let base = label
@@ -246,10 +269,7 @@ function coerce(raw: unknown): AppConfig {
     anchors,
     startDay: isValidDay(Number(r.startDay)) ? Number(r.startDay) : null,
     excluded: { cameras: keyList(excluded.cameras), lenses: keyList(excluded.lenses) },
-    naming: {
-      lensStyle: (r.naming as NamingOptions | undefined)?.lensStyle === "full" ? "full" : "short",
-      showMake: (r.naming as NamingOptions | undefined)?.showMake !== false,
-    },
+    naming: coerceNaming(r.naming),
     mergeRawJpegPairs: r.mergeRawJpegPairs !== false,
     includeVideo: r.includeVideo !== false,
     ownerName: typeof r.ownerName === "string" ? r.ownerName.trim().slice(0, 60) : "",

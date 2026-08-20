@@ -147,26 +147,14 @@
             </label>
 
             <div class="setting naming">
-              <span class="setting-label">Lens names</span>
-              <div class="chips" id="setting-lens-style" role="group" aria-label="Lens name style">
-                <button class="chip" type="button" data-style="short">
-                  Short
-                  <span class="chip-count">FE 200-600mm G</span>
-                </button>
-                <button class="chip" type="button" data-style="full">
-                  As written
-                  <span class="chip-count">FE 200-600mm F5.6-6.3 G OSS</span>
-                </button>
-              </div>
-            </div>
-
-            <label class="setting checkbox">
-              <input id="setting-make" type="checkbox" />
-              <span>
-                <span class="setting-label">Put the maker in front of the name</span>
-                <span class="hint">Sony FE 24-70mm GM II, rather than FE 24-70mm GM II.</span>
+              <span class="setting-label">What a gear name says</span>
+              <div id="naming-toggles" class="naming-toggles"></div>
+              <div id="naming-preview" class="naming-preview" aria-live="polite"></div>
+              <span class="hint">
+                Only how the name is written. Two spellings of one lens are still one lens — the
+                grouping never sees these.
               </span>
-            </label>
+            </div>
 
             <div class="setting location">
               <span class="setting-label">Where you are</span>

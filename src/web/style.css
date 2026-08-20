@@ -846,16 +846,40 @@ main {
   flex-direction: column;
   gap: 8px;
 }
-.setting.naming .chip {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  border-radius: var(--radius);
-  padding: 8px 14px;
+.naming-toggles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px 18px;
+  width: 100%;
 }
-.setting.naming .chip-count {
+.naming-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+.naming-toggle span {
+  display: flex;
+  flex-direction: column;
+}
+.naming-toggle .hint {
   font-family: var(--mono);
   font-size: 0.74rem;
+}
+/* The answer to what the toggles do, in the reader's own lenses. */
+.naming-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 14px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--plane);
+}
+.naming-example {
+  font-weight: 600;
 }
 
 /* An index built by an older version — usable, just missing something. */

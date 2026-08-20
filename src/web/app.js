@@ -258,24 +258,65 @@ function renderRanges() {
       : "";
 }
 
+/**
+ * One switch per part of a name.
+ *
+ * The example beside each is the vocabulary rather than a rule — nobody can be
+ * expected to know that `G` is a grade and `OSS` is not — and the preview under
+ * them is the actual answer, in the reader's own lenses.
+ */
+const NAMING_TOGGLES = [
+  { id: "showMake", label: "Maker", example: "Sony, Nikon, Canon" },
+  { id: "showMount", label: "Mount", example: "FE, E, RF, Z, XF" },
+  { id: "showGrade", label: "Grade", example: "G, GM, L, S, Art" },
+  { id: "showAperture", label: "Aperture", example: "F2.8, f/5.6-6.3" },
+  { id: "showJargon", label: "Jargon", example: "OSS, USM, ED, DG DN" },
+  { id: "showVersion", label: "Version", example: "II, III, G2" },
+];
+
 function renderSettings() {
   const config = store.state.config;
   $("setting-owner").value = config.ownerName ?? "";
   $("setting-merge").checked = config.mergeRawJpegPairs;
   $("setting-video").checked = config.includeVideo;
-  $("setting-make").checked = config.naming?.showMake ?? false;
 
   const place = config.location;
   $("location-label").value = place?.label ?? "";
   $("location-lat").value = place ? String(place.lat) : "";
   $("location-lon").value = place ? String(place.lon) : "";
 
-  // Naming is a display choice, so changing it rebuilds the deck rather than
+  // Naming is a display choice, so changing one rebuilds the deck rather than
   // the index: nothing is re-read, the labels are simply written differently.
-  for (const button of $("setting-lens-style").querySelectorAll("button")) {
-    const chosen = button.dataset.style === (config.naming?.lensStyle ?? "short");
-    button.className = chosen ? "chip is-current" : "chip";
-  }
+  const naming = config.naming ?? {};
+  $("naming-toggles").replaceChildren(
+    ...NAMING_TOGGLES.map((toggle) =>
+      el(
+        "label",
+        { class: "naming-toggle" },
+        el("input", {
+          type: "checkbox",
+          checked: naming[toggle.id] !== false,
+          onchange: (event) => void saveNaming({ [toggle.id]: event.target.checked }),
+        }),
+        el(
+          "span",
+          {},
+          el("span", { class: "setting-label", text: toggle.label }),
+          el("span", { class: "hint", text: toggle.example }),
+        ),
+      ),
+    ),
+  );
+
+  const examples = store.state.namingExamples ?? [];
+  $("naming-preview").replaceChildren(
+    ...(examples.length === 0
+      ? [el("span", { class: "hint", text: "Index a source and your own gear will show up here." })]
+      : [
+          el("span", { class: "hint", text: "Your gear, written the way these say:" }),
+          ...examples.map((label) => el("span", { class: "naming-example", text: label })),
+        ]),
+  );
 }
 
 async function saveNaming(patch) {
@@ -887,9 +928,7 @@ $("nav-home").addEventListener("click", () => show("view-home"));
 $("setting-owner").addEventListener("change", () => void saveSettings());
 $("setting-merge").addEventListener("change", () => void saveSettings());
 $("setting-video").addEventListener("change", () => void saveSettings());
-$("setting-make").addEventListener("change", (event) =>
-  void saveNaming({ showMake: event.target.checked }),
-);
+
 $("location-here").addEventListener("click", useDeviceLocation);
 $("location-clear").addEventListener("click", () => void saveLocation(null));
 $("location-save").addEventListener("click", () => {
@@ -902,10 +941,7 @@ $("location-save").addEventListener("click", () => {
   void saveLocation({ lat, lon, label: $("location-label").value.trim() });
 });
 
-$("setting-lens-style").addEventListener("click", (event) => {
-  const button = event.target.closest("button[data-style]");
-  if (button) void saveNaming({ lensStyle: button.dataset.style });
-});
+
 $("setting-start").addEventListener("change", (event) => void saveStartDay(event.target.value));
 $("setting-start-clear").addEventListener("click", () => void saveStartDay(""));
 

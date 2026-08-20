@@ -13,7 +13,14 @@ import {
   type FocalClass,
 } from "../core/units.ts";
 import { addDays, dayParts, daysBetween, formatDay, makeDay, todayDay } from "../core/time.ts";
-import { describeCamera, describeLens, DEFAULT_NAMING, type NamingOptions } from "../core/gear.ts";
+import {
+  applyNaming,
+  describeCamera,
+  describeLens,
+  DEFAULT_NAMING,
+  VERBATIM_NAMING,
+  type NamingOptions,
+} from "../core/gear.ts";
 import type { Anchor, AnchorKind, GearDimension } from "../core/config.ts";
 import { formatHour, sunTimes } from "../core/sun.ts";
 
@@ -1504,6 +1511,66 @@ export function gearCatalog(db: Db, naming: NamingOptions = DEFAULT_NAMING): Gea
     });
 
   return { cameras, lenses, teleconverters };
+}
+
+/**
+ * A few of the reader's own lenses, named the way the settings currently say.
+ *
+ * For the naming panel, where the only way to know what a toggle does is to see
+ * it happen — and to see it happen to a lens you own, not to an example from a
+ * manual. The most decorated names are picked because they are the ones with
+ * something to strip: a prime called `50mm` demonstrates nothing.
+ *
+ * The `lens` table, not a count over the photographs: this runs on every state
+ * poll and a scan of two hundred thousand rows to fill in three strings would
+ * be absurd.
+ */
+export function namingExamples(db: Db, naming: NamingOptions, limit = 3): string[] {
+  const rows = db.allAs<RawNamed>("SELECT label, make, model, raw_make, raw_model FROM lens");
+
+  // One body among the lenses, because the maker toggle is the one switch that
+  // often has nothing to change about a lens: a catalog stores the lens model
+  // with no make beside it, and then `Sony` was never in the name to remove.
+  const body = db
+    .allAs<RawNamed>("SELECT label, make, model, raw_make, raw_model FROM camera")
+    .map((row) => ({
+      label: describeCamera(row.raw_make ?? row.make, row.raw_model ?? row.model, naming) || row.label,
+      shows:
+        describeCamera(row.raw_make ?? row.make, row.raw_model ?? row.model, VERBATIM_NAMING) !==
+        describeCamera(row.raw_make ?? row.make, row.raw_model ?? row.model, { ...VERBATIM_NAMING, showMake: false }),
+    }))
+    .sort((a, b) => Number(b.shows) - Number(a.shows) || a.label.length - b.label.length)[0];
+
+  // Ranked by how many of the toggles would actually change the name, asked of
+  // the rules themselves rather than guessed at: a phone's `back camera 5.1mm`
+  // has an aperture and nothing else, and demonstrates one switch out of six.
+  const parts: Array<keyof NamingOptions> = [
+    "showMount",
+    "showGrade",
+    "showAperture",
+    "showJargon",
+    "showVersion",
+  ];
+
+  const seen = new Set<string>();
+  return rows
+    .map((row) => {
+      const make = row.raw_make ?? row.make;
+      const model = row.raw_model ?? row.model;
+      const verbatim = describeLens(make, model, VERBATIM_NAMING);
+
+      return {
+        label: describeLens(make, model, naming) || row.label,
+        shows: parts.filter(
+          (key) => applyNaming(verbatim, { ...VERBATIM_NAMING, [key]: false }) !== verbatim,
+        ).length,
+      };
+    })
+    .sort((a, b) => b.shows - a.shows || a.label.length - b.label.length)
+    .filter((entry) => entry.label !== "" && !seen.has(entry.label) && seen.add(entry.label) !== undefined)
+    .slice(0, body ? limit - 1 : limit)
+    .map((entry) => entry.label)
+    .concat(body && body.label !== "" ? [body.label] : []);
 }
 
 /** Used by the day-detail line under a heatmap cell. */

@@ -14,6 +14,7 @@ import {
   type AppConfig,
   type SourceConfig,
 } from "../core/config.ts";
+import { DEFAULT_NAMING, type NamingOptions } from "../core/gear.ts";
 import { normPath } from "../core/paths.ts";
 import { nearestCity } from "../core/cities.ts";
 import { parseIsoDay } from "../core/time.ts";
@@ -24,6 +25,7 @@ import {
   availableYears,
   computeStats,
   gearCatalog,
+  namingExamples,
   type DaylightMode,
   type GearItem,
   type RowLimits,
@@ -41,6 +43,9 @@ export interface AppContext {
   config: AppConfig;
   saveConfig: (config: AppConfig) => Promise<void>;
 }
+
+/** Every naming toggle, taken from the defaults so the two cannot drift apart. */
+const NAMING_KEYS = Object.keys(DEFAULT_NAMING) as Array<keyof NamingOptions>;
 
 class HttpError extends Error {
   status: number;
@@ -96,6 +101,9 @@ function appState(ctx: AppContext) {
     years: availableYears(ctx.db, floor),
     months: availableMonths(ctx.db, floor),
     problems,
+    // Three pieces of the reader’s own gear, as the naming settings write
+    // them. The panel has no other way to show what a toggle does.
+    namingExamples: namingExamples(ctx.db, ctx.config.naming),
     indexVersion: INDEX_VERSION,
     ready: overview.shots > 0,
     activeJob: ctx.jobs.active,
@@ -194,10 +202,11 @@ async function applyConfigPatch(ctx: AppContext, body: Record<string, unknown>):
     next.mergeRawJpegPairs = body.mergeRawJpegPairs;
     dedupeChanged = true;
   }
-  if (body.lensStyle === "full" || body.lensStyle === "short") {
-    next.naming = { ...next.naming, lensStyle: body.lensStyle };
+  // One switch per part of the name. They arrive one at a time, because that is
+  // how they are flicked: a toggle saves the moment it moves.
+  for (const key of NAMING_KEYS) {
+    if (typeof body[key] === "boolean") next.naming = { ...next.naming, [key]: body[key] };
   }
-  if (typeof body.showMake === "boolean") next.naming = { ...next.naming, showMake: body.showMake };
 
   // `location: null` clears it; anything else has to be a real position.
   if (body.location === null) next.location = null;
