@@ -356,6 +356,8 @@ export interface DeckStats {
   /** How the week slide is laid out and coloured. */
   weekStart: WeekStart;
   markWeekend: boolean;
+  /** Whether the time slides are annotated with the reader's milestones. */
+  showMarks: boolean;
   /** How the wall of days is laid out. */
   wall: WallLayout;
   /** The hours counted as daylight, and where that came from. */
@@ -397,6 +399,8 @@ export interface StatsOptions {
    * a mark on a chart has to be somewhere the chart is drawing.
    */
   anchors?: readonly Anchor[];
+  /** Whether those milestones are drawn on the slides. On unless turned off. */
+  showMarks?: boolean;
 }
 
 /**
@@ -1184,6 +1188,7 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
     },
     weekStart: options.weekStart ?? "mon",
     markWeekend: options.markWeekend ?? false,
+    showMarks: options.showMarks !== false,
     wall: options.wall ?? "packed",
     daylight: resolveDaylight(
       options.daylight,

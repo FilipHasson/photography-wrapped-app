@@ -143,7 +143,12 @@ A few things the slides do rather than say:
   hairline on gear over time, on month by month, and a ringed day on the wall of
   streaks — so a series appearing, or three months of silence, has a reason
   beside it rather than looking like missing data. Each is named where there is
-  room and hovers for the rest.
+  room and hovers for the rest, and a setting on each of those three slides
+  turns them off when you want the shape without the commentary.
+- **Month by month runs down the page, not across it.** A library that reaches
+  back years is ninety-odd months, and as columns that is a picket fence with a
+  label every twelfth post. A row each gives the years a margin to read down and
+  a milestone a strip of the slide to say what it was.
 - **Kit history** is the slide only your milestones can fill: the first body and
   the first lens you bought, the first thing you sold and what it shot while you
   had it, the longest and shortest you went between purchases, and what you have

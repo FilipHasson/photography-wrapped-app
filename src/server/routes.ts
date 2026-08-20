@@ -321,6 +321,7 @@ export async function handleApi(
         // The saved milestones. Which of them the deck can use is decided
         // there — a mark has to land inside what a slide is drawing.
         anchors: ctx.config.anchors,
+        showMarks: url.searchParams.get("marks") !== "off",
       });
       json(res, 200, { range, deck: buildDeck(stats, ctx.config.ownerName) });
       return true;

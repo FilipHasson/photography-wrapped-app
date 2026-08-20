@@ -46,7 +46,7 @@ function statsWith(overrides: Partial<DeckStats>): DeckStats {
     busiestDay: null, longestStreak: null, longestGap: null,
     places: [], placesKnown: 0, debuts: [], milestones: [], burst: null,
     years: [], yearBasis: "anchor", location: null, home: null,
-    weekStart: "mon", markWeekend: false, wall: "packed",
+    weekStart: "mon", markWeekend: false, showMarks: true, wall: "packed",
     culling: { picked: 0, rejected: 0, unflagged: 0, removed: 0, removedRejected: 0, watchingSince: null },
     daylight: { mode: "06-18", sunrise: 6, sunset: 18, source: "06:00 to 18:00" },
     daylightHours: { sunrise: 6, sunset: 18 },
@@ -496,5 +496,67 @@ describe("spans of time", () => {
     assert.equal(fmtSpan(365), "12 months");
     assert.equal(fmtSpan(730), "2 years");
     assert.equal(fmtSpan(1000), "2 years 9 months");
+  });
+});
+
+describe("turning the milestones off", () => {
+  const daily = Array.from({ length: 20 }, (_, i) => ({ day: 20250101 + i, shots: 5 }));
+  const base = {
+    // Long enough that the day grid gives way to month by month, which is the one
+    // of the two that draws marks.
+    range: resolveRange({ kind: "all" }, { firstDay: 20240101, lastDay: 20260630 }),
+    milestones: KIT,
+    busiestDay: { day: 20250115, shots: 30 },
+    daily,
+    monthly: [
+      { ym: 202501, shots: 60 },
+      { ym: 202503, shots: 20 },
+      { ym: 202506, shots: 40 },
+    ],
+    longestStreak: { days: 40, from: 20250101, to: 20250209 },
+    longestGap: { days: 12, from: 20250210, to: 20250222 },
+    timeline: {
+      months: [202501, 202503, 202506],
+      series: [
+        { label: "FE 200-600mm G", values: [40, 10, 20] },
+        { label: "FE 70-200mm GM II", values: [20, 10, 20] },
+      ],
+    },
+  };
+  const annotated = ["timeline", "streaks", "calendar"];
+
+  test("is offered on every slide that can draw them", () => {
+    const slides = buildDeck(statsWith(base)).slides;
+    for (const id of annotated) {
+      const setting = findSlide(slides, id)?.settings?.find((s) => s.id === "marks");
+      assert.ok(setting, `${id} cannot turn its milestones off`);
+      assert.equal(setting.value, "on");
+      assert.equal(setting.options[0]?.note, "5 in this range");
+    }
+  });
+
+  test("takes them off every slide at once", () => {
+    const slides = buildDeck(statsWith({ ...base, showMarks: false })).slides;
+    for (const id of annotated) {
+      const slide = findSlide(slides, id);
+      assert.equal(slide?.marks, undefined, `${id} is still marked`);
+      // The way back has to stay on the slide it was turned off from.
+      assert.equal(slide?.settings?.find((s) => s.id === "marks")?.value, "off");
+    }
+  });
+
+  test("is not offered when there is nothing to hide", () => {
+    const slides = buildDeck(statsWith({ ...base, milestones: [] })).slides;
+    for (const id of annotated) {
+      assert.equal(findSlide(slides, id)?.settings?.some((s) => s.id === "marks") ?? false, false);
+    }
+  });
+
+  test("leaves the settings a slide already had alone", () => {
+    const slide = findSlide(buildDeck(statsWith({ ...base, years: YEARS })).slides, "streaks");
+    assert.deepEqual(
+      slide?.settings?.map((setting) => setting.id),
+      ["wall", "yearBasis", "marks"],
+    );
   });
 });

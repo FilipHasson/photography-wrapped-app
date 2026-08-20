@@ -409,6 +409,95 @@ describe("colours past the palette", () => {
 });
 
 /**
+ * The long view is months down the page, and a library that reaches back years
+ * puts two of them a row apart: only months holding photographs are rows, so a
+ * single frame in 2019 and another in 2020 are neighbours. The margin has to
+ * choose what it can fit rather than write both years on top of each other.
+ */
+describe("months down the page", () => {
+  const sparse = [
+    { ym: 201806, shots: 4 },
+    { ym: 201903, shots: 2 },
+    { ym: 202011, shots: 9 },
+    ...Array.from({ length: 30 }, (_, i) => ({
+      ym: 202401 + (i % 12) + Math.floor(i / 12) * 100,
+      shots: 100 + i * 40,
+    })),
+  ];
+
+  const slide: Slide = {
+    kind: "months",
+    id: "calendar",
+    title: "Month by month",
+    headline: "22 Feb 2025 — 10,061 photographs in one day",
+    note: "You were out on 383 days, 14% of the period",
+    months: sparse,
+    marks: [
+      { day: 20180615, label: "+ a7 II", full: "Bought the a7 II · 15 June 2018" },
+      // A month with nothing in it: the mark still has a place on the axis.
+      { day: 20211101, label: "+ FE 200-600mm G", full: "Bought the FE 200-600mm G · 1 November 2021" },
+      { day: 20240917, label: "+ a9 III", full: "Bought the a9 III · 17 September 2024" },
+      { day: 20250501, label: "Moved to Lisbon", full: "Moved to Lisbon · 1 May 2025" },
+    ],
+    table: { columns: ["Month", "Photographs"], rows: [] },
+  };
+
+  test("keeps every bar and label inside the frame", () => {
+    for (const format of FORMATS) {
+      for (const theme of [LIGHT, DARK]) {
+        for (const node of renderSlide(slide, theme, format).walk()) {
+          if (node.tag === "svg") continue;
+          const x = Number(node.attrs.get("x") ?? 0);
+          const y = Number(node.attrs.get("y") ?? 0);
+          const width = Number(node.attrs.get("width") ?? 0);
+          const height = Number(node.attrs.get("height") ?? 0);
+          assert.ok(Number.isFinite(x + y + width + height), `${format.id}: ${node.tag} has a NaN`);
+          assert.ok(
+            x >= -1 && x + width <= format.width + 1 && y >= -1 && y + height <= format.height + 1,
+            `${format.id}: a ${node.tag} left the frame at ${x},${y}`,
+          );
+        }
+      }
+    }
+  });
+
+  test("never writes one year over another", () => {
+    for (const format of FORMATS) {
+      const margin = [...renderSlide(slide, LIGHT, format).walk()]
+        .filter((node) => node.tag === "text" && node.attrs.get("text-anchor") === "end")
+        .map((node) => ({
+          x: Number(node.attrs.get("x") ?? 0),
+          y: Number(node.attrs.get("y") ?? 0),
+          size: Number(node.attrs.get("font-size") ?? 16),
+          value: node.textContent,
+        }));
+
+      for (let i = 0; i < margin.length; i++) {
+        for (let j = i + 1; j < margin.length; j++) {
+          const a = margin[i]!;
+          const b = margin[j]!;
+          if (Math.abs(a.x - b.x) > 2) continue;
+          const gap = Math.abs(a.y - b.y);
+          const [upper, lower] = a.y < b.y ? [a, b] : [b, a];
+          assert.ok(
+            gap >= lower.size * 0.9 + upper.size * 0.12,
+            `${format.id}: "${upper.value}" and "${lower.value}" are ${gap.toFixed(1)}px apart`,
+          );
+        }
+      }
+    }
+  });
+
+  test("a milestone in a month with no photographs still lands on the axis", () => {
+    const named = [...renderSlide(slide, LIGHT, FORMATS[4]).walk()]
+      .filter((node) => node.tag === "text")
+      .map((node) => node.textContent);
+
+    assert.ok(named.includes("+ FE 200-600mm G"), "the mark in an empty month was dropped");
+  });
+});
+
+/**
  * Milestones annotate the slides that draw time, and a chart full of them is
  * where an annotation layer falls over: labels overlapping each other, a rule
  * outside the plot, a name running off the right edge. Twelve of them across a

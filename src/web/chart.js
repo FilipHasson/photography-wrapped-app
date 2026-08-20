@@ -556,16 +556,32 @@ function drawMarks(root, area, marks, xOf, theme, L, reserve = 0) {
   }
 }
 
-/** Where a day sits along a run of months, a whole month wide plus the day in it. */
-function monthAxis(months, x0, band) {
-  const index = new Map(months.map((ym, i) => [ym, i]));
-  return (day) => {
-    const ym = Math.floor(day / 100);
-    const at = index.get(ym);
-    if (at === undefined) return null;
-    const into = (day % 100) - 1;
+/**
+ * Where a day sits along a run of months, as a fractional row.
+ *
+ * Only months holding photographs are drawn, so a day can fall in a month that
+ * is not there at all — which is exactly the interesting case, a camera bought
+ * and then not used for a fortnight. It lands on the boundary between the two
+ * months either side of it rather than being dropped. Null means the day is
+ * outside the run entirely, where there is no honest place to put it.
+ */
+function monthRow(months, day) {
+  const ym = Math.floor(day / 100);
+  const exact = months.indexOf(ym);
+  if (exact >= 0) {
     const span = daysInMonth(Math.floor(ym / 100), ym % 100);
-    return x0 + band * (at + Math.min(1, Math.max(0, into / span)));
+    return exact + Math.min(1, Math.max(0, ((day % 100) - 1) / span));
+  }
+
+  const after = months.findIndex((month) => month > ym);
+  return after > 0 ? after : null;
+}
+
+/** The same position, along an axis of bands rather than rows. */
+function monthAxis(months, x0, band) {
+  return (day) => {
+    const row = monthRow(months, day);
+    return row === null ? null : x0 + band * row;
   };
 }
 
@@ -1645,76 +1661,150 @@ function drawRampLegend(root, x, y, max, theme, L) {
     }),
   );
 }
-/** Monthly columns, for ranges too long to read a day at a time. */
+/**
+ * Months down the page, a bar each.
+ *
+ * The long view of a library is dozens of months — ninety-odd for one reaching
+ * back to 2018 — and as columns that is a picket fence with a label every
+ * twelfth post, the years colliding at the foot of it. Turned on its side, each
+ * month gets a row of its own, the years read down the margin with room to
+ * spare, and a milestone has a strip of the slide to say what it was rather
+ * than an eighteen-pixel slot shared with its neighbours.
+ */
 function drawMonths(root, plot, slide, theme, L) {
   const months = slide.months;
   if (months.length === 0) return;
 
   const max = Math.max(...months.map((entry) => entry.shots), 1);
   const ceiling = niceCeiling(max);
-  const band = plot.w / months.length;
-  const thickness = Math.min(24, Math.max(3, band - 6));
-  const baseline = plot.y + plot.h - L.axis * 2.4;
-  const markH = slide.marks?.length ? L.tiny * 1.9 : 0;
-  const height = Math.max(40, baseline - plot.y - L.axis * 2 - markH);
+  const marks = slide.marks ?? [];
 
-  const gridY = baseline - height;
-  root.append(el("line", { x1: plot.x, y1: gridY, x2: plot.x + plot.w, y2: gridY, stroke: theme.grid }));
-  root.append(
-    text(fmt(ceiling), plot.x + plot.w, gridY - L.axis * 0.5, {
-      size: L.axis,
-      fill: theme.muted,
-      anchor: "end",
-    }),
-  );
+  const headH = L.axis * 2;
+  const top = plot.y + headH;
+  const rowH = (plot.h - headH) / months.length;
+
+  // Type sized off the row it has to sit in, so ninety months and fifteen are
+  // both legible rather than one of them being the size the other was drawn for.
+  const labelSize = Math.max(9, Math.min(L.tiny, rowH / 1.2));
+  const gutter = measure("2026", labelSize) + labelSize * 0.7;
+
+  // A strip down the right for the milestone names, taken out of the bars
+  // before they are drawn rather than written over them afterwards.
+  const markSize = Math.max(9, Math.min(L.tiny, plot.h * 0.035));
+  const markW =
+    marks.length > 0
+      ? Math.min(plot.w * 0.34, Math.max(...marks.map((mark) => measure(mark.label, markSize))) + markSize)
+      : 0;
+
+  const x0 = plot.x + gutter;
+  const width = Math.max(40, plot.w - gutter - markW);
+  const thickness = Math.max(1.5, Math.min(rowH - Math.max(1, rowH * 0.2), L.value * 1.4));
+
+  // Two hairlines to read a length against, labelled once at the top.
+  for (const fraction of [0.5, 1]) {
+    const x = x0 + width * fraction;
+    root.append(el("line", { x1: x, y1: top, x2: x, y2: top + rowH * months.length, stroke: theme.grid }));
+    root.append(
+      text(fmt(ceiling * fraction), x, plot.y + L.axis, { size: L.axis, fill: theme.muted, anchor: "middle" }),
+    );
+  }
 
   let lastYear = -1;
-  months.forEach((entry, i) => {
-    const cx = plot.x + band * (i + 0.5);
-    const barHeight = entry.shots > 0 ? Math.max(2, (entry.shots / ceiling) * height) : 0;
-    const year = Math.floor(entry.ym / 100);
+  const years = [];
+  const names = [];
 
-    if (barHeight > 0) {
-      column(
+  months.forEach((entry, i) => {
+    const y = top + i * rowH;
+    const year = Math.floor(entry.ym / 100);
+    const month = entry.ym % 100;
+    const barW = entry.shots > 0 ? Math.max(2, (entry.shots / ceiling) * width) : 0;
+
+    if (barW > 0) {
+      bar(
         root,
-        cx - thickness / 2,
-        baseline,
+        x0,
+        y + (rowH - thickness) / 2,
+        barW,
         thickness,
-        barHeight,
         theme.series[0],
-        `${MONTH_SHORT[(entry.ym % 100) - 1]} ${year} — ${fmt(entry.shots)}`,
+        `${MONTH_SHORT[month - 1]} ${year} — ${fmt(entry.shots)}`,
       );
     }
 
-    if (year !== lastYear && band > L.axis) {
-      lastYear = year;
+    const turned = year !== lastYear;
+    if (turned) lastYear = year;
+    (turned ? years : names).push({ y: y + rowH / 2, label: turned ? String(year) : MONTH_SHORT[month - 1] });
+  });
+
+  /**
+   * The margin, filled in priority order.
+   *
+   * Only months that hold photographs are rows here, so two years can be
+   * neighbours — a library with one frame in 2019 and one in 2020 puts those
+   * labels a row apart. The years go down first because they are what orients
+   * the reader, and the month names take whatever gaps are left.
+   */
+  const placed = [];
+  const claim = (y) => {
+    if (placed.some((at) => Math.abs(at - y) < labelSize * 1.05)) return false;
+    placed.push(y);
+    return true;
+  };
+
+  for (const [entries, weight, fill] of [
+    [years, 600, theme.ink2],
+    [labelSize >= 10 ? names : [], 400, theme.muted],
+  ]) {
+    for (const entry of entries) {
+      if (!claim(entry.y)) continue;
       root.append(
-        text(String(year), cx, baseline + L.axis * 1.6, {
-          size: L.axis,
-          fill: theme.muted,
-          anchor: "middle",
+        text(entry.label, x0 - labelSize * 0.5, entry.y + labelSize * 0.35, {
+          size: labelSize,
+          weight,
+          fill,
+          anchor: "end",
         }),
       );
     }
-  });
+  }
 
-  root.append(
-    el("line", { x1: plot.x, y1: baseline, x2: plot.x + plot.w, y2: baseline, stroke: theme.axis }),
-  );
+  root.append(el("line", { x1: x0, y1: top, x2: x0, y2: top + rowH * months.length, stroke: theme.axis }));
 
-  drawMarks(
-    root,
-    { x: plot.x, y: gridY - markH, w: plot.w, h: height + markH },
-    slide.marks,
-    monthAxis(
-      months.map((entry) => entry.ym),
-      plot.x,
-      band,
-    ),
-    theme,
-    L,
-    measure(fmt(ceiling), L.axis) + L.tiny,
-  );
+  // Milestones read across a row rather than down a column here, so the rule is
+  // horizontal and the name sits at the end of it in its own strip.
+  let free = -Infinity;
+  for (const mark of [...marks].sort((a, b) => a.day - b.day)) {
+    const row = monthRow(months.map((entry) => entry.ym), mark.day);
+    if (row === null) continue;
+    const y = top + rowH * row;
+
+    root.append(
+      titled(
+        el("line", {
+          x1: x0,
+          y1: y,
+          x2: x0 + width,
+          y2: y,
+          stroke: theme.ink2,
+          "stroke-dasharray": "3 4",
+          opacity: 0.5,
+        }),
+        mark.full,
+      ),
+    );
+    root.append(
+      el("rect", { x: x0 + width - 1.5, y: y - 1.5, width: 3, height: 3, fill: theme.ink2, opacity: 0.7 }),
+    );
+
+    if (markW === 0 || y < free) continue;
+    free = y + markSize * 1.2;
+    root.append(
+      text(ellipsize(mark.label, markW - markSize * 0.6, markSize), x0 + width + markSize * 0.5, y + markSize * 0.35, {
+        size: markSize,
+        fill: theme.ink2,
+      }),
+    );
+  }
 }
 
 /**

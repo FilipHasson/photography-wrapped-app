@@ -269,9 +269,15 @@ function markLabel(milestone: Milestone): string {
   return milestone.label;
 }
 
-/** Marks for the slides that draw time, or nothing at all for the rest. */
+/**
+ * Marks for the slides that draw time, or nothing at all.
+ *
+ * Annotation is a way of looking rather than a fact about the library, so it is
+ * a slide setting like the rest: someone reading the shape of a year does not
+ * always want to be told why it has that shape.
+ */
 function marksFor(stats: DeckStats): Mark[] | undefined {
-  if (stats.milestones.length === 0) return undefined;
+  if (stats.milestones.length === 0 || !stats.showMarks) return undefined;
   return stats.milestones.map((milestone) => ({
     day: milestone.day,
     label: markLabel(milestone),
@@ -472,6 +478,33 @@ function runningNote(years: YearBucket[]): string | undefined {
  * Shared by the two slides that split a range into years, so answering it on
  * one answers it on both: they would look absurd disagreeing with each other.
  */
+/**
+ * The milestone toggle, shared by every slide that can carry one.
+ *
+ * Offered only where there is something to show: a chip that hides nothing is
+ * a chip that teaches the reader the settings are decoration.
+ */
+/** The settings a slide actually has, dropped entirely when it has none. */
+function settingsOf(...offered: Array<SlideSetting | null>): { settings?: SlideSetting[] } {
+  const settings = offered.filter((setting): setting is SlideSetting => setting !== null);
+  return settings.length > 0 ? { settings } : {};
+}
+
+function marksSetting(stats: DeckStats): SlideSetting | null {
+  const count = stats.milestones.length;
+  if (count === 0) return null;
+
+  return {
+    id: "marks",
+    label: "Milestones",
+    value: stats.showMarks ? "on" : "off",
+    options: [
+      { value: "on", label: "Shown", note: `${fmtInt(count)} in this range` },
+      { value: "off", label: "Hidden" },
+    ],
+  };
+}
+
 function yearBasisSetting(stats: DeckStats): SlideSetting {
   const first = stats.years[0];
   return {
@@ -964,6 +997,7 @@ function calendarSlide(stats: DeckStats): Slide | null {
     title: "Month by month",
     subtitle: "The long view",
     marks: marksFor(stats),
+    ...settingsOf(marksSetting(stats)),
     headline,
     note: daysOutNote(stats),
     months: stats.monthly,
@@ -1017,22 +1051,21 @@ function streaksSlide(stats: DeckStats): Slide | null {
     headline,
     // "330 of 1,090 days" said nothing about which number was which.
     note: daysOutNote(stats),
-    ...(years.length > 1
-      ? {
-          settings: [
-            {
-              id: "wall",
-              label: "Lay the days out",
-              value: stats.wall,
-              options: [
-                { value: "packed", label: "As one wall", note: "as large as the slide allows" },
-                { value: "years", label: "A row per year" },
-              ],
-            },
-            yearBasisSetting(stats),
-          ],
-        }
-      : {}),
+    ...settingsOf(
+      years.length > 1
+        ? {
+            id: "wall",
+            label: "Lay the days out",
+            value: stats.wall,
+            options: [
+              { value: "packed", label: "As one wall", note: "as large as the slide allows" },
+              { value: "years", label: "A row per year" },
+            ],
+          }
+        : null,
+      years.length > 1 ? yearBasisSetting(stats) : null,
+      marksSetting(stats),
+    ),
     days: daily,
     from: range.from,
     to: range.to,
@@ -1097,7 +1130,7 @@ function timelineSlide(stats: DeckStats): Slide | null {
         ? `${leader.label} closed out ${formatYearMonth(timeline.months[lastIndex] as number)}`
         : "How your kit rotated",
     note: pooled ? `Your ${named} most-used lenses, the rest pooled` : "Every lens you used",
-    ...(rowsChoice ? { settings: [rowsChoice] } : {}),
+    ...settingsOf(rowsChoice, marksSetting(stats)),
     months: timeline.months,
     series: timeline.series,
     table: tableOf(
