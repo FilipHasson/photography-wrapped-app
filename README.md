@@ -171,6 +171,12 @@ A few things the slides do rather than say:
   back years is ninety-odd months, and as columns that is a picket fence with a
   label every twelfth post. A row each gives the years a margin to read down and
   a milestone a strip of the slide to say what it was.
+- **Every bar chart draws both ways round.** Cameras, lenses, pairings, focal
+  length, aperture, ISO, shutter speed, keepers, day of the week and month by
+  month each carry a **Bars run · Across / Upright** setting. Each starts the
+  way it reads best — a lens name wants a row beside its bar, a shutter-speed
+  histogram wants to stand up — but which is true of your library on your screen
+  is not something this can know, so it is one click either way.
 - **Kit history** is the slide only your milestones can fill: the first body and
   the first lens you bought, the first thing you sold and what it shot while you
   had it, the longest and shortest you went between purchases, and what you have

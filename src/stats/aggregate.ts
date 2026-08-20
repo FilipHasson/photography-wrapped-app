@@ -83,7 +83,23 @@ export function resolveLimits(limits: RowLimits = {}): Required<RowLimits> {
 }
 
 /**
- * Which slides draw the reader's milestones.
+ * Which way a chart's bars run.
+ *
+ * `rows` is a bar per row reading left to right, `columns` is a bar per column
+ * standing up from a baseline. Both are the same numbers; which one reads
+ * better depends on the labels, the shape of the frame and the reader — a lens
+ * name wants a row, a histogram of shutter speeds wants columns, and ninety
+ * months want rows on a story and columns on a 16:9.
+ *
+ * Stored per slide, by slide id, because that is the level at which the answer
+ * changes. Absent means the slide's own natural orientation, which is not the
+ * same for all of them.
+ */
+export type Orientation = "rows" | "columns";
+export type Layouts = Record<string, Orientation>;
+
+/**
+ * Which slides draw the reader’s milestones.
  *
  * One switch per slide rather than one for the deck, because the answer is
  * genuinely different per chart. Month by month is a row per month with a strip
@@ -391,6 +407,11 @@ export interface DeckStats {
   markWeekend: boolean;
   /** Which time slides are annotated with the reader's milestones. */
   showMarks: Required<MarkToggles>;
+  /**
+   * Which way each chart's bars run, where the reader has said. A slide not in
+   * here draws itself the way it always has.
+   */
+  layout: Layouts;
   /** How the wall of days is laid out. */
   wall: WallLayout;
   /** The hours counted as daylight, and where that came from. */
@@ -434,6 +455,8 @@ export interface StatsOptions {
   anchors?: readonly Anchor[];
   /** Which slides draw those milestones. Each has its own answer. */
   marks?: MarkToggles;
+  /** Which way each chart's bars run, by slide id. */
+  layout?: Layouts;
 }
 
 /**
@@ -1222,6 +1245,7 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
     weekStart: options.weekStart ?? "mon",
     markWeekend: options.markWeekend ?? false,
     showMarks: resolveMarks(options.marks),
+    layout: options.layout ?? {},
     wall: options.wall ?? "packed",
     daylight: resolveDaylight(
       options.daylight,

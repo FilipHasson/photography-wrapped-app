@@ -5,6 +5,7 @@ import type {
   Debut,
   MarkToggles,
   Milestone,
+  Orientation,
   Place,
   Series,
   Streak,
@@ -98,6 +99,11 @@ interface Common {
    * a mark is a drawing decision, not a shape of data.
    */
   marks?: Mark[];
+  /**
+   * Which way the bars run, for the slides that have bars. Absent on the rest,
+   * and the renderers that do not draw bars ignore it.
+   */
+  orientation?: Orientation;
   /** Choices this slide offers, rendered beside it. */
   settings?: SlideSetting[];
   /** The one sentence the slide exists to deliver. */
@@ -485,6 +491,31 @@ function runningNote(years: YearBucket[]): string | undefined {
  * Offered only where there is something to show: a chip that hides nothing is
  * a chip that teaches the reader the settings are decoration.
  */
+/**
+ * Which way this slide's bars run, and the chip that changes it.
+ *
+ * Every chart has a natural orientation — the one it was designed around and
+ * the one it uses when nobody has said otherwise — and the setting is an
+ * override of that rather than a choice with no default. A lens name reads
+ * beside a bar; a shutter-speed histogram reads standing up; and which of those
+ * is true of *your* library on *your* screen is not something this can know.
+ */
+function orientationOf(stats: DeckStats, id: string, natural: Orientation): Orientation {
+  return stats.layout[id] ?? natural;
+}
+
+function orientationSetting(stats: DeckStats, id: string, natural: Orientation): SlideSetting {
+  return {
+    id: `layout.${id}`,
+    label: "Bars run",
+    value: orientationOf(stats, id, natural),
+    options: [
+      { value: "rows", label: "Across", note: "a row each" },
+      { value: "columns", label: "Upright", note: "a column each" },
+    ],
+  };
+}
+
 /** The settings a slide actually has, dropped entirely when it has none. */
 function settingsOf(...offered: Array<SlideSetting | null>): { settings?: SlideSetting[] } {
   const settings = offered.filter((setting): setting is SlideSetting => setting !== null);
@@ -658,7 +689,8 @@ function ranked(
     title,
     subtitle,
     headline,
-    ...(rowsChoice ? { settings: [rowsChoice] } : {}),
+    orientation: orientationOf(stats, field, "rows"),
+    ...settingsOf(rowsChoice, orientationSetting(stats, field, "rows")),
     items: drawn,
     // The shades need naming wherever any bar has them.
     ...(drawn.some((item) => item.segments)
@@ -711,6 +743,8 @@ function focalSlide(stats: DeckStats): Slide | null {
   return {
     kind: "columns",
     id: "focal",
+    orientation: orientationOf(stats, "focal", "columns"),
+    ...settingsOf(orientationSetting(stats, "focal", "columns")),
     title: "Focal length",
     subtitle: "Where you stood, in millimetres",
     headline: `${favourite.label} is your focal length — ${fmtPct(favourite.shots / focal.known)} of the frames`,
@@ -744,6 +778,8 @@ function apertureSlide(stats: DeckStats): Slide | null {
   return {
     kind: "columns",
     id: "aperture",
+    orientation: orientationOf(stats, "aperture", "columns"),
+    ...settingsOf(orientationSetting(stats, "aperture", "columns")),
     title: "Aperture",
     subtitle: "How much you let in",
     headline: `${aperture.favourite.label} more than any other stop`,
@@ -771,6 +807,8 @@ function isoSlide(stats: DeckStats): Slide | null {
   return {
     kind: "columns",
     id: "iso",
+    orientation: orientationOf(stats, "iso", "columns"),
+    ...settingsOf(orientationSetting(stats, "iso", "columns")),
     title: "ISO",
     subtitle: "How dark it got",
     headline: `${iso.favourite.label} is where you live`,
@@ -801,6 +839,8 @@ function shutterSlide(stats: DeckStats): Slide | null {
   return {
     kind: "columns",
     id: "shutter",
+    orientation: orientationOf(stats, "shutter", "columns"),
+    ...settingsOf(orientationSetting(stats, "shutter", "columns")),
     title: "Shutter speed",
     subtitle: "How still you held it",
     headline: `${shutter.favourite.label} is your default`,
@@ -943,11 +983,13 @@ function weekSlide(stats: DeckStats): Slide | null {
         { value: "mark", label: "In its own colour", note: "Saturday and Sunday" },
       ],
     },
+    orientationSetting(stats, "week", "columns"),
   ];
 
   return {
     kind: "week",
     id: "week",
+    orientation: orientationOf(stats, "week", "columns"),
     title: "Day of the week",
     subtitle: "The shape of your week",
     headline: `${DAY_NAMES[busiest]} is your day`,
@@ -997,8 +1039,9 @@ function calendarSlide(stats: DeckStats): Slide | null {
     id: "calendar",
     title: "Month by month",
     subtitle: "The long view",
+    orientation: orientationOf(stats, "calendar", "rows"),
     marks: marksFor(stats, "months"),
-    ...settingsOf(marksSetting(stats, "months")),
+    ...settingsOf(marksSetting(stats, "months"), orientationSetting(stats, "calendar", "rows")),
     headline,
     note: daysOutNote(stats),
     months: stats.monthly,
@@ -1248,6 +1291,8 @@ function keepersSlide(stats: DeckStats): Slide | null {
   return {
     kind: "columns",
     id: "keepers",
+    orientation: orientationOf(stats, "keepers", "columns"),
+    ...settingsOf(orientationSetting(stats, "keepers", "columns")),
     title: "Keepers",
     subtitle: "What survived the edit",
     headline: `${fmtInt(fourPlus)} ${plural(fourPlus, "frame")} at four stars or better`,

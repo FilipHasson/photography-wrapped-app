@@ -28,6 +28,7 @@ import {
   namingExamples,
   type DaylightMode,
   type GearItem,
+  type Layouts,
   type MarkToggles,
   type RowLimits,
   type WeekStart,
@@ -316,6 +317,15 @@ export async function handleApi(
         if (asked === "on" || asked === "off") marks[slide] = asked === "on";
       }
 
+      // `layout.lenses=columns`: which way one chart's bars run. By slide id,
+      // because a lens name reads beside a bar and a shutter speed reads under
+      // one, and the reader is the only one who can see their own screen.
+      const layout: Layouts = {};
+      for (const [key, value] of url.searchParams) {
+        const id = key.startsWith("layout.") ? key.slice(7) : "";
+        if (id !== "" && (value === "rows" || value === "columns")) layout[id] = value;
+      }
+
       const asWeekStart = url.searchParams.get("weekStart");
       const weekStart: WeekStart =
         asWeekStart === "sun" || asWeekStart === "sat" ? asWeekStart : "mon";
@@ -341,6 +351,7 @@ export async function handleApi(
         // there — a mark has to land inside what a slide is drawing.
         anchors: ctx.config.anchors,
         marks,
+        layout,
       });
       json(res, 200, { range, deck: buildDeck(stats, ctx.config.ownerName) });
       return true;

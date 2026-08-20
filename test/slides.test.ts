@@ -52,7 +52,7 @@ function statsWith(overrides: Partial<DeckStats>): DeckStats {
     busiestDay: null, longestStreak: null, longestGap: null,
     places: [], placesKnown: 0, debuts: [], milestones: [], burst: null,
     years: [], yearBasis: "anchor", location: null, home: null,
-    weekStart: "mon", markWeekend: false, showMarks: resolveMarks(), wall: "packed",
+    weekStart: "mon", markWeekend: false, showMarks: resolveMarks(), layout: {}, wall: "packed",
     culling: { picked: 0, rejected: 0, unflagged: 0, removed: 0, removedRejected: 0, watchingSince: null },
     daylight: { mode: "06-18", sunrise: 6, sunset: 18, source: "06:00 to 18:00" },
     daylightHours: { sunrise: 6, sunset: 18 },
@@ -273,11 +273,11 @@ describe("the week", () => {
     assert.deepEqual(marked.weekend, [0, 6]);
   });
 
-  test("both choices ride with the slide", () => {
+  test("every choice rides with the slide", () => {
     const slide = findSlide(buildDeck(statsWith({ weekdays })).slides, "week");
     assert.deepEqual(
       slide?.settings?.map((setting) => setting.id),
-      ["weekStart", "weekend"],
+      ["weekStart", "weekend", "layout.week"],
     );
   });
 });

@@ -315,10 +315,18 @@ function drawBars(root, plot, slide, theme, L) {
   const area = { ...plot, h: plot.h - legendH };
   if (legendH > 0) drawShadeLegend(root, plot, slide.legend, theme, L);
 
+  // The reader's answer first, where they have given one: this is a chart whose
+  // best orientation depends on the names in it and the screen it is read on,
+  // and neither is knowable from here.
+  if (slide.orientation === "columns") {
+    drawBarsAsColumns(root, area, items, max, theme, L);
+    return;
+  }
+
   // Two or three bars across a tall frame is a lot of nothing. Standing them up
   // turns the same numbers into something with presence, which is the reason a
   // two-camera count belongs on a story at all.
-  if (items.length <= 3 && L.tall) {
+  if (slide.orientation !== "rows" && items.length <= 3 && L.tall) {
     drawBarsAsColumns(root, area, items, max, theme, L);
     return;
   }
@@ -588,8 +596,18 @@ function monthAxis(months, x0, band) {
 function drawBarsAsColumns(root, plot, items, max, theme, L) {
   const band = plot.w / items.length;
   const thickness = Math.min(band * 0.5, plot.w * 0.22);
-  const baseline = plot.y + plot.h - L.label * 4.2;
-  const height = Math.max(60, baseline - plot.y - L.subtitle * 2);
+
+  // Type sized off the band it has to sit inside. This layout was written for
+  // the two or three bars a tall frame stands up on its own; asked for ten by a
+  // reader who wants columns, a lens name set for three of them runs straight
+  // into its neighbour, and no bounds check would ever see it.
+  const labelSize = Math.max(9, Math.min(L.label, band / 7));
+  const valueSize = Math.max(10, Math.min(L.subtitle * 1.15, band / 4.5));
+  const shareSize = Math.max(8, Math.min(L.value, band / 6.5));
+  const room = band - Math.max(10, labelSize);
+
+  const baseline = plot.y + plot.h - labelSize * 3.2 - shareSize * 1.4;
+  const height = Math.max(60, baseline - plot.y - valueSize * 1.8);
 
   items.forEach((item, i) => {
     const cx = plot.x + band * (i + 0.5);
@@ -598,20 +616,23 @@ function drawBarsAsColumns(root, plot, items, max, theme, L) {
     segmentedColumn(root, cx - thickness / 2, baseline, thickness, barHeight, item, theme);
 
     root.append(
-      text(fmt(item.value), cx, baseline - barHeight - L.value * 0.7, {
-        size: L.subtitle * 1.15,
+      text(ellipsize(fmt(item.value), room, valueSize, 600), cx, baseline - barHeight - valueSize * 0.5, {
+        size: valueSize,
         weight: 600,
         fill: theme.ink,
         anchor: "middle",
       }),
     );
 
-    const lines = wrap(item.label, band - L.tiny, L.label, 2, i === 0 ? 600 : 400);
+    // Every line cut to the band, not just the last: a greedy wrap will put a
+    // word on a line whether or not the word fits, and `200-600mm` is one word.
+    const weight = i === 0 ? 600 : 400;
+    const lines = wrap(item.label, room, labelSize, 2, weight);
     lines.forEach((line, row) => {
       root.append(
-        text(line, cx, baseline + L.label * (1.5 + row * 1.15), {
-          size: L.label,
-          weight: i === 0 ? 600 : 400,
+        text(ellipsize(line, room, labelSize, weight), cx, baseline + labelSize * (1.5 + row * 1.15), {
+          size: labelSize,
+          weight,
           fill: i === 0 ? theme.ink : theme.ink2,
           anchor: "middle",
         }),
@@ -622,8 +643,8 @@ function drawBarsAsColumns(root, plot, items, max, theme, L) {
     const share = item.valueLabel.split("·").pop();
     if (share) {
       root.append(
-        text(share.trim(), cx, baseline + L.label * (1.5 + lines.length * 1.15) + L.value * 0.4, {
-          size: L.value,
+        text(share.trim(), cx, baseline + labelSize * (1.5 + lines.length * 1.15) + shareSize * 0.4, {
+          size: shareSize,
           fill: theme.muted,
           anchor: "middle",
         }),
@@ -682,9 +703,102 @@ function drawBarsStacked(root, plot, items, max, theme, L) {
 }
 
 /** Vertical histogram: focal length, aperture, ISO, shutter, ratings. */
+/**
+ * The same distribution, lying down.
+ *
+ * A histogram wants to stand up — a scale of shutter speeds reads left to right
+ * and its shape is a skyline. But a scale with long labels, or twenty buckets
+ * on a story, reads better as rows, and which is true of a given library on a
+ * given screen is not knowable from here. So it is a setting, and this is the
+ * other half of it.
+ *
+ * The bucket labels take a margin of their own rather than being written under
+ * each bar, which is the whole reason to turn a histogram on its side: `1/8000`
+ * and `f/5.6-6.3` fit beside a row and collide under a column.
+ */
+function drawColumnsAsRows(root, plot, slide, theme, L) {
+  const items = slide.items;
+  const max = Math.max(...items.map((item) => item.value), 1);
+  const ceiling = niceCeiling(max);
+
+  const cardH = slide.figure ? Math.min(plot.h * 0.28, L.tileValue * 2.4 + L.value * 2.2) : 0;
+  const headH = L.axis * 2;
+  const top = plot.y + headH;
+  const height = plot.h - headH - cardH;
+  const rowH = height / items.length;
+
+  const labelSize = Math.max(9, Math.min(L.label, rowH / 1.25));
+  const gutter = Math.min(
+    plot.w * 0.28,
+    Math.max(...items.map((item) => measure(item.label, labelSize, 600))) + labelSize * 0.8,
+  );
+
+  const x0 = plot.x + gutter;
+  const width = Math.max(40, plot.w - gutter - measure(fmt(ceiling), L.axis) - L.tiny * 2);
+  const thickness = Math.max(2, Math.min(rowH - Math.max(2, rowH * 0.2), L.value * 1.6));
+
+  // Two hairlines to read a length against, labelled once above them.
+  for (const fraction of [0.5, 1]) {
+    const x = x0 + width * fraction;
+    root.append(el("line", { x1: x, y1: top, x2: x, y2: top + height, stroke: theme.grid }));
+    root.append(
+      text(fmt(ceiling * fraction), x, plot.y + L.axis, { size: L.axis, fill: theme.muted, anchor: "middle" }),
+    );
+  }
+
+  items.forEach((item, i) => {
+    const y = top + i * rowH;
+    const highlighted = i === slide.highlight;
+    const barW = item.value > 0 ? Math.max(2, (item.value / ceiling) * width) : 0;
+    // One series, one colour; the favourite holds full strength and the rest
+    // step back, so emphasis never doubles as a value scale.
+    const opacity = slide.highlight >= 0 && !highlighted ? 0.45 : 1;
+
+    if (barW > 0) {
+      bar(
+        root,
+        x0,
+        y + (rowH - thickness) / 2,
+        barW,
+        thickness,
+        theme.series[0],
+        `${item.label}: ${fmt(item.value)}`,
+        opacity,
+      );
+    }
+
+    root.append(
+      text(item.label, x0 - labelSize * 0.5, y + rowH / 2 + labelSize * 0.35, {
+        size: labelSize,
+        weight: highlighted ? 600 : 400,
+        fill: highlighted ? theme.ink : theme.muted,
+        anchor: "end",
+      }),
+    );
+
+    if (highlighted) {
+      root.append(
+        text(fmt(item.value), x0 + barW + L.tiny * 0.6, y + rowH / 2 + L.value * 0.35, {
+          size: Math.min(L.value, rowH * 0.8),
+          weight: 600,
+          fill: theme.ink,
+        }),
+      );
+    }
+  });
+
+  root.append(el("line", { x1: x0, y1: top, x2: x0, y2: top + height, stroke: theme.axis }));
+  root.append(
+    text(slide.axisLabel, plot.x, plot.y + L.axis, { size: L.axis, fill: theme.muted }),
+  );
+
+  figureCard(root, plot, cardH, slide.figure, theme, L);
+}
+
 function drawColumns(root, plot, slide, theme, L) {
   const items = slide.items;
   if (items.length === 0) return;
+  if (slide.orientation === "rows") return drawColumnsAsRows(root, plot, slide, theme, L);
 
   const max = Math.max(...items.map((item) => item.value), 1);
   const ceiling = niceCeiling(max);
@@ -804,41 +918,48 @@ function drawColumns(root, plot, slide, theme, L) {
     }),
   );
 
-  // A number the columns cannot show — the frames that were never rated at all,
-  // which dwarf the rated ones and would flatten the chart into a single spike
-  // if they were given a column of their own. It gets a card so it reads as a
-  // fact beside the chart rather than as a stray caption under it.
-  if (slide.figure && cardH > 0) {
-    const top = plot.y + plot.h - cardH;
-    const size = Math.min(L.tileValue * 1.5, cardH * 0.52, plot.w * 0.32);
+  figureCard(root, plot, cardH, slide.figure, theme, L);
+}
 
-    root.append(
-      el("rect", {
-        x: plot.x,
-        y: top,
-        width: plot.w,
-        height: cardH - L.value * 0.4,
-        rx: 12,
-        fill: theme.plane,
-        stroke: theme.grid,
-      }),
-    );
-    root.append(
-      text(slide.figure.value, plot.x + L.value, top + size * 1.05, {
-        size,
-        weight: 600,
-        fill: theme.series[0],
-      }),
-    );
-    root.append(
-      text(
-        ellipsize(slide.figure.label, plot.w - L.value * 2, L.value),
-        plot.x + L.value,
-        top + size * 1.05 + L.value * 1.5,
-        { size: L.value, fill: theme.ink2 },
-      ),
-    );
-  }
+/**
+ * A number the chart cannot show, in a card under it.
+ *
+ * The frames that were never rated at all dwarf the rated ones, and a column of
+ * their own would flatten the other five into the baseline. A card says it as a
+ * fact beside the chart rather than as a stray caption under it — and its space
+ * is reserved before anything is drawn, whichever way the bars run, because it
+ * used to be dropped silently on the shapes where it did not fit.
+ */
+function figureCard(root, plot, cardH, figure, theme, L) {
+  if (!figure || cardH <= 0) return;
+
+  const top = plot.y + plot.h - cardH;
+  const size = Math.min(L.tileValue * 1.5, cardH * 0.52, plot.w * 0.32);
+
+  root.append(
+    el("rect", {
+      x: plot.x,
+      y: top,
+      width: plot.w,
+      height: cardH - L.value * 0.4,
+      rx: 12,
+      fill: theme.plane,
+      stroke: theme.grid,
+    }),
+  );
+  root.append(
+    text(figure.value, plot.x + L.value, top + size * 1.05, {
+      size,
+      weight: 600,
+      fill: theme.series[0],
+    }),
+  );
+  root.append(
+    text(ellipsize(figure.label, plot.w - L.value * 2, L.value), plot.x + L.value, top + size * 1.05 + L.value * 1.5, {
+      size: L.value,
+      fill: theme.ink2,
+    }),
+  );
 }
 
 /**
@@ -1407,8 +1528,87 @@ function drawClockLegend(root, plot, y, theme, L, sunrise, sunset) {
 
 const WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
+/**
+ * The week lying down, a day per row.
+ *
+ * Seven full day names down a margin instead of `Mon` `Tue` `Wed` under seven
+ * columns — which is the trade: a row spells the day out and a column has to
+ * abbreviate it. On a story the rows also stop seven columns being seven
+ * slivers.
+ */
+function drawWeekAsRows(root, plot, slide, theme, L) {
+  const names = slide.labels?.length === 7 ? slide.labels : WEEKDAY_NAMES;
+  const weekend = new Set(slide.weekend ?? []);
+
+  const max = Math.max(...slide.days, 1);
+  const busiest = slide.days.indexOf(max);
+  const legendH = weekend.size > 0 ? L.axis * 2.6 : 0;
+
+  const height = plot.h - legendH;
+  const rowH = height / 7;
+  const labelSize = Math.max(9, Math.min(L.label, rowH / 1.5));
+  const gutter = Math.max(...names.map((name) => measure(name, labelSize, 600))) + labelSize * 0.8;
+
+  const x0 = plot.x + gutter;
+  const valueW = measure(fmt(max), L.value) + L.tiny;
+  const width = Math.max(40, plot.w - gutter - valueW);
+  const thickness = Math.max(3, Math.min(rowH - Math.max(3, rowH * 0.25), L.value * 1.8));
+
+  slide.days.forEach((value, day) => {
+    const y = plot.y + day * rowH;
+    const barW = value > 0 ? Math.max(2, (value / max) * width) : 0;
+    const colour = weekend.has(day) ? theme.series[1] : theme.series[0];
+
+    if (barW > 0) {
+      bar(
+        root,
+        x0,
+        y + (rowH - thickness) / 2,
+        barW,
+        thickness,
+        colour,
+        `${names[day]}: ${fmt(value)}`,
+        day === busiest ? 1 : 0.5,
+      );
+    }
+
+    root.append(
+      text(names[day], x0 - labelSize * 0.5, y + rowH / 2 + labelSize * 0.35, {
+        size: labelSize,
+        weight: day === busiest ? 600 : 400,
+        fill: day === busiest ? theme.ink2 : theme.muted,
+        anchor: "end",
+      }),
+    );
+    root.append(
+      text(fmt(value), x0 + barW + L.tiny * 0.6, y + rowH / 2 + L.value * 0.35, {
+        size: Math.min(L.value, rowH * 0.6),
+        weight: day === busiest ? 600 : 400,
+        fill: day === busiest ? theme.ink : theme.muted,
+      }),
+    );
+  });
+
+  root.append(el("line", { x1: x0, y1: plot.y, x2: x0, y2: plot.y + height, stroke: theme.axis }));
+
+  if (weekend.size > 0) {
+    drawKeyLegend(
+      root,
+      { x: plot.x, y: plot.y + plot.h - L.axis },
+      [
+        { label: "The working week", colour: theme.series[0] },
+        { label: "The weekend", colour: theme.series[1] },
+      ],
+      theme,
+      L,
+    );
+  }
+}
+
 /** Seven columns, Monday first. */
 function drawWeek(root, plot, slide, theme, L) {
+  if (slide.orientation === "rows") return drawWeekAsRows(root, plot, slide, theme, L);
+
   const names = slide.labels?.length === 7 ? slide.labels : WEEKDAY_NAMES;
   const weekend = new Set(slide.weekend ?? []);
 
@@ -1671,9 +1871,95 @@ function drawRampLegend(root, x, y, max, theme, L) {
  * spare, and a milestone has a strip of the slide to say what it was rather
  * than an eighteen-pixel slot shared with its neighbours.
  */
+/**
+ * The same months standing up, a column each.
+ *
+ * The shape a time series is normally drawn in, and the right one wherever
+ * the range is short enough that a column is more than a few pixels wide.
+ * Past that it becomes a picket fence with a label every twelfth post, which
+ * is why the rows are the default — but on a 16:9 frame with two years in it
+ * this is plainly the better read.
+ */
+function drawMonthColumns(root, plot, slide, theme, L) {
+  const months = slide.months;
+  if (months.length === 0) return;
+
+  const max = Math.max(...months.map((entry) => entry.shots), 1);
+  const ceiling = niceCeiling(max);
+  const band = plot.w / months.length;
+  const thickness = Math.min(24, Math.max(3, band - 6));
+  const baseline = plot.y + plot.h - L.axis * 2.4;
+  const markH = slide.marks?.length ? L.tiny * 1.9 : 0;
+  const height = Math.max(40, baseline - plot.y - L.axis * 2 - markH);
+
+  const gridY = baseline - height;
+  root.append(el("line", { x1: plot.x, y1: gridY, x2: plot.x + plot.w, y2: gridY, stroke: theme.grid }));
+  root.append(
+    text(fmt(ceiling), plot.x + plot.w, gridY - L.axis * 0.5, {
+      size: L.axis,
+      fill: theme.muted,
+      anchor: "end",
+    }),
+  );
+
+  let lastYear = -1;
+  let freeLabel = -Infinity;
+  months.forEach((entry, i) => {
+    const cx = plot.x + band * (i + 0.5);
+    const barHeight = entry.shots > 0 ? Math.max(2, (entry.shots / ceiling) * height) : 0;
+    const year = Math.floor(entry.ym / 100);
+
+    if (barHeight > 0) {
+      column(
+        root,
+        cx - thickness / 2,
+        baseline,
+        thickness,
+        barHeight,
+        theme.series[0],
+        `${MONTH_SHORT[(entry.ym % 100) - 1]} ${year} — ${fmt(entry.shots)}`,
+      );
+    }
+
+    // Only months holding photographs are bands, so two years can be one band
+    // apart — a single frame in 2019 and another in 2020 wrote their labels on
+    // top of each other, whichever way round the chart was drawn.
+    if (year !== lastYear && cx - measure(String(year), L.axis) / 2 >= freeLabel) {
+      lastYear = year;
+      freeLabel = cx + measure(String(year), L.axis) / 2 + L.tiny;
+      root.append(
+        text(String(year), cx, baseline + L.axis * 1.6, {
+          size: L.axis,
+          fill: theme.muted,
+          anchor: "middle",
+        }),
+      );
+    }
+  });
+
+  root.append(
+    el("line", { x1: plot.x, y1: baseline, x2: plot.x + plot.w, y2: baseline, stroke: theme.axis }),
+  );
+
+  drawMarks(
+    root,
+    { x: plot.x, y: gridY - markH, w: plot.w, h: height + markH },
+    slide.marks,
+    monthAxis(
+      months.map((entry) => entry.ym),
+      plot.x,
+      band,
+    ),
+    theme,
+    L,
+    measure(fmt(ceiling), L.axis) + L.tiny,
+  );
+}
+
 function drawMonths(root, plot, slide, theme, L) {
   const months = slide.months;
   if (months.length === 0) return;
+  if (slide.orientation === "columns") return drawMonthColumns(root, plot, slide, theme, L);
 
   const max = Math.max(...months.map((entry) => entry.shots), 1);
   const ceiling = niceCeiling(max);

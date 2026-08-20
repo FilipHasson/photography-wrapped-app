@@ -236,6 +236,15 @@ re-reading a library for it.
   apart in wording. The *defaults* differ deliberately: a mark costs month by
   month nothing and costs the wall of days a square, so the months start
   annotated and the wall starts clean.
+- **A bar chart's orientation is the reader's, and its default is the slide's.**
+  `Slide.orientation` is set from `layout.<slide id>` and every renderer that
+  draws bars branches on it — `drawBars` → `drawBarsAsColumns`, `drawColumns` →
+  `drawColumnsAsRows`, `drawMonths` → `drawMonthColumns`, `drawWeek` →
+  `drawWeekAsRows`. The *natural* orientation lives with the slide that builds
+  it, never in the renderer, so "what does this draw when nobody has said" has
+  one answer in one place. Both halves are checked in every format and both
+  themes: the flipped one is the half nobody looks at, and a label gutter that
+  eats the plot is invisible to a bounds check.
 - **Only months holding photographs are rows** on `drawMonths`, so the axis is a
   run of months rather than a ruler: two years can be neighbours. `monthRow`
   puts a day that falls in a month nobody shot on the boundary between the two
@@ -258,7 +267,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 209 tests
+npm test          # 233 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```

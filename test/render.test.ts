@@ -745,3 +745,122 @@ describe("a figure beside the chart", () => {
     }
   });
 });
+
+/**
+ * Every bar chart draws both ways round now, and the flipped half is the half
+ * nobody looks at: a label gutter that eats the plot, a value written off the
+ * right edge, seven day names in a frame built for three letters. So both are
+ * checked, in every shape, for every slide that offers the choice.
+ */
+describe("bars either way round", () => {
+  const both: Slide[] = [
+    {
+      kind: "bars",
+      id: "lenses",
+      title: "Lenses",
+      headline: "FE 200-600 G — 46% of your frames",
+      items: Array.from({ length: 8 }, (_, i) => ({
+        label: `FE ${100 + i * 10}-${300 + i * 10}mm F2.8 GM OSS II`,
+        value: 900 - i * 90,
+        valueLabel: `${900 - i * 90}  ·  ${40 - i * 3}%`,
+        share: 0.4 - i * 0.03,
+      })),
+      table: { columns: ["Lens"], rows: [] },
+    },
+    {
+      kind: "columns",
+      id: "shutter",
+      title: "Shutter speed",
+      headline: "1/500 is where you live",
+      items: ["30s", "1s", "1/15", "1/60", "1/250", "1/500", "1/2000", "1/8000"].map((label, i) => ({
+        label,
+        value: (i + 1) * 120,
+      })),
+      highlight: 5,
+      axisLabel: "Shutter",
+      figure: { value: "158,766", label: "never rated  ·  99%" },
+      table: { columns: ["Shutter"], rows: [] },
+    },
+    {
+      kind: "week",
+      id: "week",
+      title: "Day of the week",
+      headline: "Saturday is your day",
+      days: [120, 90, 140, 80, 300, 620, 410],
+      labels: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+      weekend: [5, 6],
+      table: { columns: ["Day"], rows: [] },
+    },
+    {
+      kind: "months",
+      id: "calendar",
+      title: "Month by month",
+      headline: "22 Feb 2025 — 10,061 photographs in one day",
+      months: Array.from({ length: 26 }, (_, i) => ({
+        ym: 202401 + (i % 12) + Math.floor(i / 12) * 100,
+        shots: 100 + i * 40,
+      })),
+      marks: [{ day: 20240917, label: "+ a9 III", full: "Bought the a9 III · 17 September 2024" }],
+      table: { columns: ["Month"], rows: [] },
+    },
+  ];
+
+  for (const slide of both) {
+    for (const orientation of ["rows", "columns"] as const) {
+      const turned = { ...slide, orientation } as Slide;
+
+      test(`${slide.id} as ${orientation} stays inside the frame`, () => {
+        for (const format of FORMATS) {
+          for (const theme of [LIGHT, DARK]) {
+            for (const node of renderSlide(turned, theme, format).walk()) {
+              if (node.tag === "svg") continue;
+              const x = Number(node.attrs.get("x") ?? 0);
+              const y = Number(node.attrs.get("y") ?? 0);
+              const width = Number(node.attrs.get("width") ?? 0);
+              const height = Number(node.attrs.get("height") ?? 0);
+              assert.ok(Number.isFinite(x + y + width + height), `${format.id}: ${node.tag} has a NaN`);
+              assert.ok(
+                x >= -1 && x + width <= format.width + 1 && y >= -1 && y + height <= format.height + 1,
+                `${format.id}/${slide.id}/${orientation}: a ${node.tag} left the frame at ${x},${y}`,
+              );
+            }
+          }
+        }
+      });
+
+      test(`${slide.id} as ${orientation} keeps its labels apart`, () => {
+        for (const format of FORMATS) {
+          const texts = [...renderSlide(turned, LIGHT, format).walk()]
+            .filter((node) => node.tag === "text" && node.textContent.trim() !== "")
+            .map((node) => ({
+              x: Number(node.attrs.get("x") ?? 0),
+              y: Number(node.attrs.get("y") ?? 0),
+              size: Number(node.attrs.get("font-size") ?? 16),
+              anchor: node.attrs.get("text-anchor") ?? "start",
+              value: node.textContent,
+            }));
+
+          for (let i = 0; i < texts.length; i++) {
+            for (let j = i + 1; j < texts.length; j++) {
+              const a = texts[i]!;
+              const b = texts[j]!;
+              if (a.anchor !== b.anchor || Math.abs(a.x - b.x) > 2) continue;
+              const gap = Math.abs(a.y - b.y);
+              if (gap === 0) continue;
+              const [upper, lower] = a.y < b.y ? [a, b] : [b, a];
+              assert.ok(
+                gap >= lower.size * 0.9 + upper.size * 0.12,
+                `${format.id}/${slide.id}/${orientation}: "${upper.value}" and "${lower.value}" are ${gap.toFixed(1)}px apart`,
+              );
+            }
+          }
+        }
+      });
+
+      test(`${slide.id} as ${orientation} says what every mark is`, () => {
+        const titles = [...renderSlide(turned, LIGHT).walk()].filter((node) => node.tag === "title");
+        assert.ok(titles.length > 0, `${slide.id}/${orientation} has no hover labels`);
+      });
+    }
+  }
+});
