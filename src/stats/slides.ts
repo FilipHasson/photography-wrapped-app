@@ -1499,6 +1499,35 @@ function kitSlide(stats: DeckStats): Slide | null {
     );
   }
 
+  /**
+   * What was owned and then let go, and for how long.
+   *
+   * A sale is paired with the most recent purchase of the same thing before it,
+   * which is what makes a lens bought, sold and bought again read correctly
+   * rather than as one twelve-year ownership.
+   */
+  const sameThing = (a: Milestone, b: Milestone) =>
+    a.gear?.dimension === b.gear?.dimension && a.gear?.key === b.gear?.key;
+
+  const owned = sold
+    .map((sale) => {
+      const bought_ = bought.filter((buy) => sameThing(buy, sale) && buy.day <= sale.day).at(-1);
+      return bought_ ? { sale, from: bought_.day, days: daysBetween(bought_.day, sale.day) } : null;
+    })
+    .filter((held): held is { sale: Milestone; from: number; days: number } => held !== null);
+
+  // Only worth its own row once there is more than one sale to be shortest of:
+  // with one, it is the sale above wearing a different hat.
+  if (owned.length > 1) {
+    const briefest = owned.reduce((best, held) => (held.days < best.days ? held : best));
+    add(
+      "Shortest you kept anything",
+      briefest.sale.gear?.label ?? "",
+      `${formatDay(briefest.from)} to ${formatDay(briefest.sale.day)}`,
+      fmtSpan(briefest.days),
+    );
+  }
+
   // Still yours: bought, and never sold afterwards. Measured to the end of the
   // range rather than to today, because that is what this deck is about.
   const soldAfter = (m: Milestone) =>

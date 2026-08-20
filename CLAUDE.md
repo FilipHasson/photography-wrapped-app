@@ -267,7 +267,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 239 tests
+npm test          # 242 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```

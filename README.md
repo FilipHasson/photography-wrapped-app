@@ -179,8 +179,8 @@ A few things the slides do rather than say:
   is not something this can know, so it is one click either way.
 - **Kit history** is the slide only your milestones can fill: the first body and
   the first lens you bought, the first thing you sold and what it shot while you
-  had it, the longest and shortest you went between purchases, and what you have
-  owned longest. Every date on it is one you entered — where you have a
+  had it, the first body upgrade, the longest and shortest you went between
+  purchases, the shortest you kept anything, and what you have owned longest. Every date on it is one you entered — where you have a
   milestone for a piece of gear, **New in the bag** uses it too and says so,
   rather than guessing the day from its first frame. Nothing about money: this
   tool does not know what anything cost and does not ask.

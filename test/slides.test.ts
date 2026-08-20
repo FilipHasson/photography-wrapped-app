@@ -627,3 +627,46 @@ describe("the first body upgrade", () => {
     assert.equal(found?.label, "Body 0 → Body 1");
   });
 });
+
+describe("the shortest thing you kept", () => {
+  const buy = (id: string, day: number, key: string, label: string) =>
+    milestone(id, `Bought the ${label}`, day, "bought", { dimension: "lens", key, label });
+  const sell = (id: string, day: number, key: string, label: string) =>
+    milestone(id, `Sold the ${label}`, day, "sold", { dimension: "lens", key, label });
+
+  const row = (milestones: Milestone[]) => {
+    const slide = findSlide(buildDeck(statsWith({ milestones })).slides, "kit");
+    return slide?.kind === "list"
+      ? slide.items.find((i) => i.meta.startsWith("Shortest you kept"))
+      : null;
+  };
+
+  test("pairs each sale with the purchase it ended", () => {
+    const found = row([
+      buy("b1", 20240101, "a", "Lens A"),
+      buy("b2", 20240201, "b", "Lens B"),
+      sell("s1", 20240301, "b", "Lens B"),
+      sell("s2", 20250101, "a", "Lens A"),
+    ]);
+    assert.equal(found?.label, "Lens B");
+    assert.equal(found?.value, "29 days");
+  });
+
+  test("a thing bought again is not owned since the first time", () => {
+    // Bought, sold, bought, sold: the second ownership is the short one, and
+    // pairing the last sale with the first purchase would hide it.
+    const found = row([
+      buy("b1", 20240101, "a", "Lens A"),
+      sell("s1", 20240401, "a", "Lens A"),
+      buy("b2", 20250101, "a", "Lens A"),
+      sell("s2", 20250115, "a", "Lens A"),
+    ]);
+    assert.equal(found?.value, "14 days");
+  });
+
+  test("one sale says it once", () => {
+    // "First thing you sold" already carries how long it lasted; a second row
+    // for the same fact is the same number twice on one slide.
+    assert.equal(row([buy("b1", 20240101, "a", "Lens A"), sell("s1", 20240301, "a", "Lens A")]), undefined);
+  });
+});
