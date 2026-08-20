@@ -588,3 +588,42 @@ describe("which slides draw the milestones", () => {
     );
   });
 });
+
+describe("the first body upgrade", () => {
+  const bodies = (...days: number[]): Milestone[] =>
+    days.map((day, i) =>
+      milestone(`b${i}`, `Bought body ${i}`, day, "bought", {
+        dimension: "camera",
+        key: `body${i}`,
+        label: `Body ${i}`,
+        shots: 100,
+      }),
+    );
+
+  const row = (milestones: Milestone[]) => {
+    const slide = findSlide(buildDeck(statsWith({ milestones })).slides, "kit");
+    return slide?.kind === "list" ? slide.items.find((i) => i.meta.startsWith("First body upgrade")) : null;
+  };
+
+  test("is the day the second one arrived", () => {
+    const found = row(bodies(20240101, 20250301, 20260101));
+    assert.equal(found?.label, "Body 0 → Body 1");
+    assert.equal(found?.meta, "First body upgrade · 1 Jan 2024 to 1 Mar 2025");
+    assert.equal(found?.value, "14 months");
+  });
+
+  test("one body is not an upgrade", () => {
+    // Still a history — there is a lens in it — but nothing to upgrade from.
+    assert.equal(row([...bodies(20240101), ...KIT.slice(1, 2)]), undefined);
+  });
+
+  test("selling the first one is a separate fact, and does not make the upgrade", () => {
+    const sold = milestone("s", "Sold body 0", 20250601, "sold", {
+      dimension: "camera",
+      key: "body0",
+      label: "Body 0",
+    });
+    const found = row([...bodies(20240101, 20250301), sold]);
+    assert.equal(found?.label, "Body 0 → Body 1");
+  });
+});

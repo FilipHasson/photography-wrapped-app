@@ -1464,6 +1464,20 @@ function kitSlide(stats: DeckStats): Slide | null {
     add("First body you bought", firstBody.gear?.label ?? "", formatDay(firstBody.day), frames(firstBody));
   }
 
+  // The second body is the first upgrade, whether or not the first one left:
+  // buying another camera is the moment, and what happened to the old one is a
+  // separate fact the sale row already carries.
+  const bodies = bought.filter((m) => m.gear?.dimension === "camera");
+  const upgrade = bodies[1];
+  if (firstBody && upgrade) {
+    add(
+      "First body upgrade",
+      `${firstBody.gear?.label ?? "?"} → ${upgrade.gear?.label ?? "?"}`,
+      `${formatDay(firstBody.day)} to ${formatDay(upgrade.day)}`,
+      fmtSpan(daysBetween(firstBody.day, upgrade.day)),
+    );
+  }
+
   const firstGlass = bought.find(isGlass);
   if (firstGlass) {
     add("First lens you bought", firstGlass.gear?.label ?? "", formatDay(firstGlass.day), frames(firstGlass));
