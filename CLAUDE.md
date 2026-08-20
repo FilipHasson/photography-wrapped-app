@@ -267,7 +267,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 233 tests
+npm test          # 236 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```
@@ -305,6 +305,11 @@ one is the bug that produced the first round of feedback on this tool.
   header check in `server/server.ts`. Don't relax either.
 - `src/web/*.js` carries `// @ts-check` for the editor, but is not in the
   `tsconfig` program — same convention as the sibling `can-i-format` project.
+- **A class that sets a `display` beats the browser's own `[hidden]`.** Anything
+  hidden from script needs a `.class[hidden] { display: none }` rule of its own,
+  or it never goes away — no error, nothing wrong-looking in the source, the
+  thing simply sits there. `test/page.test.ts` walks the stylesheet against the
+  markup and fails if one is missing.
 - Draw in slide coordinates, never inside a `<g transform>`. `test/render.test.ts`
   reads x/y/width/height straight off the elements to check nothing leaves the
   frame, and a transform hides the real position from it — a shape that has been

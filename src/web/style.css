@@ -567,6 +567,20 @@ main {
   top: 53px;
   z-index: 4;
 }
+/* A class that sets a display beats the browser's own `[hidden]`, so anything
+   hidden from script has to say so again here. Without this the bar sat at the
+   top of the page for ever, stuck at its 2% starting width, with no job. */
+.job-banner[hidden] {
+  display: none;
+}
+/* A class that sets a display beats the browser's own `[hidden]`, so anything
+   hidden from script has to say so again here. Without this the bar sat at the
+   top of the page for ever, stuck at its 2% starting width, with no job. */
+
+/* A class that sets a display beats the browser's own `[hidden]`, so anything
+   hidden from script has to say so again here. Without this the bar sat at the
+   top of the page for ever, stuck at its 2% starting width, with no job. */
+
 .job-text {
   display: flex;
   flex-direction: column;
@@ -774,6 +788,10 @@ main {
   flex-direction: column;
   gap: 8px;
 }
+.milestone-gear[hidden] {
+  display: none;
+}
+
 .milestone-gear input[type="search"] {
   width: 100%;
 }
