@@ -114,11 +114,13 @@
 
             <div id="anchors" class="anchor-list"></div>
 
-            <form id="anchor-form" class="anchor-form">
-              <input id="anchor-label" type="text" maxlength="60" placeholder="Bought the a9 III" />
-              <input id="anchor-day" type="date" />
-              <button class="ghost" type="submit">Add milestone</button>
-            </form>
+            <div class="anchor-add">
+              <button id="anchor-open" class="ghost" type="button">Add milestone</button>
+              <span class="hint">
+                Buying and selling a camera or a lens are picked from the gear in your library, so a
+                milestone knows which body it means rather than just how you spelled it.
+              </span>
+            </div>
           </div>
         </section>
 
@@ -242,6 +244,45 @@
         <footer class="picker-foot">
           <span id="picker-hint" class="hint"></span>
           <button id="picker-choose" class="primary" type="button">Use this</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="milestone" class="picker milestone">
+      <form id="milestone-form" method="dialog" class="picker-form">
+        <header class="picker-head">
+          <h3>Add a milestone</h3>
+          <button value="cancel" class="ghost" type="submit">Close</button>
+        </header>
+
+        <div id="milestone-kinds" class="chips" role="group" aria-label="What kind of milestone"></div>
+
+        <div id="milestone-gear" class="milestone-gear">
+          <input
+            id="milestone-search"
+            type="search"
+            placeholder="Search your gear"
+            autocomplete="off"
+            spellcheck="false"
+            aria-label="Search your gear"
+          />
+          <ul id="milestone-list" class="picker-list"></ul>
+        </div>
+
+        <div class="milestone-fields">
+          <label class="milestone-field">
+            <span class="setting-label">When</span>
+            <input id="milestone-day" type="date" />
+          </label>
+          <label class="milestone-field wide">
+            <span class="setting-label">What the deck calls it</span>
+            <input id="milestone-label" type="text" maxlength="60" placeholder="Bought the a9 III" />
+          </label>
+        </div>
+
+        <footer class="picker-foot">
+          <span id="milestone-hint" class="hint"></span>
+          <button id="milestone-save" class="primary" type="button">Add milestone</button>
         </footer>
       </form>
     </dialog>

@@ -112,6 +112,7 @@ button.ghost {
 
 input[type="text"],
 input[type="number"],
+input[type="search"],
 input[type="date"] {
   font: inherit;
   color: var(--ink);
@@ -740,14 +741,92 @@ main {
   gap: 6px;
   flex-wrap: wrap;
 }
-.anchor-form {
+.anchor-tag {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  text-transform: lowercase;
+}
+.anchor-add {
   display: flex;
-  gap: 8px;
+  align-items: baseline;
+  gap: 12px;
   flex-wrap: wrap;
 }
-.anchor-form input[type="text"] {
+.anchor-add .hint {
   flex: 1;
-  min-width: 220px;
+  min-width: 260px;
+  max-width: 62ch;
+}
+
+/* The picker's footer hint is a filesystem path; this one is a sentence. */
+.milestone .picker-foot .hint {
+  font-family: var(--sans);
+  font-size: 0.82rem;
+  word-break: normal;
+}
+
+/* The gear picker inside the milestone modal. */
+.milestone-gear {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.milestone-gear input[type="search"] {
+  width: 100%;
+}
+.gear-group {
+  padding: 8px 12px 4px;
+  font-size: 0.76rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.gear-group + li .picker-entry {
+  border-top: none;
+}
+.gear-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.gear-note {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.gear-meta {
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.picker-entry.is-current .gear-note,
+.picker-entry.is-current .gear-meta {
+  color: inherit;
+  opacity: 0.85;
+}
+.gear-meta.is-recorded {
+  color: var(--accent);
+}
+.picker-entry.is-current .gear-meta.is-recorded {
+  color: inherit;
+}
+.milestone-fields {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.milestone-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.milestone-field.wide {
+  flex: 1;
+  min-width: 240px;
 }
 
 @media (max-width: 720px) {

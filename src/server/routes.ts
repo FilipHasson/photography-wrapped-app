@@ -2,11 +2,15 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import fs from "node:fs/promises";
 import type { Db } from "../core/db.ts";
 import {
+  anchorRangeLabel,
+  coerceAnchorGear,
   coercePlace,
   defaultSource,
+  draftAnchorLabel,
   makeAnchor,
   makeKey,
   validateConfig,
+  type AnchorKind,
   type AppConfig,
   type SourceConfig,
 } from "../core/config.ts";
@@ -19,7 +23,9 @@ import {
   availableMonths,
   availableYears,
   computeStats,
+  gearCatalog,
   type DaylightMode,
+  type GearItem,
   type RowLimits,
   type WeekStart,
 } from "../stats/aggregate.ts";
@@ -105,9 +111,33 @@ function appState(ctx: AppContext) {
 function rangeSpecFor(ctx: AppContext, params: URLSearchParams): RangeSpec {
   if (params.get("range") === "anchor") {
     const anchor = ctx.config.anchors.find((a) => a.id === params.get("id"));
-    if (anchor) return { kind: "since", day: anchor.day, label: anchor.label };
+    if (anchor) return { kind: "since", day: anchor.day, label: anchorRangeLabel(anchor) };
   }
   return parseRangeSpec(params);
+}
+
+/**
+ * The gear a milestone claims to be about, or an error saying so.
+ *
+ * A key is checked against the index rather than taken on trust: a milestone
+ * pointing at a camera nothing was ever shot on is a milestone no slide can
+ * find, and it would fail silently months later rather than here.
+ */
+function requireGear(ctx: AppContext, raw: unknown): GearItem {
+  const asked = coerceAnchorGear(raw);
+  if (!asked) throw new HttpError(400, "Which camera, lens or converter?");
+
+  const catalog = gearCatalog(ctx.db, ctx.config.naming);
+  const list =
+    asked.dimension === "camera"
+      ? catalog.cameras
+      : asked.dimension === "lens"
+        ? catalog.lenses
+        : catalog.teleconverters;
+
+  const found = list.find((g) => g.key === asked.key);
+  if (!found) throw new HttpError(404, "That is not a piece of gear in your library.");
+  return found;
 }
 
 async function addSource(ctx: AppContext, body: Record<string, unknown>): Promise<void> {
@@ -358,18 +388,36 @@ export async function handleApi(
       return true;
     }
 
+    // The gear a milestone can be about: everything the index has ever seen,
+    // named the way the reader's settings say, one row per thing.
+    if (route === "GET /api/gear") {
+      json(res, 200, gearCatalog(ctx.db, ctx.config.naming));
+      return true;
+    }
+
     if (route === "POST /api/anchors") {
       const body = await readJson(req);
-      const label = typeof body.label === "string" ? body.label.trim() : "";
       const day = typeof body.day === "string" ? parseIsoDay(body.day) : null;
+      if (day === null) throw new HttpError(400, "A milestone needs a date.");
 
-      if (label === "") throw new HttpError(400, "An anchor needs a name.");
-      if (day === null) throw new HttpError(400, "An anchor needs a date.");
+      const kind: AnchorKind = body.kind === "bought" || body.kind === "sold" ? body.kind : "custom";
+      const item = kind === "custom" ? null : requireGear(ctx, body.gear);
+
+      // A categorised milestone arrives with a label already drafted from the
+      // gear; an empty one means the reader cleared it, and the draft is a
+      // better answer than a refusal.
+      const typed = typeof body.label === "string" ? body.label.trim() : "";
+      const label = typed !== "" ? typed : item ? draftAnchorLabel(kind, item.label) : "";
+      if (label === "") throw new HttpError(400, "A milestone needs a name.");
 
       const taken = ctx.config.anchors.map((a) => a.id);
-      ctx.config.anchors = [...ctx.config.anchors, makeAnchor(label, day, taken)].sort(
-        (a, b) => a.day - b.day,
-      );
+      const gear = item ? { dimension: item.dimension, key: item.key } : null;
+
+      ctx.config.anchors = [
+        ...ctx.config.anchors,
+        makeAnchor(label, day, taken, { kind, gear }),
+      ].sort((a, b) => a.day - b.day);
+
       await ctx.saveConfig(ctx.config);
       json(res, 200, appState(ctx));
       return true;

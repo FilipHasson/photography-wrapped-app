@@ -192,6 +192,14 @@ function formatDay(day) {
   return `${day % 100} ${months[(Math.floor(day / 100) % 100) - 1]} ${Math.floor(day / 10000)}`;
 }
 
+/** Mirrors `anchorRangeLabel` on the server, which titles the deck the same way. */
+const rangeLabel = (anchor) =>
+  anchor.kind === "bought"
+    ? anchor.label.replace(/^bought /i, "")
+    : anchor.kind === "sold"
+      ? anchor.label.replace(/^sold /i, "selling ")
+      : anchor.label;
+
 function sameRange(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
@@ -210,7 +218,7 @@ function renderRanges() {
   // Saved milestones come first among the dated ranges: "since I got the a9
   // III" is the range someone actually wants, and a year is the fallback.
   for (const anchor of store.state.config.anchors ?? []) {
-    presets.push({ label: `Since ${anchor.label}`, spec: { kind: "anchor", id: anchor.id } });
+    presets.push({ label: `Since ${rangeLabel(anchor)}`, spec: { kind: "anchor", id: anchor.id } });
   }
 
   for (const year of store.state.years.slice(0, 8)) {
@@ -306,7 +314,14 @@ function renderMilestones() {
               "div",
               {},
               el("div", { class: "anchor-label", text: anchor.label }),
-              el("div", { class: "hint", text: formatDay(anchor.day) }),
+              el(
+                "div",
+                { class: "hint" },
+                formatDay(anchor.day),
+                // What it points at, rather than what it is called: the label
+                // is editable, so it can stop mentioning the gear at any time.
+                anchor.gear ? el("span", { class: "anchor-tag", text: anchor.gear.dimension }) : null,
+              ),
             ),
             el(
               "div",
@@ -454,20 +469,220 @@ async function saveStartDay(value) {
   }
 }
 
-async function addAnchor(event) {
-  event.preventDefault();
-  const label = $("anchor-label").value.trim();
-  const day = $("anchor-day").value;
+// ----------------------------------------------------------- milestones ---
 
-  if (label === "" || day === "") {
-    toast("A milestone needs a name and a date.", true);
+/**
+ * The five things a milestone can be.
+ *
+ * A teleconverter has no category of its own: nobody thinks of buying one as a
+ * different *kind* of event, they think of it as its own purchase — so it is a
+ * group inside the lens list rather than a sixth chip.
+ */
+const MILESTONE_KINDS = [
+  { label: "Bought a camera", kind: "bought", groups: ["cameras"] },
+  { label: "Sold a camera", kind: "sold", groups: ["cameras"] },
+  { label: "Bought a lens", kind: "bought", groups: ["lenses", "teleconverters"] },
+  { label: "Sold a lens", kind: "sold", groups: ["lenses", "teleconverters"] },
+  { label: "Something else", kind: "custom", groups: [] },
+];
+
+const GEAR_GROUPS = { cameras: "Cameras", lenses: "Lenses", teleconverters: "Teleconverters" };
+
+const milestone = {
+  choice: MILESTONE_KINDS[0],
+  /** @type {any} Every camera, lens and converter there is. Null until it lands. */
+  catalog: null,
+  /** @type {any} */ gear: null,
+  search: "",
+  /** Both stop following the gear once they have been typed in by hand. */
+  edited: false,
+  dated: false,
+};
+
+/** Mirrors `draftAnchorLabel` on the server, which is the fallback for an empty one. */
+const draftLabel = (kind, label) =>
+  kind === "bought" ? `Bought the ${label}` : kind === "sold" ? `Sold the ${label}` : "";
+
+async function openMilestone() {
+  milestone.choice = MILESTONE_KINDS[0];
+  milestone.gear = null;
+  milestone.search = "";
+  milestone.edited = false;
+  milestone.dated = false;
+
+  for (const id of ["milestone-search", "milestone-label", "milestone-day"]) $(id).value = "";
+  $("milestone").showModal();
+  $("milestone-search").focus();
+  renderMilestone();
+
+  // Fetched per opening rather than cached: gear appears when a source is
+  // indexed, and a list that is one re-index out of date is a list missing the
+  // camera somebody just came here to record buying.
+  try {
+    milestone.catalog = await api("/api/gear");
+  } catch (err) {
+    milestone.catalog = { cameras: [], lenses: [], teleconverters: [] };
+    toast(err.message, true);
+  }
+  renderMilestone();
+}
+
+function renderMilestone() {
+  $("milestone-kinds").replaceChildren(
+    ...MILESTONE_KINDS.map((choice) =>
+      el("button", {
+        class: choice === milestone.choice ? "chip is-current" : "chip",
+        type: "button",
+        text: choice.label,
+        onclick: () => {
+          if (choice === milestone.choice) return;
+          milestone.choice = choice;
+          milestone.gear = null;
+          if (!milestone.edited) $("milestone-label").value = "";
+          renderMilestone();
+        },
+      }),
+    ),
+  );
+
+  const groups = milestone.choice.groups;
+  $("milestone-gear").hidden = groups.length === 0;
+  if (groups.length > 0) renderGearList(groups);
+  renderMilestoneHint();
+}
+
+/**
+ * The gear list.
+ *
+ * One row per thing, and no duplicates by construction: the server groups by
+ * the same key the whole index groups by, so a body written three ways across
+ * three sources arrives here once.
+ */
+function renderGearList(groups) {
+  const needle = milestone.search.trim().toLowerCase();
+  const rows = [];
+
+  for (const group of groups) {
+    const items = (milestone.catalog?.[group] ?? []).filter(
+      (item) => needle === "" || item.label.toLowerCase().includes(needle),
+    );
+    if (items.length === 0) continue;
+
+    // A heading earns its line only when there is more than one group to tell
+    // apart: a list of nothing but cameras does not need to say "Cameras".
+    if (groups.length > 1) rows.push(el("li", { class: "gear-group", text: GEAR_GROUPS[group] }));
+
+    for (const item of items) {
+      const chosen = milestone.gear?.dimension === item.dimension && milestone.gear?.key === item.key;
+      const already = alreadyRecorded(item);
+
+      rows.push(
+        el(
+          "li",
+          {},
+          el(
+            "button",
+            {
+              class: chosen ? "picker-entry is-current" : "picker-entry",
+              type: "button",
+              onclick: () => chooseGear(item),
+            },
+            el(
+              "span",
+              { class: "gear-name" },
+              el("span", { text: item.label }),
+              item.note ? el("span", { class: "gear-note", text: item.note }) : null,
+            ),
+            el("span", {
+              class: already ? "gear-meta is-recorded" : "gear-meta",
+              text: already ? "already recorded" : `${num(item.shots)} frames`,
+            }),
+          ),
+        ),
+      );
+    }
+  }
+
+  if (rows.length === 0) {
+    rows.push(
+      el("li", {
+        class: "gear-group",
+        text:
+          milestone.catalog === null
+            ? "Reading your gear…"
+            : needle === ""
+              ? "Nothing indexed yet — add a source first."
+              : "Nothing here matches.",
+      }),
+    );
+  }
+
+  $("milestone-list").replaceChildren(...rows);
+}
+
+/** Whether this exact thing already has this exact milestone against it. */
+function alreadyRecorded(item) {
+  return (store.state.config.anchors ?? []).some(
+    (anchor) =>
+      anchor.kind === milestone.choice.kind &&
+      anchor.gear?.dimension === item.dimension &&
+      anchor.gear?.key === item.key,
+  );
+}
+
+function chooseGear(item) {
+  milestone.gear = item;
+  if (!milestone.edited) $("milestone-label").value = draftLabel(milestone.choice.kind, item.label);
+
+  // The first frame on a body is a decent guess at the day it arrived, and the
+  // last one at the day it left. A guess in the field beats an empty field, and
+  // it stops being offered the moment a date is typed.
+  const guess = milestone.choice.kind === "sold" ? item.lastDay : item.firstDay;
+  if (!milestone.dated && guess) $("milestone-day").value = isoDay(guess);
+
+  renderMilestone();
+}
+
+function renderMilestoneHint() {
+  const item = milestone.gear;
+  if (!item) {
+    $("milestone-hint").textContent =
+      milestone.choice.kind === "custom"
+        ? "A date and a phrase — anything worth measuring from."
+        : "Pick what this is about.";
     return;
   }
 
+  const sold = milestone.choice.kind === "sold";
+  const guess = sold ? item.lastDay : item.firstDay;
+  $("milestone-hint").textContent = guess
+    ? `${sold ? "Last" : "First"} frame on it: ${formatDay(guess)}`
+    : "";
+}
+
+async function saveMilestone() {
+  const kind = milestone.choice.kind;
+  const day = $("milestone-day").value;
+  const label = $("milestone-label").value.trim();
+
+  if (kind !== "custom" && !milestone.gear) {
+    toast("Pick the camera, lens or converter this is about.", true);
+    return;
+  }
+  if (day === "") {
+    toast("A milestone needs a date.", true);
+    return;
+  }
+  if (kind === "custom" && label === "") {
+    toast("A milestone needs a name.", true);
+    return;
+  }
+
+  const gear = milestone.gear ? { dimension: milestone.gear.dimension, key: milestone.gear.key } : null;
+
   try {
-    await api("/api/anchors", { method: "POST", body: { label, day } });
-    $("anchor-label").value = "";
-    $("anchor-day").value = "";
+    await api("/api/anchors", { method: "POST", body: { kind, day, label, gear } });
+    $("milestone").close();
     await refreshState();
   } catch (err) {
     toast(err.message, true);
@@ -693,7 +908,24 @@ $("setting-lens-style").addEventListener("click", (event) => {
 });
 $("setting-start").addEventListener("change", (event) => void saveStartDay(event.target.value));
 $("setting-start-clear").addEventListener("click", () => void saveStartDay(""));
-$("anchor-form").addEventListener("submit", (event) => void addAnchor(event));
+
+$("anchor-open").addEventListener("click", () => void openMilestone());
+// A `method="dialog"` form closes on Enter, which in a modal full of text
+// fields would throw the milestone away mid-sentence. Enter saves it instead;
+// only the Close button still closes.
+$("milestone-form").addEventListener("submit", (event) => {
+  if (event.submitter?.value === "cancel") return;
+  event.preventDefault();
+  void saveMilestone();
+});
+$("milestone-save").addEventListener("click", () => void saveMilestone());
+$("milestone-search").addEventListener("input", (event) => {
+  milestone.search = event.target.value;
+  renderMilestone();
+});
+// Typed in by hand once, and it stops being rewritten from under the cursor.
+$("milestone-label").addEventListener("input", () => (milestone.edited = true));
+$("milestone-day").addEventListener("input", () => (milestone.dated = true));
 
 $("range-custom-go").addEventListener("click", () => {
   const from = $("range-from").value;

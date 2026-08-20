@@ -194,6 +194,16 @@ re-reading a library for it.
   The one exception is the pair of queries that list the hidden gear itself,
   which pass `hideGear: false` — a hidden row nobody can see is a hidden row
   nobody can restore.
+- **A milestone points at gear by key, never by name.** `Anchor.gear` holds a
+  `camera.key` / `lens.key` — or `photo.tc` for a converter — so the thing it
+  refers to survives a rename, a naming setting, and a second source spelling it
+  differently. `stats/aggregate.ts` → `gearCatalog` is the list the picker
+  offers and the list `POST /api/anchors` validates against; a key that is not
+  in it is refused rather than saved to fail quietly later. The list is
+  deliberately *not* scoped to a range, a start day or the exclusions: gear you
+  have hidden from the deck is still gear you bought. Old milestones carry no
+  category at all and must keep working — `coerceAnchor` degrades anything it
+  does not recognise to a plain dated label rather than dropping it.
 - A teleconverter is stored beside the lens (`photo.tc`), never inside its name.
   One lens is one row and one bar; the converter is a shade within it. The key
   is computed from the optics with the converter stripped, so bare and converted
@@ -211,7 +221,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 145 tests
+npm test          # 160 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```

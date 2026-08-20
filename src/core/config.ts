@@ -24,12 +24,40 @@ export interface SourceConfig {
  * Saved rather than typed in each time, because these are the dates a
  * photographer thinks in: "since I got the a9 III" is a more meaningful deck
  * than "2024", and it should be one click every time.
+ *
+ * Most milestones are about a piece of gear, so most of them point at one
+ * rather than describing it in prose. The pointer is a **key** — the same key
+ * the index groups frames by — so a body written three different ways across
+ * three sources is still the one thing you bought once.
  */
 export interface Anchor {
   id: string;
+  /** What the deck says. Drafted from the gear, then editable. */
   label: string;
   /** `YYYYMMDD`. */
   day: number;
+  /** `custom` is a milestone that is nothing but a date and a phrase. */
+  kind: AnchorKind;
+  /** On `bought` and `sold`; absent on `custom`. */
+  gear?: AnchorGear;
+}
+
+export type AnchorKind = "bought" | "sold" | "custom";
+
+/**
+ * The three things a milestone can be about.
+ *
+ * A teleconverter is an item of its own rather than part of the lens in front
+ * of it: buying a 1.4x is a purchase in its own right, and the index already
+ * keeps the two apart — the converter rides beside the lens in `photo.tc`,
+ * split off the name by `splitTeleconverter`.
+ */
+export type GearDimension = "camera" | "lens" | "teleconverter";
+
+export interface AnchorGear {
+  dimension: GearDimension;
+  /** A `camera.key` or a `lens.key`; for a converter, `photo.tc` verbatim. */
+  key: string;
 }
 
 /** Gear whose frames are left out of every count. */
@@ -196,15 +224,15 @@ function coerce(raw: unknown): AppConfig {
         .map((s) => defaultSource(s as Partial<SourceConfig> & { path: string }))
     : [];
 
+  const ids: string[] = [];
   const anchors = Array.isArray(r.anchors)
     ? r.anchors
-        .filter((a): a is Record<string, unknown> => typeof a === "object" && a !== null)
-        .map((a) => ({
-          id: typeof a.id === "string" && a.id !== "" ? a.id : makeKey(String(a.label ?? "anchor")),
-          label: String(a.label ?? "").trim().slice(0, 60),
-          day: Number(a.day),
-        }))
-        .filter((a) => a.label !== "" && isValidDay(a.day))
+        .map((a) => {
+          const anchor = coerceAnchor(a, ids);
+          if (anchor) ids.push(anchor.id);
+          return anchor;
+        })
+        .filter((a): a is Anchor => a !== null)
         .sort((a, b) => a.day - b.day)
     : [];
 
@@ -259,6 +287,78 @@ export function findSource(cfg: AppConfig, key: string): SourceConfig | undefine
 }
 
 /** Anchors are addressed by id in a URL, so the id has to survive a rename. */
-export function makeAnchor(label: string, day: number, taken: readonly string[]): Anchor {
-  return { id: makeKey(label, taken), label: label.trim().slice(0, 60), day };
+export function makeAnchor(
+  label: string,
+  day: number,
+  taken: readonly string[],
+  about: { kind?: AnchorKind; gear?: AnchorGear | null } = {},
+): Anchor {
+  const trimmed = label.trim().slice(0, 60);
+  const anchor: Anchor = { id: makeKey(trimmed, taken), label: trimmed, day, kind: "custom" };
+
+  // A category with nothing behind it is not a category. `bought` without gear
+  // would claim a milestone knows which camera it means, and then no slide
+  // could ever find one.
+  const kind = about.kind ?? "custom";
+  return kind !== "custom" && about.gear ? { ...anchor, kind, gear: about.gear } : anchor;
+}
+
+const ANCHOR_KINDS: readonly AnchorKind[] = ["bought", "sold", "custom"];
+const GEAR_DIMENSIONS: readonly GearDimension[] = ["camera", "lens", "teleconverter"];
+
+/**
+ * A milestone read back off disk, or off a request.
+ *
+ * Anything unrecognised degrades to a plain dated label rather than being
+ * thrown away: a config written before categories existed is nothing but
+ * those, and they are perfectly good milestones.
+ */
+export function coerceAnchor(value: unknown, taken: readonly string[] = []): Anchor | null {
+  if (typeof value !== "object" || value === null) return null;
+  const raw = value as Record<string, unknown>;
+
+  const label = String(raw.label ?? "").trim().slice(0, 60);
+  const day = Number(raw.day);
+  if (label === "" || !isValidDay(day)) return null;
+
+  const id = typeof raw.id === "string" && raw.id !== "" ? raw.id : makeKey(label, taken);
+  const kind = ANCHOR_KINDS.find((k) => k === raw.kind) ?? "custom";
+  const gear = coerceAnchorGear(raw.gear);
+
+  return { ...makeAnchor(label, day, [], { kind, gear }), id };
+}
+
+export function coerceAnchorGear(value: unknown): AnchorGear | null {
+  if (typeof value !== "object" || value === null) return null;
+  const raw = value as Record<string, unknown>;
+
+  const dimension = GEAR_DIMENSIONS.find((d) => d === raw.dimension);
+  const key = typeof raw.key === "string" ? raw.key.trim() : "";
+  return dimension && key !== "" ? { dimension, key } : null;
+}
+
+/**
+ * The milestone as a *range* says it: "Since the a9 III", never "Since Bought
+ * the a9 III".
+ *
+ * Only the verb the draft put there is taken off, and only while it is still
+ * there — a label the reader has rewritten is printed exactly as they wrote it,
+ * which is the whole point of the field being editable.
+ */
+export function anchorRangeLabel(anchor: Anchor): string {
+  if (anchor.kind === "bought") return anchor.label.replace(/^bought /i, "");
+  if (anchor.kind === "sold") return anchor.label.replace(/^sold /i, "selling ");
+  return anchor.label;
+}
+
+/**
+ * The label a categorised milestone starts life with.
+ *
+ * A first draft rather than a name: it is put in the field the reader is
+ * already looking at, and whatever they leave there is what the deck says.
+ */
+export function draftAnchorLabel(kind: AnchorKind, gearLabel: string): string {
+  if (kind === "bought") return `Bought the ${gearLabel}`;
+  if (kind === "sold") return `Sold the ${gearLabel}`;
+  return gearLabel;
 }

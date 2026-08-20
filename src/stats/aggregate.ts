@@ -14,6 +14,7 @@ import {
 } from "../core/units.ts";
 import { addDays, dayParts, daysBetween, formatDay, makeDay, todayDay } from "../core/time.ts";
 import { describeCamera, describeLens, DEFAULT_NAMING, type NamingOptions } from "../core/gear.ts";
+import type { GearDimension } from "../core/config.ts";
 import { formatHour, sunTimes } from "../core/sun.ts";
 
 /**
@@ -1251,6 +1252,107 @@ export function availableMonths(
     floorDay ?? 0,
     limit,
   );
+}
+
+// ----------------------------------------------------------- catalog ------
+
+/** One thing you own, as the milestone picker lists it. */
+export interface GearItem {
+  dimension: GearDimension;
+  /** What a milestone points at. Never shown, never typed. */
+  key: string;
+  label: string;
+  shots: number;
+  firstDay: number | null;
+  lastDay: number | null;
+  /** For a converter, the glass it has been on — the only way to tell two apart. */
+  note?: string;
+}
+
+export interface GearCatalog {
+  cameras: GearItem[];
+  lenses: GearItem[];
+  /** Separate from the lenses on purpose: buying a 1.4x is its own purchase. */
+  teleconverters: GearItem[];
+}
+
+/**
+ * Everything the library has ever seen, one row per thing.
+ *
+ * Deliberately not scoped to a range, a start day or the exclusions: this is
+ * the list of gear you have owned, and a milestone about a camera hidden from
+ * the deck is still a milestone. It is also why the list can be short enough to
+ * scroll — the keys have already collapsed every spelling of a name into one.
+ */
+export function gearCatalog(db: Db, naming: NamingOptions = DEFAULT_NAMING): GearCatalog {
+  const shot = "p.is_primary = 1 AND p.present = 1";
+  const rows = (table: "camera" | "lens") =>
+    db.allAs<GearRow>(
+      `SELECT g.key AS key, g.label AS label, g.make AS make, g.model AS model,
+              g.raw_make AS raw_make, g.raw_model AS raw_model,
+              COUNT(*) AS n, MIN(p.day) AS first, MAX(p.day) AS last
+       FROM photo p JOIN ${table} g ON g.id = p.${table}_id
+       WHERE ${shot} GROUP BY g.id ORDER BY n DESC, g.label`,
+    );
+
+  const item = (
+    dimension: GearDimension,
+    row: GearRow,
+    label: string,
+  ): GearItem => ({
+    dimension,
+    key: row.key,
+    label,
+    shots: row.n,
+    firstDay: row.first ?? null,
+    lastDay: row.last ?? null,
+  });
+
+  const cameras = rows("camera").map((row) =>
+    item("camera", row, describeCamera(row.raw_make ?? row.make, row.raw_model ?? row.model, naming) || row.label),
+  );
+  const lenses = rows("lens").map((row) =>
+    item("lens", row, describeLens(row.raw_make ?? row.make, row.raw_model ?? row.model, naming) || row.label),
+  );
+
+  // Which glass each converter has been behind. A 1.4x is a 1.4x in the data
+  // whoever made it, so the lenses it has been on are what tells one from
+  // another on a list.
+  const behind = new Map<string, string[]>();
+  for (const row of db.allAs<{ tc: string; key: string; make: string; model: string }>(
+    `SELECT p.tc AS tc, l.key AS key,
+            COALESCE(l.raw_make, l.make) AS make, COALESCE(l.raw_model, l.model) AS model,
+            COUNT(*) AS n
+     FROM photo p JOIN lens l ON l.id = p.lens_id
+     WHERE ${shot} AND p.tc IS NOT NULL GROUP BY p.tc, l.id ORDER BY n DESC`,
+  )) {
+    const names = behind.get(row.tc) ?? [];
+    names.push(describeLens(row.make, row.model, naming));
+    behind.set(row.tc, names);
+  }
+
+  const teleconverters = db
+    .allAs<{ tc: string; n: number; first: number | null; last: number | null }>(
+      `SELECT p.tc AS tc, COUNT(*) AS n, MIN(p.day) AS first, MAX(p.day) AS last
+       FROM photo p WHERE ${shot} AND p.tc IS NOT NULL GROUP BY p.tc ORDER BY n DESC`,
+    )
+    .map((row) => {
+      const names = behind.get(row.tc) ?? [];
+      const listed = names.slice(0, 2).join(" and ");
+      return {
+        dimension: "teleconverter" as const,
+        key: row.tc,
+        label: `${row.tc} teleconverter`,
+        shots: row.n,
+        firstDay: row.first ?? null,
+        lastDay: row.last ?? null,
+        ...(listed === ""
+          ? {}
+          : { note: names.length > 2 ? `On the ${listed}, and ${names.length - 2} more` : `On the ${listed}` }),
+      };
+    });
+
+  return { cameras, lenses, teleconverters };
 }
 
 /** Used by the day-detail line under a heatmap cell. */

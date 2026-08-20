@@ -7,7 +7,7 @@ import { Db } from "../src/core/db.ts";
 import { defaultConfig, defaultSource, type AppConfig } from "../src/core/config.ts";
 import { indexSource, indexOverview } from "../src/index/source.ts";
 import { rebuildPrimaries } from "../src/index/dedupe.ts";
-import { computeStats } from "../src/stats/aggregate.ts";
+import { computeStats, gearCatalog } from "../src/stats/aggregate.ts";
 import { buildDeck } from "../src/stats/slides.ts";
 import { resolveRange } from "../src/stats/range.ts";
 import { EXPECTED, makeFixtures } from "../tools/make-fixtures.ts";
@@ -173,6 +173,58 @@ describe("teleconverters", () => {
 
   test("the lens count is unchanged by it", () => {
     assert.equal(statsFor(db).totals.lenses, EXPECTED.lenses);
+  });
+});
+
+/**
+ * What the milestone picker offers. One row per thing you own, whatever it has
+ * been called across sources — and a converter as an item of its own, because
+ * buying a 1.4x is its own purchase.
+ */
+describe("the gear catalog", () => {
+  test("lists every body and every lens exactly once", () => {
+    const catalog = gearCatalog(db);
+
+    assert.equal(catalog.cameras.length, EXPECTED.cameras);
+    assert.equal(catalog.lenses.length, EXPECTED.lenses);
+
+    const keys = [...catalog.cameras, ...catalog.lenses].map((item) => item.key);
+    assert.equal(new Set(keys).size, keys.length, "a key appeared twice");
+  });
+
+  test("a teleconverter is an item of its own, and says what it was on", () => {
+    const catalog = gearCatalog(db);
+
+    assert.equal(catalog.teleconverters.length, 1);
+    const [converter] = catalog.teleconverters;
+    assert.equal(converter?.key, "1.4x");
+    assert.equal(converter?.shots, EXPECTED.teleconverted);
+    assert.match(String(converter?.note), /70-200/);
+
+    // And it is not also a lens: the glass in front of it is one row, whether
+    // the converter was on the back of it or not.
+    assert.equal(catalog.lenses.filter((lens) => lens.key.includes("14x")).length, 0);
+  });
+
+  test("names follow the reader's naming options", () => {
+    const short = gearCatalog(db, { lensStyle: "short", showMake: true });
+    const written = gearCatalog(db, { lensStyle: "full", showMake: true });
+
+    assert.ok(short.lenses.some((lens) => lens.label === EXPECTED.topLens));
+    assert.ok(written.lenses.some((lens) => lens.label.includes("f/2.8")));
+
+    // The keys are the same list either way — a display setting must never
+    // move what a milestone points at.
+    assert.deepEqual(
+      short.lenses.map((lens) => lens.key),
+      written.lenses.map((lens) => lens.key),
+    );
+  });
+
+  test("says when each thing was first and last used", () => {
+    const camera = gearCatalog(db).cameras.find((item) => item.label === EXPECTED.topCamera);
+    assert.ok(camera);
+    assert.ok(camera.firstDay && camera.lastDay && camera.firstDay <= camera.lastDay);
   });
 });
 

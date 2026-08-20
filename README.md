@@ -115,6 +115,17 @@ Two settings deal with that, and both are saved:
   "Moved to Lisbon"). Each becomes a one-click **Since …** range of its own, and
   any of them can be promoted to the library start date with one button.
 
+  **Add milestone** opens a picker rather than an empty text box. Buying and
+  selling a camera or a lens are categories, and the thing itself is chosen from
+  the gear already in your library — one entry per piece of kit however many
+  ways your files have spelled it, teleconverters listed separately from the
+  glass they go behind, and anything you have already recorded marked as such.
+  The first frame on a body is offered as the day it arrived, and the last as
+  the day it left; both are a starting point, not an answer. The name is drafted
+  for you ("Bought the a9 III") and is yours to rewrite — it is what the deck
+  prints. **Something else** is still a date and a phrase, for everything that
+  is not gear.
+
 ## The deck
 
 Twenty-one slides at most, and only the ones that have something to say — no GPS
