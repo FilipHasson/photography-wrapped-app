@@ -97,11 +97,20 @@
           <div class="panel-head">
             <h2>Milestones</h2>
             <div class="panel-actions">
-              <span class="hint">Dates worth measuring from — they become ranges of their own</span>
+              <button id="anchor-open" class="ghost" type="button">Add milestone</button>
+              <button id="milestones-toggle" class="ghost" type="button" aria-expanded="false">
+                Show
+              </button>
             </div>
           </div>
 
-          <div class="milestones">
+          <div id="milestones" class="milestones" hidden>
+            <p class="hint milestones-intro">
+              Dates worth measuring from — each becomes a range of its own. Buying and selling a
+              camera or a lens are picked from the gear in your library, so a milestone knows which
+              body it means rather than just how you spelled it.
+            </p>
+
             <div class="setting start-day">
               <span class="setting-label">My library starts on</span>
               <input id="setting-start" type="date" />
@@ -113,14 +122,6 @@
             </div>
 
             <div id="anchors" class="anchor-list"></div>
-
-            <div class="anchor-add">
-              <button id="anchor-open" class="ghost" type="button">Add milestone</button>
-              <span class="hint">
-                Buying and selling a camera or a lens are picked from the gear in your library, so a
-                milestone knows which body it means rather than just how you spelled it.
-              </span>
-            </div>
           </div>
         </section>
 

@@ -334,11 +334,30 @@ const isoDay = (day) =>
     ? `${Math.floor(day / 10000)}-${String(Math.floor(day / 100) % 100).padStart(2, "0")}-${String(day % 100).padStart(2, "0")}`
     : "";
 
+/**
+ * The milestones section, folded away until it is wanted.
+ *
+ * Most people never set one, and an empty list with a date field under it is a
+ * screenful of nothing on the page they came to build a deck from. Adding one
+ * stays a single click either way: the button is in the panel head rather than
+ * at the foot of the list, so it is visible whether or not the section is.
+ */
+function showMilestones(open) {
+  $("milestones").hidden = !open;
+  $("milestones-toggle").textContent = open ? "Hide" : "Show";
+  $("milestones-toggle").setAttribute("aria-expanded", open ? "true" : "false");
+}
+
 function renderMilestones() {
   const config = store.state.config;
   $("setting-start").value = isoDay(config.startDay);
 
   const anchors = config.anchors ?? [];
+  // The count belongs on the button when the list behind it is folded away —
+  // "Show" alone gives no reason to.
+  const toggle = $("milestones-toggle");
+  const saved = anchors.length > 0 ? ` (${num(anchors.length)})` : "";
+  toggle.textContent = `${$("milestones").hidden ? "Show" : "Hide"}${saved}`;
   $("anchors").replaceChildren(
     ...(anchors.length === 0
       ? [
@@ -945,7 +964,17 @@ $("location-save").addEventListener("click", () => {
 $("setting-start").addEventListener("change", (event) => void saveStartDay(event.target.value));
 $("setting-start-clear").addEventListener("click", () => void saveStartDay(""));
 
-$("anchor-open").addEventListener("click", () => void openMilestone());
+$("milestones-toggle").addEventListener("click", () => {
+  showMilestones($("milestones").hidden);
+  renderMilestones();
+});
+$("anchor-open").addEventListener("click", () => {
+  // Opening the modal from a folded section and leaving it folded would hide
+  // the thing that was just added.
+  showMilestones(true);
+  renderMilestones();
+  void openMilestone();
+});
 // A `method="dialog"` form closes on Enter, which in a modal full of text
 // fields would throw the milestone away mid-sentence. Enter saves it instead;
 // only the Close button still closes.

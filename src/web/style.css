@@ -755,6 +755,15 @@ main {
   gap: 6px;
   flex-wrap: wrap;
 }
+/* Folded away until asked for — and a class that sets a display has to say so
+   again, or [hidden] never wins. */
+.milestones[hidden] {
+  display: none;
+}
+.milestones-intro {
+  margin: 0;
+  max-width: 78ch;
+}
 .anchor-tag {
   margin-left: 8px;
   padding: 1px 7px;
@@ -762,17 +771,6 @@ main {
   border-radius: 999px;
   font-size: 0.72rem;
   text-transform: lowercase;
-}
-.anchor-add {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.anchor-add .hint {
-  flex: 1;
-  min-width: 260px;
-  max-width: 62ch;
 }
 
 /* The picker's footer hint is a filesystem path; this one is a sentence. */
