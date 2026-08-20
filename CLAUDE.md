@@ -231,8 +231,11 @@ re-reading a library for it.
   same collision rule the column labels use, and on the wall of days the year
   labels claim their space first: knowing which year you are looking at comes
   before knowing which week a lens arrived. Drawing them at all is a slide
-  setting (`marks`), built by one function for all three slides so they cannot
-  disagree — the same reason `yearBasisSetting` exists.
+  setting — `marks.timeline`, `marks.streaks`, `marks.months` — resolved in one
+  place, `resolveMarks`, and built by one function so three chips cannot drift
+  apart in wording. The *defaults* differ deliberately: a mark costs month by
+  month nothing and costs the wall of days a square, so the months start
+  annotated and the wall starts clean.
 - **Only months holding photographs are rows** on `drawMonths`, so the axis is a
   run of months rather than a ruler: two years can be neighbours. `monthRow`
   puts a day that falls in a month nobody shot on the boundary between the two
@@ -255,7 +258,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 207 tests
+npm test          # 209 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```

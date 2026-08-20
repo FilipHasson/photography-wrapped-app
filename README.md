@@ -163,8 +163,10 @@ A few things the slides do rather than say:
   hairline on gear over time, on month by month, and a ringed day on the wall of
   streaks — so a series appearing, or three months of silence, has a reason
   beside it rather than looking like missing data. Each is named where there is
-  room and hovers for the rest, and a setting on each of those three slides
-  turns them off when you want the shape without the commentary.
+  room and hovers for the rest. Each of those three slides has its own switch,
+  and they disagree out of the box on purpose: month by month has a strip down
+  its side doing nothing else, so it is annotated, while the wall of streaks
+  loses a square for every mark drawn on it and starts clean.
 - **Month by month runs down the page, not across it.** A library that reaches
   back years is ninety-odd months, and as columns that is a picket fence with a
   label every twelfth post. A row each gives the years a margin to read down and

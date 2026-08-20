@@ -3,6 +3,7 @@ import type {
   DeckStats,
   DayCount,
   Debut,
+  MarkToggles,
   Milestone,
   Place,
   Series,
@@ -276,8 +277,8 @@ function markLabel(milestone: Milestone): string {
  * a slide setting like the rest: someone reading the shape of a year does not
  * always want to be told why it has that shape.
  */
-function marksFor(stats: DeckStats): Mark[] | undefined {
-  if (stats.milestones.length === 0 || !stats.showMarks) return undefined;
+function marksFor(stats: DeckStats, slide: keyof MarkToggles): Mark[] | undefined {
+  if (stats.milestones.length === 0 || !stats.showMarks[slide]) return undefined;
   return stats.milestones.map((milestone) => ({
     day: milestone.day,
     label: markLabel(milestone),
@@ -490,14 +491,14 @@ function settingsOf(...offered: Array<SlideSetting | null>): { settings?: SlideS
   return settings.length > 0 ? { settings } : {};
 }
 
-function marksSetting(stats: DeckStats): SlideSetting | null {
+function marksSetting(stats: DeckStats, slide: keyof MarkToggles): SlideSetting | null {
   const count = stats.milestones.length;
   if (count === 0) return null;
 
   return {
-    id: "marks",
+    id: `marks.${slide}`,
     label: "Milestones",
-    value: stats.showMarks ? "on" : "off",
+    value: stats.showMarks[slide] ? "on" : "off",
     options: [
       { value: "on", label: "Shown", note: `${fmtInt(count)} in this range` },
       { value: "off", label: "Hidden" },
@@ -996,8 +997,8 @@ function calendarSlide(stats: DeckStats): Slide | null {
     id: "calendar",
     title: "Month by month",
     subtitle: "The long view",
-    marks: marksFor(stats),
-    ...settingsOf(marksSetting(stats)),
+    marks: marksFor(stats, "months"),
+    ...settingsOf(marksSetting(stats, "months")),
     headline,
     note: daysOutNote(stats),
     months: stats.monthly,
@@ -1047,7 +1048,7 @@ function streaksSlide(stats: DeckStats): Slide | null {
     id: "streaks",
     title: "Streaks",
     subtitle: "Every day in the range, shot or not",
-    marks: marksFor(stats),
+    marks: marksFor(stats, "streaks"),
     headline,
     // "330 of 1,090 days" said nothing about which number was which.
     note: daysOutNote(stats),
@@ -1064,7 +1065,7 @@ function streaksSlide(stats: DeckStats): Slide | null {
           }
         : null,
       years.length > 1 ? yearBasisSetting(stats) : null,
-      marksSetting(stats),
+      marksSetting(stats, "streaks"),
     ),
     days: daily,
     from: range.from,
@@ -1124,13 +1125,13 @@ function timelineSlide(stats: DeckStats): Slide | null {
     id: "timeline",
     title: "Gear over time",
     subtitle: "What was on the camera, month by month",
-    marks: marksFor(stats),
+    marks: marksFor(stats, "timeline"),
     headline:
       leader && (leader.values[lastIndex] ?? 0) > 0
         ? `${leader.label} closed out ${formatYearMonth(timeline.months[lastIndex] as number)}`
         : "How your kit rotated",
     note: pooled ? `Your ${named} most-used lenses, the rest pooled` : "Every lens you used",
-    ...settingsOf(rowsChoice, marksSetting(stats)),
+    ...settingsOf(rowsChoice, marksSetting(stats, "timeline")),
     months: timeline.months,
     series: timeline.series,
     table: tableOf(

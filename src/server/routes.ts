@@ -28,6 +28,7 @@ import {
   namingExamples,
   type DaylightMode,
   type GearItem,
+  type MarkToggles,
   type RowLimits,
   type WeekStart,
 } from "../stats/aggregate.ts";
@@ -306,6 +307,15 @@ export async function handleApi(
         if (Number.isFinite(asked) && asked >= 1) limits[field] = Math.floor(asked);
       }
 
+      // `marks.streaks=on`: whether one slide draws the milestones. One switch
+      // per slide, because a mark costs a month-by-month row nothing and costs
+      // the wall of days a square.
+      const marks: MarkToggles = {};
+      for (const slide of ["timeline", "streaks", "months"] as const) {
+        const asked = url.searchParams.get(`marks.${slide}`);
+        if (asked === "on" || asked === "off") marks[slide] = asked === "on";
+      }
+
       const asWeekStart = url.searchParams.get("weekStart");
       const weekStart: WeekStart =
         asWeekStart === "sun" || asWeekStart === "sat" ? asWeekStart : "mon";
@@ -330,7 +340,7 @@ export async function handleApi(
         // The saved milestones. Which of them the deck can use is decided
         // there — a mark has to land inside what a slide is drawing.
         anchors: ctx.config.anchors,
-        showMarks: url.searchParams.get("marks") !== "off",
+        marks,
       });
       json(res, 200, { range, deck: buildDeck(stats, ctx.config.ownerName) });
       return true;

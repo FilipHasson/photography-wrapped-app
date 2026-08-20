@@ -82,6 +82,32 @@ export function resolveLimits(limits: RowLimits = {}): Required<RowLimits> {
   };
 }
 
+/**
+ * Which slides draw the reader's milestones.
+ *
+ * One switch per slide rather than one for the deck, because the answer is
+ * genuinely different per chart. Month by month is a row per month with a strip
+ * down the side doing nothing else, so a mark costs nothing and explains a
+ * cliff; the wall of streaks is dense by design and a ring on a day is the
+ * first thing to get in the way of what that slide is for. So the months are
+ * annotated out of the box and the wall is not.
+ */
+export interface MarkToggles {
+  timeline?: boolean;
+  streaks?: boolean;
+  months?: boolean;
+}
+
+export const DEFAULT_MARKS = { timeline: true, streaks: false, months: true } as const;
+
+export function resolveMarks(marks: MarkToggles = {}): Required<MarkToggles> {
+  return {
+    timeline: marks.timeline ?? DEFAULT_MARKS.timeline,
+    streaks: marks.streaks ?? DEFAULT_MARKS.streaks,
+    months: marks.months ?? DEFAULT_MARKS.months,
+  };
+}
+
 /** Below this the calendar heatmap gives way to a monthly timeline. */
 export const HEATMAP_MAX_DAYS = 400;
 
@@ -363,8 +389,8 @@ export interface DeckStats {
   /** How the week slide is laid out and coloured. */
   weekStart: WeekStart;
   markWeekend: boolean;
-  /** Whether the time slides are annotated with the reader's milestones. */
-  showMarks: boolean;
+  /** Which time slides are annotated with the reader's milestones. */
+  showMarks: Required<MarkToggles>;
   /** How the wall of days is laid out. */
   wall: WallLayout;
   /** The hours counted as daylight, and where that came from. */
@@ -406,8 +432,8 @@ export interface StatsOptions {
    * a mark on a chart has to be somewhere the chart is drawing.
    */
   anchors?: readonly Anchor[];
-  /** Whether those milestones are drawn on the slides. On unless turned off. */
-  showMarks?: boolean;
+  /** Which slides draw those milestones. Each has its own answer. */
+  marks?: MarkToggles;
 }
 
 /**
@@ -1195,7 +1221,7 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
     },
     weekStart: options.weekStart ?? "mon",
     markWeekend: options.markWeekend ?? false,
-    showMarks: options.showMarks !== false,
+    showMarks: resolveMarks(options.marks),
     wall: options.wall ?? "packed",
     daylight: resolveDaylight(
       options.daylight,

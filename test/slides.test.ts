@@ -1,7 +1,13 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { buildDeck, fmtSpan, type Slide } from "../src/stats/slides.ts";
-import { resolveLimits, type DeckStats, type Milestone, type Tally } from "../src/stats/aggregate.ts";
+import {
+  resolveLimits,
+  resolveMarks,
+  type DeckStats,
+  type Milestone,
+  type Tally,
+} from "../src/stats/aggregate.ts";
 import { resolveRange } from "../src/stats/range.ts";
 
 /**
@@ -46,7 +52,7 @@ function statsWith(overrides: Partial<DeckStats>): DeckStats {
     busiestDay: null, longestStreak: null, longestGap: null,
     places: [], placesKnown: 0, debuts: [], milestones: [], burst: null,
     years: [], yearBasis: "anchor", location: null, home: null,
-    weekStart: "mon", markWeekend: false, showMarks: true, wall: "packed",
+    weekStart: "mon", markWeekend: false, showMarks: resolveMarks(), wall: "packed",
     culling: { picked: 0, rejected: 0, unflagged: 0, removed: 0, removedRejected: 0, watchingSince: null },
     daylight: { mode: "06-18", sunrise: 6, sunset: 18, source: "06:00 to 18:00" },
     daylightHours: { sunrise: 6, sunset: 18 },
@@ -383,6 +389,9 @@ describe("milestones on the charts", () => {
     buildDeck(
       statsWith({
         milestones: KIT,
+        // What is drawn where is the next block's business; this one is about
+        // what a mark says, so every slide that can carry one does.
+        showMarks: resolveMarks({ streaks: true }),
         daily,
         monthly: [
           { ym: 202501, shots: 60 },
@@ -419,7 +428,8 @@ describe("milestones on the charts", () => {
   });
 
   test("a slide with no milestones carries none", () => {
-    assert.equal(findSlide(buildDeck(statsWith({ daily })).slides, "streaks")?.marks, undefined);
+    const bare = statsWith({ daily, showMarks: resolveMarks({ streaks: true }) });
+    assert.equal(findSlide(buildDeck(bare).slides, "streaks")?.marks, undefined);
   });
 });
 
@@ -499,11 +509,16 @@ describe("spans of time", () => {
   });
 });
 
-describe("turning the milestones off", () => {
+/**
+ * One switch per slide, and they disagree on purpose: month by month has a
+ * strip down its side doing nothing else, and the wall of days has a square to
+ * lose for every mark drawn on it.
+ */
+describe("which slides draw the milestones", () => {
   const daily = Array.from({ length: 20 }, (_, i) => ({ day: 20250101 + i, shots: 5 }));
   const base = {
-    // Long enough that the day grid gives way to month by month, which is the one
-    // of the two that draws marks.
+    // Long enough that the day grid gives way to month by month, which is the
+    // one of the two that draws marks.
     range: resolveRange({ kind: "all" }, { firstDay: 20240101, lastDay: 20260630 }),
     milestones: KIT,
     busiestDay: { day: 20250115, shots: 30 },
@@ -523,40 +538,53 @@ describe("turning the milestones off", () => {
       ],
     },
   };
-  const annotated = ["timeline", "streaks", "calendar"];
 
-  test("is offered on every slide that can draw them", () => {
-    const slides = buildDeck(statsWith(base)).slides;
-    for (const id of annotated) {
-      const setting = findSlide(slides, id)?.settings?.find((s) => s.id === "marks");
-      assert.ok(setting, `${id} cannot turn its milestones off`);
-      assert.equal(setting.value, "on");
-      assert.equal(setting.options[0]?.note, "5 in this range");
+  const slides = (marks = {}) => buildDeck(statsWith({ ...base, showMarks: resolveMarks(marks) })).slides;
+  const marksOn = (id: string, marks = {}) => (findSlide(slides(marks), id)?.marks?.length ?? 0) > 0;
+  const setting = (id: string, marks = {}) =>
+    findSlide(slides(marks), id)?.settings?.find((s) => s.id.startsWith("marks."));
+
+  test("month by month is marked out of the box and the wall of days is not", () => {
+    assert.equal(marksOn("calendar"), true);
+    assert.equal(marksOn("timeline"), true);
+    assert.equal(marksOn("streaks"), false);
+  });
+
+  test("each carries its own switch, named for itself", () => {
+    assert.equal(setting("calendar")?.id, "marks.months");
+    assert.equal(setting("streaks")?.id, "marks.streaks");
+    assert.equal(setting("timeline")?.id, "marks.timeline");
+
+    // And each says where it currently stands rather than where the deck does.
+    assert.equal(setting("calendar")?.value, "on");
+    assert.equal(setting("streaks")?.value, "off");
+    assert.equal(setting("streaks")?.options[0]?.note, "5 in this range");
+  });
+
+  test("turning one off leaves the others alone", () => {
+    assert.equal(marksOn("calendar", { months: false }), false);
+    assert.equal(marksOn("timeline", { months: false }), true);
+    assert.equal(marksOn("streaks", { streaks: true }), true);
+    assert.equal(marksOn("calendar", { streaks: true }), true);
+  });
+
+  test("the way back stays on the slide it was turned off from", () => {
+    assert.equal(setting("calendar", { months: false })?.value, "off");
+    assert.equal(setting("streaks", { streaks: true })?.value, "on");
+  });
+
+  test("no switch at all when there is nothing to hide", () => {
+    const bare = buildDeck(statsWith({ ...base, milestones: [] })).slides;
+    for (const id of ["calendar", "streaks", "timeline"]) {
+      assert.equal(findSlide(bare, id)?.settings?.some((s) => s.id.startsWith("marks.")) ?? false, false);
     }
   });
 
-  test("takes them off every slide at once", () => {
-    const slides = buildDeck(statsWith({ ...base, showMarks: false })).slides;
-    for (const id of annotated) {
-      const slide = findSlide(slides, id);
-      assert.equal(slide?.marks, undefined, `${id} is still marked`);
-      // The way back has to stay on the slide it was turned off from.
-      assert.equal(slide?.settings?.find((s) => s.id === "marks")?.value, "off");
-    }
-  });
-
-  test("is not offered when there is nothing to hide", () => {
-    const slides = buildDeck(statsWith({ ...base, milestones: [] })).slides;
-    for (const id of annotated) {
-      assert.equal(findSlide(slides, id)?.settings?.some((s) => s.id === "marks") ?? false, false);
-    }
-  });
-
-  test("leaves the settings a slide already had alone", () => {
+  test("the settings a slide already had are kept, in order", () => {
     const slide = findSlide(buildDeck(statsWith({ ...base, years: YEARS })).slides, "streaks");
     assert.deepEqual(
       slide?.settings?.map((setting) => setting.id),
-      ["wall", "yearBasis", "marks"],
+      ["wall", "yearBasis", "marks.streaks"],
     );
   });
 });
