@@ -221,7 +221,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 160 tests
+npm test          # 164 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```
@@ -259,3 +259,8 @@ one is the bug that produced the first round of feedback on this tool.
   header check in `server/server.ts`. Don't relax either.
 - `src/web/*.js` carries `// @ts-check` for the editor, but is not in the
   `tsconfig` program — same convention as the sibling `can-i-format` project.
+- Draw in slide coordinates, never inside a `<g transform>`. `test/render.test.ts`
+  reads x/y/width/height straight off the elements to check nothing leaves the
+  frame, and a transform hides the real position from it — a shape that has been
+  moved somewhere invisible would still pass. The thumbs on the culling slide
+  turn over by mirroring their unit box into absolute points, not by a `scale`.

@@ -756,6 +756,211 @@ function drawColumns(root, plot, slide, theme, L) {
 }
 
 /**
+ * A thumb, up or down.
+ *
+ * Drawn in slide coordinates rather than as a transformed group, on purpose:
+ * `test/render.test.ts` checks every x and y it can see against the frame, and
+ * a transform would hide the real position from it. Turning the thumb over is a
+ * flip of the unit v axis, which is exactly how the two gestures differ.
+ */
+function thumb(root, x, y, size, up, fill, label) {
+  const s = size / 24;
+  const px = (u) => x + u * s;
+  const py = (v) => y + (up ? v : 24 - v) * s;
+
+  const block = (u0, v0, u1, v1, r) => {
+    const top = Math.min(py(v0), py(v1));
+    return el("rect", {
+      x: px(u0),
+      y: top,
+      width: (u1 - u0) * s,
+      height: Math.abs(py(v1) - py(v0)),
+      rx: r * s,
+      fill,
+    });
+  };
+
+  const hand = el("g", {});
+  // The cuff, the fist, and the thumb itself. Three shapes rather than one
+  // outline: a flat icon reads at 40px, and an outline does not.
+  hand.append(block(1.5, 10.5, 6.2, 22.5, 1.3));
+  hand.append(block(7.6, 10.5, 21.2, 22.5, 2.4));
+  hand.append(
+    el("path", {
+      d:
+        `M${px(9.6)} ${py(13)}` +
+        `L${px(10.3)} ${py(6.4)}` +
+        `C${px(10.5)} ${py(3.2)} ${px(14.6)} ${py(3.2)} ${px(14.6)} ${py(6.6)}` +
+        `L${px(14.6)} ${py(13)}Z`,
+      fill,
+    }),
+  );
+
+  root.append(label ? titled(hand, label) : hand);
+}
+
+/**
+ * Two judgements and the pile nobody judged.
+ *
+ * Culling is not a distribution: nobody needs to measure a pick against an
+ * axis, they need to see which way the library went. So the two verdicts are
+ * cards with the gesture that made them, and the frames that never got a verdict
+ * sit underneath in a card of their own — the biggest number of the three, and
+ * the one that would have flattened a chart into a single spike.
+ */
+function drawVerdict(root, plot, slide, theme, L) {
+  const gap = Math.max(12, L.value * 0.7);
+  const cardW = (plot.w - gap) / 2;
+
+  /**
+   * The cards are sized to their contents, then grown or shrunk once to use the
+   * height they have been given, then set in the middle of it.
+   *
+   * Both halves of that matter. A card stretched to fill a story is mostly
+   * nothing and reads as a mistake; a card designed for a story is a stamp on a
+   * 16:9 frame. So the type is designed against the card's *width*, scaled by
+   * whatever the height allows, and capped again on width afterwards so a tall
+   * slide cannot inflate a number past the card holding it.
+   */
+  const design = (scale) => {
+    // Whole pixels: type is crisper for it, and a font size carrying sixteen
+    // decimal places is a measurement nobody can reason about.
+    const px = (value) => Math.round(value);
+    const glyph = px(Math.min(cardW * 0.26 * scale, cardW * 0.4));
+    const valueSize = px(Math.min(Math.min(L.tileValue, cardW * 0.26) * scale, cardW * 0.32));
+    const labelSize = px(Math.min(L.value * scale, L.value * 1.6));
+    const noteSize = px(Math.min(L.axis * scale, L.axis * 1.5));
+    const padY = px(Math.max(L.value, glyph * 0.45) * scale);
+    // The pile nobody judged is the biggest of the three numbers and the least
+    // interesting, so it is set below the verdicts rather than above them.
+    const restValue = px(Math.min(valueSize * 0.8, cardW * 0.3));
+    const restLabel = px(Math.min(labelSize, restValue * 0.42));
+    const restNote = px(Math.min(noteSize, restValue * 0.34));
+
+    const cardH = glyph + valueSize * 0.95 + labelSize * 1.6 + noteSize * 1.6 + padY * 2;
+    const restH =
+      Math.max(restValue * 1.15, restLabel * 1.5 + restNote * 1.5) + L.value * 1.1 * scale;
+
+    return {
+      glyph, valueSize, labelSize, noteSize, padY,
+      restValue, restLabel, restNote,
+      cardH, restH, total: cardH + gap + restH,
+    };
+  };
+
+  // Grown at most to a card that is half the slide: past that the numbers stop
+  // being a fact and start being a poster.
+  let box = design(Math.min(plot.h / design(1).total, 1.8));
+  // The width caps can leave the block shorter than asked for, never taller —
+  // but a second pass costs nothing and guarantees it fits whatever the shape.
+  if (box.total > plot.h) box = design((plot.h / box.total) * Math.min(plot.h / design(1).total, 1.8));
+
+  const { glyph, valueSize, labelSize, noteSize, padY, restValue, restLabel, restNote, cardH, restH } = box;
+  const top = plot.y + Math.max(0, (plot.h - (cardH + gap + restH)) / 2);
+
+  // Blue for a keeper and red for a reject — the same two the streak wall uses
+  // for a day out and a day of silence. Never the only thing saying which is
+  // which: each card carries the gesture and the word as well.
+  const colours = { up: theme.series[0], down: theme.series[7] };
+
+  slide.cards.forEach((card, i) => {
+    const x = plot.x + i * (cardW + gap);
+    const cx = x + cardW / 2;
+    const colour = colours[card.verdict] ?? theme.series[0];
+
+    root.append(
+      titled(
+        el("rect", {
+          x,
+          y: top,
+          width: cardW,
+          height: cardH,
+          rx: 14,
+          fill: theme.plane,
+          stroke: theme.grid,
+        }),
+        `${card.label}: ${card.value} — ${card.note}`,
+      ),
+    );
+
+    thumb(
+      root,
+      cx - glyph / 2,
+      top + padY,
+      glyph,
+      card.verdict === "up",
+      colour,
+      `${card.label}: ${card.value}`,
+    );
+
+    const valueY = top + padY + glyph + valueSize * 0.95;
+    root.append(
+      text(card.value, cx, valueY, { size: valueSize, weight: 600, fill: colour, anchor: "middle" }),
+    );
+    root.append(
+      text(ellipsize(card.label, cardW - L.value, labelSize), cx, valueY + labelSize * 1.6, {
+        size: labelSize,
+        weight: 600,
+        fill: theme.ink,
+        anchor: "middle",
+      }),
+    );
+    root.append(
+      text(
+        ellipsize(card.note, cardW - L.value, noteSize),
+        cx,
+        valueY + labelSize * 1.6 + noteSize * 1.6,
+        { size: noteSize, fill: theme.muted, anchor: "middle" },
+      ),
+    );
+  });
+
+  // The undecided, underneath. Neutral ink rather than either verdict colour,
+  // because that is exactly what these are: no judgement was ever made.
+  const restY = top + cardH + gap;
+  const restMid = restY + restH / 2;
+  const numberW = measure(slide.rest.value, restValue, 600);
+  const textX = plot.x + L.value * 1.6 + numberW;
+  const textW = Math.max(40, plot.x + plot.w - L.value - textX);
+
+  root.append(
+    titled(
+      el("rect", {
+        x: plot.x,
+        y: restY,
+        width: plot.w,
+        height: restH,
+        rx: 14,
+        fill: theme.plane,
+        stroke: theme.grid,
+      }),
+      `${slide.rest.label}: ${slide.rest.value} — ${slide.rest.note}`,
+    ),
+  );
+
+  root.append(
+    text(slide.rest.value, plot.x + L.value * 0.8, restMid + restValue * 0.36, {
+      size: restValue,
+      weight: 600,
+      fill: theme.ink,
+    }),
+  );
+  root.append(
+    text(ellipsize(slide.rest.label, textW, restLabel), textX, restMid - restNote * 0.55, {
+      size: restLabel,
+      weight: 600,
+      fill: theme.ink2,
+    }),
+  );
+  root.append(
+    text(ellipsize(slide.rest.note, textW, restNote), textX, restMid - restNote * 0.55 + restNote * 1.5, {
+      size: restNote,
+      fill: theme.muted,
+    }),
+  );
+}
+
+/**
  * Every day in the range as a square, a week to a column.
  *
  * The calendar answers "when"; this answers "how steadily". A day is a day
@@ -1900,6 +2105,7 @@ const RENDERERS = {
   stack: drawStack,
   map: drawMap,
   tiles: drawTiles,
+  verdict: drawVerdict,
   list: drawList,
 };
 

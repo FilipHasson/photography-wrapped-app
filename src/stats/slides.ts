@@ -148,6 +148,19 @@ export type Slide =
   | (Common & { kind: "months"; months: Array<{ ym: number; shots: number }> })
   | (Common & { kind: "stack"; months: number[]; series: Series[] })
   | (Common & { kind: "map"; points: Place[] })
+  | (Common & {
+      kind: "verdict";
+      /**
+       * The two decisions, side by side, each with the gesture that made it.
+       *
+       * A verdict is not a category and not a magnitude — it is a judgement,
+       * and two of them read faster as two cards than as two columns of a bar
+       * chart nobody needs to measure against an axis.
+       */
+      cards: Array<{ verdict: "up" | "down"; label: string; value: string; note: string }>;
+      /** The pile that was never judged either way, under them. */
+      rest: { label: string; value: string; note: string };
+    })
   | (Common & { kind: "tiles"; tiles: Tile[] })
   | (Common & { kind: "list"; items: Array<{ label: string; meta: string; value: string }> });
 
@@ -1045,47 +1058,56 @@ function cullingSlide(stats: DeckStats): Slide | null {
   const total = picked + rejected + unflagged;
   const share = (n: number) => (total > 0 ? n / total : 0);
 
+  // The ratio rather than either share: both shares are on the cards below, and
+  // no number should appear twice on one slide. It is also the way the decision
+  // is actually described out loud — "I keep about one in three".
+  const ratio = Math.max(picked, rejected) / Math.max(1, Math.min(picked, rejected));
   const headline =
-    rejected > picked
-      ? `You throw more out than you keep — ${fmtPct(share(rejected))} rejected`
-      : `${fmtPct(share(picked))} of your frames got a flag`;
+    rejected === 0
+      ? "Every flag you have set is a keeper"
+      : picked === 0
+        ? "The only flag you use is reject"
+        : ratio < 1.15
+          ? "You keep about as many as you throw out"
+          : picked > rejected
+            ? `You keep ${ratio.toFixed(1)} frames for every one you throw out`
+            : `You throw out ${ratio.toFixed(1)} frames for every one you keep`;
 
-  const note = [
-    `${fmtPct(share(unflagged))} never flagged either way`,
+  // What has actually left, which no card can hold: these frames are not in the
+  // library any more, so they are in none of the counts beside it either.
+  const note =
     removed > 0 && watchingSince
-      ? `${fmtInt(removed)} gone from the library since ${formatDay(dayOf(watchingSince))}`
-      : "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
+      ? `${fmtInt(removed)} gone from the library since ${formatDay(dayOf(watchingSince))}${
+          removedRejected > 0 ? `, ${fmtInt(removedRejected)} of them rejects` : ""
+        }`
+      : undefined;
 
   return {
-    kind: "columns",
+    kind: "verdict",
     id: "culling",
     title: "Culling",
     subtitle: "Picks, rejects, and the ones you never went back to",
     headline,
-    note,
-    items: [
-      { label: "Picked", value: picked },
-      { label: "Rejected", value: rejected },
-      { label: "Neither", value: unflagged },
+    ...(note ? { note } : {}),
+    cards: [
+      {
+        verdict: "up",
+        label: "Picked",
+        value: fmtInt(picked),
+        note: `${fmtPct(share(picked))} of your frames`,
+      },
+      {
+        verdict: "down",
+        label: "Rejected",
+        value: fmtInt(rejected),
+        note: `${fmtPct(share(rejected))} of your frames`,
+      },
     ],
-    highlight: picked >= rejected ? 0 : 1,
-    axisLabel: "Flag",
-    // What has actually left, which no column can show: these frames are not in
-    // the library any more, so they are not in the bars beside it either.
-    ...(removed > 0
-      ? {
-          figure: {
-            value: fmtInt(removed),
-            label:
-              removedRejected > 0
-                ? `deleted since indexing  ·  ${fmtInt(removedRejected)} of them rejects`
-                : "deleted since indexing",
-          },
-        }
-      : {}),
+    rest: {
+      label: "Never flagged either way",
+      value: fmtInt(unflagged),
+      note: `${fmtPct(share(unflagged))} of your frames`,
+    },
     table: tableOf(
       ["Flag", "Photographs", "Share"],
       [

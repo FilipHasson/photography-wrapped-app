@@ -65,7 +65,10 @@ function installShim(): void {
   const canvasContext = {
     font: "16px sans",
     measureText(value: string) {
-      const size = Number(this.font.match(/(\d+)px/)?.[1] ?? 16);
+      // Fractional sizes are real — charts scale their type to fit — and a
+      // pattern that only matched whole numbers read `38.66px` as 66px, which
+      // is a shim quietly lying to every layout that measures.
+      const size = Number(this.font.match(/([\d.]+)px/)?.[1] ?? 16);
       return measureText(value, size);
     },
   };
@@ -387,6 +390,108 @@ describe("colours past the palette", () => {
       const colours = Array.from({ length: 25 }, (_, i) => seriesColour(i, theme));
       assert.equal(new Set(colours).size, 25, colours.join(","));
       for (const hex of colours) assert.match(hex, /^#[0-9a-f]{6}$/);
+    }
+  });
+});
+
+/**
+ * Culling is two cards and a card, not a chart, and the fixtures cannot reach
+ * it: pick flags live in a Lightroom catalog and the library here is a folder.
+ * So it is checked against a manufactured slide, in every shape — a thumb drawn
+ * off the bottom of a story would be invisible rather than wrong-looking.
+ */
+describe("two verdicts and the pile nobody judged", () => {
+  const verdict: Slide = {
+    kind: "verdict",
+    id: "culling",
+    title: "Culling",
+    subtitle: "Picks, rejects, and the ones you never went back to",
+    headline: "You keep 1.4 frames for every one you throw out",
+    note: "1,204 gone from the library since 18 August 2026, 890 of them rejects",
+    cards: [
+      { verdict: "up", label: "Picked", value: "27,527", note: "17% of your frames" },
+      { verdict: "down", label: "Rejected", value: "19,147", note: "12% of your frames" },
+    ],
+    rest: { label: "Never flagged either way", value: "113,543", note: "71% of your frames" },
+    table: { columns: ["Flag", "Photographs"], rows: [] },
+  };
+
+  test("both cards and the one under them stay inside the frame", () => {
+    for (const format of FORMATS) {
+      for (const theme of [LIGHT, DARK]) {
+        const svg = renderSlide(verdict, theme, format);
+        for (const node of svg.walk()) {
+          if (node.tag === "svg") continue;
+          const x = Number(node.attrs.get("x") ?? 0);
+          const y = Number(node.attrs.get("y") ?? 0);
+          const width = Number(node.attrs.get("width") ?? 0);
+          const height = Number(node.attrs.get("height") ?? 0);
+          assert.ok(Number.isFinite(x + y + width + height), `${format.id}: ${node.tag} has a NaN`);
+          assert.ok(
+            x >= -1 && x + width <= format.width + 1 && y >= -1 && y + height <= format.height + 1,
+            `${format.id}: ${node.tag} left the frame at ${x},${y}`,
+          );
+        }
+      }
+    }
+  });
+
+  test("a thumb is drawn each way up, and neither is empty", () => {
+    for (const format of FORMATS) {
+      const svg = renderSlide(verdict, LIGHT, format);
+      const paths = [...svg.walk()].filter((node) => node.tag === "path");
+      assert.equal(paths.length, 2, `${format.id}: expected two thumbs`);
+
+      // The same shape, turned over: whichever way up, every coordinate in it
+      // has to be a real number, and the two cannot be identical.
+      const [up, down] = paths.map((node) => node.attrs.get("d") ?? "");
+      for (const d of [up, down]) {
+        assert.ok(d && !/NaN/.test(d), `${format.id}: a thumb has a NaN in it`);
+      }
+      assert.notEqual(up, down, `${format.id}: both thumbs point the same way`);
+    }
+  });
+
+  test("nothing on it sits on top of anything else", () => {
+    for (const format of FORMATS) {
+      const svg = renderSlide(verdict, LIGHT, format);
+      const texts = [...svg.walk()]
+        .filter((node) => node.tag === "text" && node.textContent.trim() !== "")
+        .map((node) => ({
+          x: Number(node.attrs.get("x") ?? 0),
+          y: Number(node.attrs.get("y") ?? 0),
+          size: Number(node.attrs.get("font-size") ?? 16),
+          anchor: node.attrs.get("text-anchor") ?? "start",
+          value: node.textContent,
+        }));
+
+      for (let i = 0; i < texts.length; i++) {
+        for (let j = i + 1; j < texts.length; j++) {
+          const a = texts[i]!;
+          const b = texts[j]!;
+          if (a.anchor !== b.anchor || Math.abs(a.x - b.x) > 2) continue;
+          const gap = Math.abs(a.y - b.y);
+          if (gap === 0) continue;
+          const [upper, lower] = a.y < b.y ? [a, b] : [b, a];
+          assert.ok(
+            gap >= lower.size * 0.9 + upper.size * 0.12,
+            `${format.id}: "${upper.value}" and "${lower.value}" are ${gap.toFixed(1)}px apart`,
+          );
+        }
+      }
+    }
+  });
+
+  test("every number on it is reachable as text", () => {
+    const texts = [...renderSlide(verdict, LIGHT).walk()]
+      .filter((node) => node.tag === "text")
+      .map((node) => node.textContent);
+
+    for (const value of ["27,527", "19,147", "113,543", "Picked", "Rejected"]) {
+      assert.ok(
+        texts.some((line) => line.includes(value)),
+        `${value} is on no line of the slide`,
+      );
     }
   });
 });
