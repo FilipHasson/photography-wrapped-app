@@ -4,6 +4,8 @@ import { buildDeck, fmtSpan, type Slide } from "../src/stats/slides.ts";
 import {
   resolveLimits,
   resolveMarks,
+  resolveKit,
+  type KitToggles,
   type DeckStats,
   type Milestone,
   type Tally,
@@ -52,7 +54,7 @@ function statsWith(overrides: Partial<DeckStats>): DeckStats {
     busiestDay: null, longestStreak: null, longestGap: null,
     places: [], placesKnown: 0, debuts: [], milestones: [], burst: null,
     years: [], yearBasis: "anchor", location: null, home: null,
-    weekStart: "mon", markWeekend: false, showMarks: resolveMarks(), layout: {}, wall: "packed",
+    weekStart: "mon", markWeekend: false, showMarks: resolveMarks(), kit: resolveKit(), layout: {}, wall: "packed",
     culling: { picked: 0, rejected: 0, unflagged: 0, removed: 0, removedRejected: 0, watchingSince: null },
     daylight: { mode: "06-18", sunrise: 6, sunset: 18, source: "06:00 to 18:00" },
     daylightHours: { sunrise: 6, sunset: 18 },
@@ -668,6 +670,73 @@ describe("the shortest thing you kept", () => {
     // "First thing you sold" already carries how long it lasted; a second row
     // for the same fact is the same number twice on one slide.
     assert.equal(row([buy("b1", 20240101, "a", "Lens A"), sell("s1", 20240301, "a", "Lens A")]), undefined);
+  });
+});
+
+describe("how much the kit history repeats itself", () => {
+  const buy = (id: string, day: number, key: string, label: string) =>
+    milestone(id, `Bought the ${label}`, day, "bought", { dimension: "lens", key, label, shots: 500 });
+  const sell = (id: string, day: number, key: string, label: string) =>
+    milestone(id, `Sold the ${label}`, day, "sold", { dimension: "lens", key, label, shots: 500 });
+
+  // The first lens bought is the first one sold, and it is also the shortest
+  // ownership of the two — which is the shape the real thing takes, and the
+  // one where three rows used to carry one lens.
+  const MILESTONES = [
+    buy("b1", 20240101, "a", "Lens A"),
+    buy("b2", 20240301, "b", "Lens B"),
+    sell("s1", 20240601, "a", "Lens A"),
+    sell("s2", 20251201, "b", "Lens B"),
+  ];
+
+  const slideWith = (kit: KitToggles) => {
+    const found = findSlide(buildDeck(statsWith({ milestones: MILESTONES, kit: resolveKit(kit) })).slides, "kit");
+    assert.ok(found && found.kind === "list");
+    return found;
+  };
+
+  const metas = (kit: KitToggles) => slideWith(kit).items.map((item) => item.meta);
+  const setting = (kit: KitToggles, id: string) => slideWith(kit).settings?.find((one) => one.id === id);
+
+  test("says one lens once, by default", () => {
+    const found = metas({});
+    assert.ok(found.some((meta) => meta.startsWith("First lens you bought, and the first you sold")));
+    assert.ok(!found.some((meta) => meta.startsWith("First thing you sold")));
+    // And the shortest ownership is that same purchase and that same sale, so
+    // the row would be the line above with a new heading on it.
+    assert.ok(!found.some((meta) => meta.startsWith("Shortest you kept")));
+    assert.equal(found.filter((meta) => meta.includes("Lens A")).length, 0, "the label carries the name, not the meta");
+  });
+
+  test("tells them apart when asked to", () => {
+    const found = metas({ combine: false });
+    assert.ok(found.some((meta) => meta.startsWith("First lens you bought ·")));
+    assert.ok(found.some((meta) => meta.startsWith("First thing you sold ·")));
+    // Nothing is folded away, so the shortest ownership is its own row again.
+    assert.ok(found.some((meta) => meta.startsWith("Shortest you kept")));
+  });
+
+  test("drops the ownership row on its own", () => {
+    const found = metas({ combine: false, ownership: false });
+    assert.ok(found.some((meta) => meta.startsWith("First thing you sold ·")));
+    assert.ok(!found.some((meta) => meta.startsWith("Shortest you kept")));
+  });
+
+  test("offers the switch it is currently off", () => {
+    // The trap this is guarding: deciding whether to offer the switch by asking
+    // the switch, which hides it the moment it is turned off.
+    assert.equal(setting({}, "kit.combine")?.value, "on");
+    assert.equal(setting({ combine: false }, "kit.combine")?.value, "off");
+    assert.equal(setting({ combine: false, ownership: false }, "kit.ownership")?.value, "off");
+  });
+
+  test("offers neither switch when there is nothing to fold", () => {
+    const plain = findSlide(
+      buildDeck(statsWith({ milestones: [buy("b1", 20240101, "a", "Lens A"), buy("b2", 20240301, "b", "Lens B")] }))
+        .slides,
+      "kit",
+    );
+    assert.equal(plain?.settings, undefined);
   });
 });
 

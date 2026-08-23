@@ -30,6 +30,7 @@ import {
   type GearItem,
   type Layouts,
   type MarkToggles,
+  type KitToggles,
   type RowLimits,
   type WeekStart,
 } from "../stats/aggregate.ts";
@@ -317,6 +318,15 @@ export async function handleApi(
         if (asked === "on" || asked === "off") marks[slide] = asked === "on";
       }
 
+      // `kit.combine=off`: two rows about one lens rather than one, and
+      // `kit.ownership=off`: no shortest-kept row at all. Both are about how
+      // much the kit history is allowed to repeat itself.
+      const kit: KitToggles = {};
+      for (const field of ["combine", "ownership"] as const) {
+        const asked = url.searchParams.get(`kit.${field}`);
+        if (asked === "on" || asked === "off") kit[field] = asked === "on";
+      }
+
       // `layout.lenses=columns`: which way one chart's bars run. By slide id,
       // because a lens name reads beside a bar and a shutter speed reads under
       // one, and the reader is the only one who can see their own screen.
@@ -351,6 +361,7 @@ export async function handleApi(
         // there — a mark has to land inside what a slide is drawing.
         anchors: ctx.config.anchors,
         marks,
+        kit,
         layout,
       });
       json(res, 200, { range, deck: buildDeck(stats, ctx.config.ownerName) });

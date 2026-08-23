@@ -6,7 +6,7 @@ import path from "node:path";
 import { Db } from "../src/core/db.ts";
 import { defaultConfig, defaultSource, makeAnchor } from "../src/core/config.ts";
 import { indexSource, indexOverview } from "../src/index/source.ts";
-import { computeStats } from "../src/stats/aggregate.ts";
+import { computeStats, gearCatalog } from "../src/stats/aggregate.ts";
 import { buildDeck, type Slide } from "../src/stats/slides.ts";
 import { resolveRange } from "../src/stats/range.ts";
 import { makeFixtures } from "../tools/make-fixtures.ts";
@@ -108,12 +108,31 @@ before(async () => {
 
   // Milestones on days the fixtures actually hold, so every slide that draws
   // time is checked with its annotations on rather than without them.
+  const first = overview.firstDay ?? 20250101;
+  const last = overview.lastDay ?? 20251231;
+  // A lens bought and later sold, taken from the fixtures rather than named,
+  // so the kit history slide is drawn at all — and drawn with its longest row,
+  // the one carrying a purchase, a sale and the span between them on one line.
+  const lens = gearCatalog(db).lenses[0];
+
   const anchors = [
-    makeAnchor("Bought the Nikon Z 8", overview.firstDay ?? 20250101, [], {
+    makeAnchor("Bought the Nikon Z 8", first, [], {
       kind: "bought",
       gear: { dimension: "camera", key: "nikonz8" },
     }),
-    makeAnchor("Moved to Lisbon", overview.lastDay ?? 20251231, []),
+    ...(lens
+      ? [
+          makeAnchor(`Bought the ${lens.label}`, first, [], {
+            kind: "bought",
+            gear: { dimension: "lens", key: lens.key },
+          }),
+          makeAnchor(`Sold the ${lens.label}`, last, [], {
+            kind: "sold",
+            gear: { dimension: "lens", key: lens.key },
+          }),
+        ]
+      : []),
+    makeAnchor("Moved to Lisbon", last, []),
   ];
 
   slides = buildDeck(computeStats(db, range, { includeVideo: true, anchors }), "Filip").slides;
@@ -146,6 +165,28 @@ describe("rendering", () => {
     for (const kind of ["hero", "bars", "columns", "clock", "week", "calendar", "stack", "map", "tiles", "list"]) {
       assert.ok(kinds.has(kind as Slide["kind"]), `no ${kind} slide in the deck`);
     }
+
+    // By id as well as by kind, for the slides whose fixtures are easy to
+    // break: kit history needs two gear milestones to exist at all, so a
+    // change to the anchors above can silently stop it being drawn.
+    //
+    // Not in here, and it should be: #culling and #keepers. The fixture
+    // library carries no ratings and no pick flags, so neither slide is built
+    // and neither renderer is under test. Fixing that means fixtures with
+    // `Rating` and `Label` on some of the frames.
+    const ids = new Set(slides.map((slide) => slide.id));
+    for (const id of ["kit"]) {
+      assert.ok(ids.has(id), `no #${id} slide in the deck`);
+    }
+
+    // And the row that is only there when one lens was both the first bought
+    // and the first sold — the longest line this deck writes.
+    const kit = slides.find((slide) => slide.id === "kit");
+    assert.ok(
+      kit?.kind === "list" &&
+        kit.items.some((item) => item.meta.includes("and the first you sold")),
+      "the kit slide is not being drawn with its merged row",
+    );
   });
 
   test("every coordinate is a real number, in every shape", () => {

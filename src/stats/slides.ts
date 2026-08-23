@@ -537,6 +537,37 @@ function marksSetting(stats: DeckStats, slide: keyof MarkToggles): SlideSetting 
   };
 }
 
+/**
+ * Whether the kit history folds its overlapping rows together.
+ *
+ * Offered only when something actually repeats, and asked of the milestones
+ * rather than of the setting: a switch that disappears the moment you turn it
+ * off is a switch you cannot turn back on.
+ */
+function combineSetting(stats: DeckStats): SlideSetting {
+  return {
+    id: "kit.combine",
+    label: "The same thing twice",
+    value: stats.kit.combine ? "on" : "off",
+    options: [
+      { value: "on", label: "One row", note: "the purchase and the sale together" },
+      { value: "off", label: "A row each" },
+    ],
+  };
+}
+
+function ownershipSetting(stats: DeckStats): SlideSetting {
+  return {
+    id: "kit.ownership",
+    label: "How long you kept things",
+    value: stats.kit.ownership ? "on" : "off",
+    options: [
+      { value: "on", label: "Shown", note: "the shortest you kept anything" },
+      { value: "off", label: "Hidden" },
+    ],
+  };
+}
+
 function yearBasisSetting(stats: DeckStats): SlideSetting {
   const first = stats.years[0];
   return {
@@ -1483,7 +1514,7 @@ function kitSlide(stats: DeckStats): Slide | null {
    * steps aside.
    */
   const firstPurchase = (fact: string, m: Milestone) => {
-    if (firstSale === undefined || !alsoFirstSold(m)) {
+    if (firstSale === undefined || !stats.kit.combine || !alsoFirstSold(m)) {
       add(fact, m.gear?.label ?? "", formatDay(m.day), frames(m));
       return;
     }
@@ -1520,11 +1551,13 @@ function kitSlide(stats: DeckStats): Slide | null {
   const firstGlass = bought.find(isGlass);
   if (firstGlass) firstPurchase("First lens you bought", firstGlass);
 
-  // Already said above, when the first thing to leave is the first thing that
-  // arrived.
-  const merged =
+  // Whether the first thing to leave is the first thing that arrived, asked of
+  // the milestones and not of the setting — see `combineSetting`.
+  const repeats =
     (firstBody !== undefined && alsoFirstSold(firstBody)) ||
     (firstGlass !== undefined && alsoFirstSold(firstGlass));
+  // Already said above, in that case.
+  const merged = repeats && stats.kit.combine;
 
   if (firstSale && !merged) {
     // What it did while you had it — which is the only interesting thing about
@@ -1555,15 +1588,27 @@ function kitSlide(stats: DeckStats): Slide | null {
     })
     .filter((held): held is { sale: Milestone; from: number; days: number } => held !== null);
 
-  // Only worth its own row once there is more than one sale to be shortest of:
-  // with one, it is the sale above wearing a different hat.
-  if (owned.length > 1) {
-    const briefest = owned.reduce((best, held) => (held.days < best.days ? held : best));
+  const briefest =
+    owned.length > 0 ? owned.reduce((best, held) => (held.days < best.days ? held : best)) : null;
+
+  /**
+   * Whether a row above has already told this ownership.
+   *
+   * With one sale it is the sale row wearing a different hat, which is the
+   * guard this row was born with. And once bought-first and sold-first are a
+   * single row, that row carries the purchase, the sale and the span between
+   * them — so if the shortest is that same sale, this is the line above,
+   * repeated with a new heading.
+   */
+  const alreadyAbove = owned.length === 1 || (merged && briefest?.sale === firstSale);
+  const shortest = briefest !== null && !alreadyAbove ? briefest : null;
+
+  if (shortest !== null && stats.kit.ownership) {
     add(
       "Shortest you kept anything",
-      briefest.sale.gear?.label ?? "",
-      `${formatDay(briefest.from)} to ${formatDay(briefest.sale.day)}`,
-      fmtSpan(briefest.days),
+      shortest.sale.gear?.label ?? "",
+      `${formatDay(shortest.from)} to ${formatDay(shortest.sale.day)}`,
+      fmtSpan(shortest.days),
     );
   }
 
@@ -1618,6 +1663,7 @@ function kitSlide(stats: DeckStats): Slide | null {
     headline,
     items,
     table: tableOf(["Fact", "Gear", "When", "Measure"], rows),
+    ...settingsOf(repeats ? combineSetting(stats) : null, shortest !== null ? ownershipSetting(stats) : null),
   };
 }
 

@@ -124,6 +124,32 @@ export function resolveMarks(marks: MarkToggles = {}): Required<MarkToggles> {
   };
 }
 
+/**
+ * How much the kit history is allowed to repeat itself.
+ *
+ * Both of these exist because the slide derives rows from the same handful of
+ * milestones, and derived rows overlap: the first lens you bought is often the
+ * first thing you sold, and the shortest thing you kept is often that same
+ * lens again. Folding those together is what most people want and is the
+ * default — but somebody who wants a row per fact, in the order the facts
+ * happened, is not wrong, and this is how they say so.
+ */
+export interface KitToggles {
+  /** Bought-first and sold-first become one row when they name one object. */
+  combine?: boolean;
+  /** Whether "shortest you kept anything" is drawn at all. */
+  ownership?: boolean;
+}
+
+export const DEFAULT_KIT = { combine: true, ownership: true } as const;
+
+export function resolveKit(kit: KitToggles = {}): Required<KitToggles> {
+  return {
+    combine: kit.combine ?? DEFAULT_KIT.combine,
+    ownership: kit.ownership ?? DEFAULT_KIT.ownership,
+  };
+}
+
 /** Below this the calendar heatmap gives way to a monthly timeline. */
 export const HEATMAP_MAX_DAYS = 400;
 
@@ -407,6 +433,8 @@ export interface DeckStats {
   markWeekend: boolean;
   /** Which time slides are annotated with the reader's milestones. */
   showMarks: Required<MarkToggles>;
+  /** How much the kit history repeats itself. */
+  kit: Required<KitToggles>;
   /**
    * Which way each chart's bars run, where the reader has said. A slide not in
    * here draws itself the way it always has.
@@ -455,6 +483,8 @@ export interface StatsOptions {
   anchors?: readonly Anchor[];
   /** Which slides draw those milestones. Each has its own answer. */
   marks?: MarkToggles;
+  /** Which of the kit history's overlapping rows are folded together. */
+  kit?: KitToggles;
   /** Which way each chart's bars run, by slide id. */
   layout?: Layouts;
 }
@@ -1245,6 +1275,7 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
     weekStart: options.weekStart ?? "mon",
     markWeekend: options.markWeekend ?? false,
     showMarks: resolveMarks(options.marks),
+    kit: resolveKit(options.kit),
     layout: options.layout ?? {},
     wall: options.wall ?? "packed",
     daylight: resolveDaylight(
