@@ -9,7 +9,8 @@ import { indexSource, indexOverview } from "../src/index/source.ts";
 import { computeStats, gearCatalog } from "../src/stats/aggregate.ts";
 import { buildDeck, type Slide } from "../src/stats/slides.ts";
 import { resolveRange } from "../src/stats/range.ts";
-import { makeFixtures } from "../tools/make-fixtures.ts";
+import { makeFixtures, fixtureCatalog } from "../tools/make-fixtures.ts";
+import { makeCatalog } from "../tools/make-catalog.ts";
 
 /**
  * Renders every slide without a browser.
@@ -103,6 +104,15 @@ before(async () => {
   config.sources.push(source);
   await indexSource(db, source, config);
 
+  // And the catalog over the top of it, which is the only thing that carries a
+  // rating or a pick flag — without it the keepers and culling slides are never
+  // built, and their renderers were never under test.
+  const catalog = path.join(root, "Fixtures.lrcat");
+  await makeCatalog(catalog, fixtureCatalog(path.join(root, "library")));
+  const catalogSource = defaultSource({ path: catalog, label: "Catalog" });
+  config.sources.push(catalogSource);
+  await indexSource(db, catalogSource, config);
+
   const overview = indexOverview(db);
   const range = resolveRange({ kind: "all" }, { firstDay: overview.firstDay, lastDay: overview.lastDay });
 
@@ -170,12 +180,11 @@ describe("rendering", () => {
     // break: kit history needs two gear milestones to exist at all, so a
     // change to the anchors above can silently stop it being drawn.
     //
-    // Not in here, and it should be: #culling and #keepers. The fixture
-    // library carries no ratings and no pick flags, so neither slide is built
-    // and neither renderer is under test. Fixing that means fixtures with
-    // `Rating` and `Label` on some of the frames.
+    // #culling and #keepers need the catalog above for the same reason: a
+    // folder carries no rating and no pick flag, so without it neither slide
+    // exists to be drawn.
     const ids = new Set(slides.map((slide) => slide.id));
-    for (const id of ["kit"]) {
+    for (const id of ["kit", "culling", "keepers"]) {
       assert.ok(ids.has(id), `no #${id} slide in the deck`);
     }
 
@@ -214,6 +223,23 @@ describe("rendering", () => {
         const svg = renderSlide(slide, LIGHT, format);
         for (const node of svg.walk()) {
           if (node.tag === "svg") continue;
+          // A polygon has no x or y — its geometry is a flat list of pairs, and
+          // without this a drawn glyph could land anywhere at all and nothing
+          // here would notice.
+          // Space-separated pairs, which is what `star()` writes — deliberately
+          // not a whitespace pattern, so nothing here depends on an escape.
+          for (const pair of (node.attrs.get("points") ?? "").split(" ").filter(Boolean)) {
+            const [px = NaN, py = NaN] = pair.split(",").map(Number);
+            assert.ok(
+              Number.isFinite(px) && px >= -1 && px <= format.width + 1,
+              `${format.id}: ${node.tag} point off the side (${px})`,
+            );
+            assert.ok(
+              Number.isFinite(py) && py >= -1 && py <= format.height + 1,
+              `${format.id}: ${node.tag} point off the bottom (${py})`,
+            );
+          }
+
           const x = Number(node.attrs.get("x") ?? 0);
           const y = Number(node.attrs.get("y") ?? 0);
           const width = Number(node.attrs.get("width") ?? 0);
@@ -655,8 +681,8 @@ describe("two verdicts and the pile nobody judged", () => {
     headline: "You keep 1.4 frames for every one you throw out",
     note: "1,204 gone from the library since 18 August 2026, 890 of them rejects",
     cards: [
-      { verdict: "up", label: "Picked", value: "27,527", note: "17% of your frames" },
-      { verdict: "down", label: "Rejected", value: "19,147", note: "12% of your frames" },
+      { glyph: { kind: "thumb", up: true }, label: "Picked", value: "27,527", note: "17% of your frames" },
+      { glyph: { kind: "thumb", up: false }, label: "Rejected", value: "19,147", note: "12% of your frames" },
     ],
     rest: { label: "Never flagged either way", value: "113,543", note: "71% of your frames" },
     table: { columns: ["Flag", "Photographs"], rows: [] },
@@ -668,6 +694,23 @@ describe("two verdicts and the pile nobody judged", () => {
         const svg = renderSlide(verdict, theme, format);
         for (const node of svg.walk()) {
           if (node.tag === "svg") continue;
+          // A polygon has no x or y — its geometry is a flat list of pairs, and
+          // without this a drawn glyph could land anywhere at all and nothing
+          // here would notice.
+          // Space-separated pairs, which is what `star()` writes — deliberately
+          // not a whitespace pattern, so nothing here depends on an escape.
+          for (const pair of (node.attrs.get("points") ?? "").split(" ").filter(Boolean)) {
+            const [px = NaN, py = NaN] = pair.split(",").map(Number);
+            assert.ok(
+              Number.isFinite(px) && px >= -1 && px <= format.width + 1,
+              `${format.id}: ${node.tag} point off the side (${px})`,
+            );
+            assert.ok(
+              Number.isFinite(py) && py >= -1 && py <= format.height + 1,
+              `${format.id}: ${node.tag} point off the bottom (${py})`,
+            );
+          }
+
           const x = Number(node.attrs.get("x") ?? 0);
           const y = Number(node.attrs.get("y") ?? 0);
           const width = Number(node.attrs.get("width") ?? 0);

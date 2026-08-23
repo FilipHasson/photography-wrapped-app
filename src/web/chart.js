@@ -970,6 +970,190 @@ function figureCard(root, plot, cardH, figure, theme, L) {
  * a transform would hide the real position from it. Turning the thumb over is a
  * flip of the unit v axis, which is exactly how the two gestures differ.
  */
+/**
+ * The same judgements, stacked one per row.
+ *
+ * Five cards side by side is five slivers on anything but a wide screen: the
+ * labels truncate, the numbers are capped by a fifth of the width, and the
+ * block ends up floating in a slide it cannot fill because every size it has
+ * is bound by how narrow the card is. A scale of five reads down a page at
+ * least as well as across one — it is how every photo tool in the world lists
+ * ratings — and stacking is also the only thing that gives the glyph room:
+ * five stars across a fifth of a slide are specks, and five stars across a
+ * whole one are stars.
+ */
+function drawVerdictRows(root, plot, slide, theme, L) {
+  const n = slide.cards.length;
+  const gap = Math.max(8, L.value * 0.5);
+
+  // The pile nobody judged is the biggest number here and the least
+  // interesting, so its row is shorter than the others rather than equal.
+  const REST = 0.72;
+  const unit = (plot.h - gap * n) / (n + REST);
+  const rowH = unit;
+  const restH = unit * REST;
+
+  const widest = Math.max(
+    ...slide.cards.map((card) => (card.glyph.kind === "stars" ? card.glyph.count : 1)),
+  );
+  const span = widest + (widest - 1) * STAR_GAP;
+
+  const px = (value) => Math.round(value);
+  const pad = px(L.value * 0.8);
+  // A third of the width for the glyphs, or half the row's height per star —
+  // whichever runs out first.
+  const glyph = px(Math.min(rowH * 0.52, (plot.w * 0.34) / span));
+  const valueSize = px(Math.min(L.tileValue * 0.75, rowH * 0.46));
+  const labelSize = px(Math.min(L.value, rowH * 0.28));
+  const noteSize = px(Math.min(L.axis, rowH * 0.24));
+
+  const glyphW = glyph * span;
+  const valueW = Math.max(...slide.cards.map((card) => measure(card.value, valueSize, 600)));
+
+  const valueRight = plot.x + pad + glyphW + pad + valueW;
+  const textX = valueRight + pad;
+  const textW = Math.max(40, plot.x + plot.w - pad - textX);
+
+  slide.cards.forEach((card, i) => {
+    const y = plot.y + i * (rowH + gap);
+    const mid = y + rowH / 2;
+    const colour = card.glyph.kind === "thumb" && !card.glyph.up ? theme.series[7] : theme.series[0];
+
+    root.append(
+      titled(
+        el("rect", {
+          x: plot.x,
+          y,
+          width: plot.w,
+          height: rowH,
+          rx: 14,
+          fill: theme.plane,
+          stroke: theme.grid,
+        }),
+        `${card.label}: ${card.value} — ${card.note}`,
+      ),
+    );
+
+    // Left-aligned, not centred in the column: the row of stars is then a bar
+    // whose length is the rating, and one star no longer floats in the middle
+    // of a space five of them are about to fill.
+    if (card.glyph.kind === "stars") {
+      const count = card.glyph.count;
+      const width = glyph * (count + (count - 1) * STAR_GAP);
+      starRow(root, plot.x + pad + width / 2, mid - glyph / 2, glyph, count, colour);
+    } else {
+      thumb(root, plot.x + pad, mid - glyph / 2, glyph, card.glyph.up, colour);
+    }
+
+    root.append(
+      text(card.value, valueRight, mid + valueSize * 0.36, {
+        size: valueSize,
+        weight: 600,
+        fill: colour,
+        anchor: "end",
+      }),
+    );
+    root.append(
+      text(ellipsize(card.label, textW, labelSize, 600), textX, mid - noteSize * 0.55, {
+        size: labelSize,
+        weight: 600,
+        fill: theme.ink,
+      }),
+    );
+    root.append(
+      text(ellipsize(card.note, textW, noteSize), textX, mid - noteSize * 0.55 + noteSize * 1.5, {
+        size: noteSize,
+        fill: theme.muted,
+      }),
+    );
+  });
+
+  // The undecided, underneath, in neutral ink: no judgement was ever made.
+  const restY = plot.y + n * (rowH + gap);
+  const restMid = restY + restH / 2;
+  const restValue = px(Math.min(valueSize, restH * 0.5));
+  const restLabel = px(Math.min(labelSize, restH * 0.3));
+  const restNote = px(Math.min(noteSize, restH * 0.26));
+
+  root.append(
+    titled(
+      el("rect", {
+        x: plot.x,
+        y: restY,
+        width: plot.w,
+        height: restH,
+        rx: 14,
+        fill: theme.plane,
+        stroke: theme.grid,
+      }),
+      `${slide.rest.label}: ${slide.rest.value} — ${slide.rest.note}`,
+    ),
+  );
+  root.append(
+    text(slide.rest.value, valueRight, restMid + restValue * 0.36, {
+      size: restValue,
+      weight: 600,
+      fill: theme.ink,
+      anchor: "end",
+    }),
+  );
+  root.append(
+    text(ellipsize(slide.rest.label, textW, restLabel, 600), textX, restMid - restNote * 0.55, {
+      size: restLabel,
+      weight: 600,
+      fill: theme.ink2,
+    }),
+  );
+  root.append(
+    text(ellipsize(slide.rest.note, textW, restNote), textX, restMid - restNote * 0.55 + restNote * 1.5, {
+      size: restNote,
+      fill: theme.muted,
+    }),
+  );
+}
+
+/**
+ * One five-pointed star, drawn rather than typed.
+ *
+ * The export serialises this SVG and rasterises it through an `<img>`, where a
+ * `★` renders in whatever font that path happens to find and an emoji star may
+ * not render at all. A polygon in slide coordinates always arrives.
+ *
+ * A `<polygon>` and not a `<path>` so the frame check can read it: `points` is
+ * a flat list of x,y pairs, which is exactly what that test knows how to parse,
+ * and a `d` string is not.
+ */
+function star(root, x, y, size, fill) {
+  const r = size / 2;
+  const cx = x + r;
+  const cy = y + r;
+  // The inner radius a pentagram makes on its own. Larger and it is a flower,
+  // smaller and it is a throwing blade.
+  const inner = r * 0.382;
+
+  const points = [];
+  for (let i = 0; i < 10; i++) {
+    const radius = i % 2 === 0 ? r : inner;
+    const angle = -Math.PI / 2 + (i * Math.PI) / 5;
+    points.push(`${(cx + radius * Math.cos(angle)).toFixed(2)},${(cy + radius * Math.sin(angle)).toFixed(2)}`);
+  }
+
+  root.append(el("polygon", { points: points.join(" "), fill }));
+}
+
+/** `count` stars in a row, centred on `cx`, as one hoverable thing. */
+function starRow(root, cx, y, size, count, fill, label) {
+  const gap = size * STAR_GAP;
+  const width = count * size + (count - 1) * gap;
+  const row = el("g", {});
+
+  for (let i = 0; i < count; i++) star(row, cx - width / 2 + i * (size + gap), y, size, fill);
+  root.append(label ? titled(row, label) : row);
+}
+
+/** The space between two stars, as a fraction of one. Also sizes the row. */
+const STAR_GAP = 0.16;
+
 function thumb(root, x, y, size, up, fill, label) {
   const s = size / 24;
   const px = (u) => x + u * s;
@@ -1016,8 +1200,25 @@ function thumb(root, x, y, size, up, fill, label) {
  * the one that would have flattened a chart into a single spike.
  */
 function drawVerdict(root, plot, slide, theme, L) {
+  // Two judgements are a pair and belong side by side. More than two is a
+  // scale, and a scale stacks — see `drawVerdictRows`.
+  if (slide.cards.length > 2) return drawVerdictRows(root, plot, slide, theme, L);
+
   const gap = Math.max(12, L.value * 0.7);
-  const cardW = (plot.w - gap) / 2;
+  const cardW = (plot.w - gap * (slide.cards.length - 1)) / slide.cards.length;
+
+  /**
+   * How many glyphs the widest card holds, which sets the size of every glyph.
+   *
+   * One star has to be one size across the whole row or the cards stop being a
+   * scale, and the cards have to be one height or they stop being a row. Both
+   * fall out of sizing the glyph against the busiest card. A thumb is one
+   * glyph, so this leaves the two-card slide exactly as it was.
+   */
+  const widest = Math.max(
+    ...slide.cards.map((card) => (card.glyph.kind === "stars" ? card.glyph.count : 1)),
+  );
+  const span = widest + (widest - 1) * STAR_GAP;
 
   /**
    * The cards are sized to their contents, then grown or shrunk once to use the
@@ -1033,7 +1234,9 @@ function drawVerdict(root, plot, slide, theme, L) {
     // Whole pixels: type is crisper for it, and a font size carrying sixteen
     // decimal places is a measurement nobody can reason about.
     const px = (value) => Math.round(value);
-    const glyph = px(Math.min(cardW * 0.26 * scale, cardW * 0.4));
+    const glyph = px(
+      Math.min(cardW * 0.26 * scale, cardW * 0.4, (cardW - L.tiny * 2) / span),
+    );
     const valueSize = px(Math.min(Math.min(L.tileValue, cardW * 0.26) * scale, cardW * 0.32));
     const labelSize = px(Math.min(L.value * scale, L.value * 1.6));
     const noteSize = px(Math.min(L.axis * scale, L.axis * 1.5));
@@ -1065,15 +1268,25 @@ function drawVerdict(root, plot, slide, theme, L) {
   const { glyph, valueSize, labelSize, noteSize, padY, restValue, restLabel, restNote, cardH, restH } = box;
   const top = plot.y + Math.max(0, (plot.h - (cardH + gap + restH)) / 2);
 
-  // Blue for a keeper and red for a reject — the same two the streak wall uses
-  // for a day out and a day of silence. Never the only thing saying which is
-  // which: each card carries the gesture and the word as well.
-  const colours = { up: theme.series[0], down: theme.series[7] };
+  /**
+   * Blue for a keeper and red for a reject — the same two the streak wall uses
+   * for a day out and a day of silence. Never the only thing saying which is
+   * which: each card carries the gesture and the word as well.
+   *
+   * Stars take the one colour at full strength on every card. The obvious idea
+   * is the heat ramp stepping up with the rating, and it does not survive
+   * contact with a glyph: `ramp[0]` is a near-white wash meant for filling a
+   * calendar square, and a one-star glyph drawn in it would be invisible on the
+   * card behind it. The count is the scale here — five stars already read as
+   * more than one — so the colour has nothing left to say.
+   */
+  const paint = (glyph) =>
+    glyph.kind === "thumb" && !glyph.up ? theme.series[7] : theme.series[0];
 
   slide.cards.forEach((card, i) => {
     const x = plot.x + i * (cardW + gap);
     const cx = x + cardW / 2;
-    const colour = colours[card.verdict] ?? theme.series[0];
+    const colour = paint(card.glyph);
 
     root.append(
       titled(
@@ -1090,15 +1303,11 @@ function drawVerdict(root, plot, slide, theme, L) {
       ),
     );
 
-    thumb(
-      root,
-      cx - glyph / 2,
-      top + padY,
-      glyph,
-      card.verdict === "up",
-      colour,
-      `${card.label}: ${card.value}`,
-    );
+    if (card.glyph.kind === "thumb") {
+      thumb(root, cx - glyph / 2, top + padY, glyph, card.glyph.up, colour, `${card.label}: ${card.value}`);
+    } else {
+      starRow(root, cx, top + padY, glyph, card.glyph.count, colour, `${card.label}: ${card.value}`);
+    }
 
     const valueY = top + padY + glyph + valueSize * 0.95;
     root.append(

@@ -170,18 +170,58 @@ describe("year by year", () => {
 });
 
 describe("keepers", () => {
-  test("the frames nobody ever rated get their own figure", () => {
-    const ratings = [0, 10, 20, 30, 8, 2];
-    const deck = buildDeck(statsWith({ ratings, totals: { ...statsWith({}).totals, shots: 500, rated: 70 } }));
-    const slide = findSlide(deck.slides, "keepers");
-    assert.ok(slide && slide.kind === "columns");
+  // Nothing at two stars, which is the case a card has to survive: a rating
+  // nobody used is a gap in the scale, and a scale that closes its own gaps up
+  // is lying about the shape of the edit.
+  const RATINGS = [0, 10, 0, 30, 8, 2];
+  const keepers = (ratings = RATINGS, shots = 500) =>
+    findSlide(
+      buildDeck(statsWith({ ratings, totals: { ...statsWith({}).totals, shots, rated: 50 } })).slides,
+      "keepers",
+    );
 
-    // 500 photographs, 70 of them rated: the other 430 are the story, and a
-    // sixth column would flatten the five that are being compared.
-    assert.equal(slide.figure?.value, "430");
-    assert.ok(slide.figure?.label.includes("never rated"));
-    assert.equal(slide.items.length, 5);
-    assert.deepEqual(slide.table.rows.at(-1), ["Never rated", 430]);
+  test("is a card per rating, with the stars on it", () => {
+    const slide = keepers();
+    assert.ok(slide && slide.kind === "verdict");
+
+    assert.deepEqual(
+      slide.cards.map((card) => card.glyph),
+      [1, 2, 3, 4, 5].map((count) => ({ kind: "stars", count })),
+    );
+    assert.deepEqual(
+      slide.cards.map((card) => card.value),
+      ["10", "0", "30", "8", "2"],
+    );
+    // Named as well as drawn: four small stars and five small stars are hard
+    // to tell apart, and this is what the hover and the table say.
+    assert.deepEqual(slide.cards[0]?.label, "1 star");
+    assert.deepEqual(slide.cards[4]?.label, "5 stars");
+  });
+
+  test("divides by what was rated, and says which denominator it used", () => {
+    const slide = keepers();
+    assert.ok(slide && slide.kind === "verdict");
+
+    // 50 rated frames, 30 of them at three stars.
+    assert.equal(slide.cards[2]?.note, "60% of rated");
+    // The card underneath cannot use that denominator, and does not pretend to.
+    assert.equal(slide.rest.value, "450");
+    assert.equal(slide.rest.note, "90% of everything you shot");
+    assert.deepEqual(slide.table.rows.at(-1), ["Never rated", 450, "—"]);
+  });
+
+  test("the headline says something no card already says", () => {
+    // The four- and five-star cards carry their own counts now, so the old
+    // headline would have been the same number twice.
+    const slide = keepers();
+    assert.equal(slide?.headline, "You rate about one frame in 10");
+    assert.ok(slide?.note?.startsWith("20% of what you rated is four stars or better"));
+  });
+
+  test("a library that rates everything is not divided by nothing", () => {
+    const slide = keepers([0, 10, 0, 30, 8, 2], 50);
+    assert.equal(slide?.headline, "You rate almost everything you shoot");
+    assert.ok(slide && slide.kind === "verdict" && slide.rest.value === "0");
   });
 });
 

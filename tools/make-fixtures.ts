@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { buildJpegWithExif, buildMp4, type ExifSpec } from "./exif-writer.ts";
+import type { CatalogEntry } from "./make-catalog.ts";
 
 /**
  * Builds a small library that encodes the situations the counting has to get
@@ -67,6 +68,49 @@ export const EXPECTED = {
   shots2025: 26,
   shotsMarch2025: 16,
 } as const;
+
+/**
+ * A catalog covering the morning shoot, with the two things a folder cannot say.
+ *
+ * Ratings and pick flags exist only in a Lightroom catalog — nothing is read
+ * off the files themselves — so the keepers and culling slides are invisible to
+ * any test that indexes the fixtures as a folder, which is every test there was.
+ *
+ * The spread is chosen, not arbitrary. Every star bucket but one is filled,
+ * because a rating nobody used is still a card the slide has to draw, and
+ * getting that wrong is the kind of thing only a real gap catches. Both flags
+ * appear, and most frames carry neither.
+ */
+export function fixtureCatalog(root: string): CatalogEntry[] {
+  const at = `${root.split(path.sep).join("/")}/`;
+  // Two fives, two fours, two threes, no twos, two ones, and two never rated.
+  const ratings = [5, 5, 4, 4, 3, 3, 1, 1, 0, 0];
+  const picks = [1, 1, 1, -1, -1, 0, 0, 0, 0, 0];
+
+  return Array.from({ length: 10 }, (_, i) => ({
+    root: at,
+    folder: "2025/03-15/morning/",
+    baseName: `DSC_${String(2000 + i).padStart(4, "0")}`,
+    extension: "NEF",
+    captureTime: `2025-03-15T10:00:${String(i).padStart(2, "0")}`,
+    cameraModel: NIKON.model,
+    cameraSerial: NIKON.serial,
+    lens: LENS_24_70.lensModel,
+    focalLength: 24,
+    aperture: 2.8,
+    shutter: 1 / 250,
+    iso: 200,
+    rating: ratings[i] ?? 0,
+    pick: picks[i] ?? 0,
+    width: 8256,
+    height: 5504,
+    // The same fix the files carry. A catalog row outranks a folder row, and
+    // only the rating and the pick are inherited back from the loser — so a
+    // catalog that forgets the coordinates deletes them from the library.
+    latitude: 59.3293,
+    longitude: 18.0686,
+  }));
+}
 
 async function write(file: string, data: Buffer): Promise<void> {
   await fs.mkdir(path.dirname(file), { recursive: true });

@@ -183,13 +183,24 @@ export type Slide =
   | (Common & {
       kind: "verdict";
       /**
-       * The two decisions, side by side, each with the gesture that made it.
+       * The judgements, side by side, each with the gesture that made it.
        *
        * A verdict is not a category and not a magnitude — it is a judgement,
-       * and two of them read faster as two cards than as two columns of a bar
-       * chart nobody needs to measure against an axis.
+       * and judgements read faster as cards than as columns of a bar chart
+       * nobody needs to measure against an axis. Two cards for a pick or a
+       * reject; five for a rating, which is the same slide with a different
+       * gesture on it.
+       *
+       * The gesture is described rather than named, because it is drawn: a
+       * `★` from a system font is at the mercy of whatever the export
+       * rasteriser has installed, and an emoji star may not appear at all.
        */
-      cards: Array<{ verdict: "up" | "down"; label: string; value: string; note: string }>;
+      cards: Array<{
+        glyph: { kind: "thumb"; up: boolean } | { kind: "stars"; count: number };
+        label: string;
+        value: string;
+        note: string;
+      }>;
       /** The pile that was never judged either way, under them. */
       rest: { label: string; value: string; note: string };
     })
@@ -1272,13 +1283,13 @@ function cullingSlide(stats: DeckStats): Slide | null {
     ...(note ? { note } : {}),
     cards: [
       {
-        verdict: "up",
+        glyph: { kind: "thumb", up: true },
         label: "Picked",
         value: fmtInt(picked),
         note: `${fmtPct(share(picked))} of your frames`,
       },
       {
-        verdict: "down",
+        glyph: { kind: "thumb", up: false },
         label: "Rejected",
         value: fmtInt(rejected),
         note: `${fmtPct(share(rejected))} of your frames`,
@@ -1307,42 +1318,74 @@ function dayOf(at: number): number {
   return date.getFullYear() * 10000 + (date.getMonth() + 1) * 100 + date.getDate();
 }
 
+/**
+ * The ratings, as five cards with the stars drawn on them.
+ *
+ * A rating is a verdict, not a measurement — the same argument that turned
+ * culling into cards. Nobody measures four stars against an axis; they look at
+ * how many there were. And the one slide in the deck about a thing with a
+ * universally understood symbol should not be drawing typewriter asterisks.
+ *
+ * Every rating gets a card, including the ones nobody used: a gap in a scale is
+ * information, and a missing card would quietly close it up.
+ */
 function keepersSlide(stats: DeckStats): Slide | null {
   const rated = stats.ratings.reduce((sum, n, stars) => (stars > 0 ? sum + n : sum), 0);
   if (rated === 0) return null;
 
-  const keepers = stats.totals.keepers;
+  // Everything that was never given a star. It dwarfs the rated frames in most
+  // libraries, which is why it is the card underneath rather than a sixth card
+  // that would make the other five unreadable.
+  const unrated = Math.max(0, stats.totals.shots - rated);
+  const ofRated = (n: number) => (rated > 0 ? n / rated : 0);
+
+  /**
+   * How selective the rating is, which is the one thing no card says.
+   *
+   * The headline used to be the four-plus count, and the four- and five-star
+   * cards now carry those numbers themselves — so it had to become something
+   * else rather than the same number in larger type.
+   */
+  const everyN = rated > 0 ? stats.totals.shots / rated : 0;
+  const headline =
+    everyN < 1.2
+      ? "You rate almost everything you shoot"
+      : `You rate about one frame in ${fmtInt(everyN)}`;
+
   const fourPlus = (stats.ratings[4] ?? 0) + (stats.ratings[5] ?? 0);
 
-  // Everything that was never given a star. It dwarfs the rated frames in most
-  // libraries, which is why it is a figure beside the chart rather than a sixth
-  // column that would flatten the other five.
-  const unrated = Math.max(0, stats.totals.shots - rated);
-
   return {
-    kind: "columns",
+    kind: "verdict",
     id: "keepers",
-    orientation: orientationOf(stats, "keepers", "columns"),
-    ...settingsOf(orientationSetting(stats, "keepers", "columns")),
     title: "Keepers",
     subtitle: "What survived the edit",
-    headline: `${fmtInt(fourPlus)} ${plural(fourPlus, "frame")} at four stars or better`,
-    note: `${fmtPct(keepers / stats.totals.shots)} of the range · ratings come from Lightroom`,
-    items: [1, 2, 3, 4, 5].map((stars) => ({
-      label: "*".repeat(stars),
-      value: stats.ratings[stars] ?? 0,
+    headline,
+    note: `${fmtPct(ofRated(fourPlus))} of what you rated is four stars or better · ratings come from Lightroom`,
+    cards: [1, 2, 3, 4, 5].map((stars) => ({
+      glyph: { kind: "stars" as const, count: stars },
+      // The word as well as the glyph. Four small stars and five small stars
+      // are genuinely hard to tell apart, and this is also the name the hover
+      // and the table use.
+      label: `${stars} star${stars === 1 ? "" : "s"}`,
+      value: fmtInt(stats.ratings[stars] ?? 0),
+      note: `${fmtPct(ofRated(stats.ratings[stars] ?? 0))} of rated`,
     })),
-    highlight: -1,
-    axisLabel: "Rating",
-    figure: { value: fmtInt(unrated), label: `never rated  ·  ${fmtPct(unrated / stats.totals.shots)}` },
+    rest: {
+      label: "Never rated",
+      value: fmtInt(unrated),
+      // A different denominator from the cards above, and it says so: the cards
+      // divide by what was rated, and this one cannot.
+      note: `${fmtPct(unrated / Math.max(1, stats.totals.shots))} of everything you shot`,
+    },
     table: tableOf(
-      ["Rating", "Photographs"],
+      ["Rating", "Photographs", "Share of rated"],
       [
         ...[1, 2, 3, 4, 5].map((stars): Array<string | number> => [
           `${stars} star${stars === 1 ? "" : "s"}`,
           stats.ratings[stars] ?? 0,
+          fmtPct(ofRated(stats.ratings[stars] ?? 0)),
         ]),
-        ["Never rated", unrated],
+        ["Never rated", unrated, "—"],
       ],
     ),
   };
