@@ -1443,6 +1443,8 @@ function kitSlide(stats: DeckStats): Slide | null {
   const bought = gear.filter((m) => m.kind === "bought");
   const sold = gear.filter((m) => m.kind === "sold");
   const isGlass = (m: Milestone) => m.gear?.dimension !== "camera";
+  const sameThing = (a: Milestone, b: Milestone) =>
+    a.gear?.dimension === b.gear?.dimension && a.gear?.key === b.gear?.key;
 
   const items: Array<{ label: string; meta: string; value: string }> = [];
   const rows: Array<Array<string | number>> = [];
@@ -1459,10 +1461,47 @@ function kitSlide(stats: DeckStats): Slide | null {
   const frames = (m: Milestone) =>
     `${fmtInt(m.gear?.shots ?? 0)} ${plural(m.gear?.shots ?? 0, "frame")}`;
 
+  const firstSale = sold[0];
+
+  /**
+   * Whether this is also the first thing that left.
+   *
+   * Only when the purchase came first. Something sold before the earliest
+   * purchase on record is a different ownership wearing the same name — you
+   * bought it again — and one row reading "2025 to 2024" is worse than two
+   * honest ones.
+   */
+  const alsoFirstSold = (m: Milestone) =>
+    firstSale !== undefined && sameThing(m, firstSale) && firstSale.day >= m.day;
+
+  /**
+   * The first thing you bought, said once.
+   *
+   * When it is also the first thing you sold, two rows would carry the same
+   * name, the same frame count and two halves of one story. They become a
+   * single row running from the purchase to the sale, and the sale row below
+   * steps aside.
+   */
+  const firstPurchase = (fact: string, m: Milestone) => {
+    if (firstSale === undefined || !alsoFirstSold(m)) {
+      add(fact, m.gear?.label ?? "", formatDay(m.day), frames(m));
+      return;
+    }
+
+    // How long you had it, rather than how long you shot it: the dates either
+    // side already say when, and the sale row's "of shooting" would be the same
+    // span twice on one line.
+    add(
+      `${fact}, and the first you sold`,
+      m.gear?.label ?? "",
+      `${formatDay(m.day)} to ${formatDay(firstSale.day)}`,
+      frames(m),
+      fmtSpan(daysBetween(m.day, firstSale.day)),
+    );
+  };
+
   const firstBody = bought.find((m) => m.gear?.dimension === "camera");
-  if (firstBody) {
-    add("First body you bought", firstBody.gear?.label ?? "", formatDay(firstBody.day), frames(firstBody));
-  }
+  if (firstBody) firstPurchase("First body you bought", firstBody);
 
   // The second body is the first upgrade, whether or not the first one left:
   // buying another camera is the moment, and what happened to the old one is a
@@ -1479,12 +1518,15 @@ function kitSlide(stats: DeckStats): Slide | null {
   }
 
   const firstGlass = bought.find(isGlass);
-  if (firstGlass) {
-    add("First lens you bought", firstGlass.gear?.label ?? "", formatDay(firstGlass.day), frames(firstGlass));
-  }
+  if (firstGlass) firstPurchase("First lens you bought", firstGlass);
 
-  const firstSale = sold[0];
-  if (firstSale) {
+  // Already said above, when the first thing to leave is the first thing that
+  // arrived.
+  const merged =
+    (firstBody !== undefined && alsoFirstSold(firstBody)) ||
+    (firstGlass !== undefined && alsoFirstSold(firstGlass));
+
+  if (firstSale && !merged) {
     // What it did while you had it — which is the only interesting thing about
     // a sale, and the one number a sale slide can honestly give.
     const owned = firstSale.gear?.firstDay
@@ -1506,9 +1548,6 @@ function kitSlide(stats: DeckStats): Slide | null {
    * which is what makes a lens bought, sold and bought again read correctly
    * rather than as one twelve-year ownership.
    */
-  const sameThing = (a: Milestone, b: Milestone) =>
-    a.gear?.dimension === b.gear?.dimension && a.gear?.key === b.gear?.key;
-
   const owned = sold
     .map((sale) => {
       const bought_ = bought.filter((buy) => sameThing(buy, sale) && buy.day <= sale.day).at(-1);

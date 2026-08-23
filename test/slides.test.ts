@@ -670,3 +670,62 @@ describe("the shortest thing you kept", () => {
     assert.equal(row([buy("b1", 20240101, "a", "Lens A"), sell("s1", 20240301, "a", "Lens A")]), undefined);
   });
 });
+
+describe("bought first and sold first", () => {
+  const buy = (id: string, day: number, key: string, label: string, dimension: "camera" | "lens" = "lens") =>
+    milestone(id, `Bought the ${label}`, day, "bought", { dimension, key, label, shots: 1200 });
+  const sell = (id: string, day: number, key: string, label: string, dimension: "camera" | "lens" = "lens") =>
+    milestone(id, `Sold the ${label}`, day, "sold", { dimension, key, label, shots: 1200 });
+
+  const facts = (milestones: Milestone[]) => {
+    const slide = findSlide(buildDeck(statsWith({ milestones })).slides, "kit");
+    return slide?.kind === "list" ? slide.items : [];
+  };
+
+  test("are one row when they are the same object", () => {
+    const items = facts([buy("b1", 20240101, "a", "Lens A"), sell("s1", 20240401, "a", "Lens A")]);
+    const row = items.find((item) => item.meta.startsWith("First lens you bought"));
+
+    assert.equal(row?.meta, "First lens you bought, and the first you sold · 1 Jan 2024 to 1 Apr 2024 · 3 months");
+    assert.equal(row?.label, "Lens A");
+    assert.equal(row?.value, "1,200 frames");
+    // The name, the frame count and the story appear once between them.
+    assert.equal(items.filter((item) => item.label === "Lens A").length, 1);
+    assert.ok(!items.some((item) => item.meta.startsWith("First thing you sold")));
+  });
+
+  test("a body does the same", () => {
+    const items = facts([
+      buy("b1", 20240101, "a", "Body A", "camera"),
+      buy("b2", 20240601, "b", "Lens B"),
+      sell("s1", 20241231, "a", "Body A", "camera"),
+    ]);
+    assert.ok(
+      items.some((item) => item.meta.startsWith("First body you bought, and the first you sold")),
+      items.map((item) => item.meta).join(" / "),
+    );
+    assert.ok(!items.some((item) => item.meta.startsWith("First thing you sold")));
+  });
+
+  test("stay two rows when they are different things", () => {
+    const items = facts([
+      buy("b1", 20240101, "a", "Lens A"),
+      buy("b2", 20240201, "b", "Lens B"),
+      sell("s1", 20240301, "b", "Lens B"),
+    ]);
+    assert.ok(items.some((item) => item.meta.startsWith("First lens you bought ·")));
+    assert.ok(items.some((item) => item.meta.startsWith("First thing you sold ·")));
+  });
+
+  test("stay two rows when the sale came first", () => {
+    // Sold, then bought again: the same name, but not the same ownership, and
+    // a single row would run backwards from 2025 to 2024.
+    const items = facts([
+      sell("s1", 20240301, "a", "Lens A"),
+      buy("b1", 20250101, "a", "Lens A"),
+      buy("b2", 20250201, "b", "Lens B"),
+    ]);
+    assert.ok(items.some((item) => item.meta.startsWith("First lens you bought ·")));
+    assert.ok(items.some((item) => item.meta.startsWith("First thing you sold ·")));
+  });
+});
