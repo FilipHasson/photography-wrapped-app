@@ -24,12 +24,20 @@
       </div>
     </header>
 
+<!--
+      Two halves, and saying only one of them has cost real time: the server
+      reads its TypeScript once at boot, and this page has been running the
+      JavaScript it downloaded when it was opened. Restarting the server alone
+      gives you new numbers through the API and the same interface you had
+      before — which reads as the change not having shipped.
+    -->
     <div id="stale-banner" class="stale-banner" hidden>
       <strong>This server is running older code.</strong>
       <span>
-        Files changed after it started, and Node only reads them once. Stop it and run
-        <code>npm start</code> again to see the current build.
+        Files changed after it started. Stop it and run <code>npm start</code> again — and
+        reload this page, which is still running the JavaScript it loaded when you opened it.
       </span>
+      <button id="stale-reload" class="ghost" type="button">Reload the page</button>
     </div>
 
     <div id="job-banner" class="job-banner" hidden>

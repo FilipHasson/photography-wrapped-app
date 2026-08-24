@@ -1356,6 +1356,9 @@ $("setting-owner").addEventListener("change", () => void saveSettings());
 $("setting-merge").addEventListener("change", () => void saveSettings());
 $("setting-video").addEventListener("change", () => void saveSettings());
 $("setting-deleted").addEventListener("change", () => void saveSettings());
+// Half the fix, and the half nobody thinks of: the server is restarted at a
+// terminal, the page is reloaded here.
+$("stale-reload").addEventListener("click", () => location.reload());
 
 for (const mode of ["light", "dark"]) {
   $(`colour-${mode}`).addEventListener("click", () => {
