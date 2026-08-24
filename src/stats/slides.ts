@@ -1184,6 +1184,43 @@ function calendarSlide(stats: DeckStats): Slide | null {
  * do you shoot — and a shape rather than a number: a line of days, each one
  * marked or not, with the longest run and the longest silence picked out of it.
  */
+/** Fewer days than this at either end of the range is not a year, it is an offcut. */
+const SLIVER_DAYS = 28;
+
+/**
+ * Folds a clipped end period into its neighbour.
+ *
+ * Every row of the wall is the same height whatever it holds, so a period the
+ * range only clips a sliver of costs a full row to say a fortnight — and takes
+ * that height off the years either side of it. Unbounded ranges end today, so
+ * this is not hypothetical: for the week after a start-date anniversary, "all
+ * time" reaches two days into a period that has barely begun.
+ *
+ * No day is dropped. The neighbouring row runs past its own boundary to cover
+ * them, which is what "every day in the range" requires — its label is then a
+ * few days out at one end, which nobody can see and everybody can live with.
+ * Only a *clipped* period is ever folded: a whole year with nothing in it has
+ * earned its row, and saying so is the point of drawing one.
+ */
+function foldSlivers<T extends { from: number; to: number }>(spans: T[]): T[] {
+  const sliver = (span: T) => daysBetween(span.from, span.to) + 1 < SLIVER_DAYS;
+  let kept = spans;
+
+  if (kept.length > 1) {
+    const last = kept[kept.length - 1] as T;
+    const before = kept[kept.length - 2] as T;
+    if (sliver(last)) kept = [...kept.slice(0, -2), { ...before, to: last.to }];
+  }
+
+  if (kept.length > 1) {
+    const first = kept[0] as T;
+    const after = kept[1] as T;
+    if (sliver(first)) kept = [{ ...after, from: first.from }, ...kept.slice(2)];
+  }
+
+  return kept;
+}
+
 function streaksSlide(stats: DeckStats): Slide | null {
   const { longestStreak, longestGap, range, daily } = stats;
   if (daily.length === 0) return null;
@@ -1205,13 +1242,15 @@ function streaksSlide(stats: DeckStats): Slide | null {
   // thinking in. They are labels along a packed wall, or rows of their own.
   // With less than two there is nothing to choose between, so neither the basis
   // nor the layout is offered.
-  const years = stats.years
-    .filter((year) => year.to >= range.from && year.from <= range.to)
-    .map((year) => ({
-      label: year.label,
-      from: Math.max(year.from, range.from),
-      to: Math.min(year.to, range.to),
-    }));
+  const years = foldSlivers(
+    stats.years
+      .filter((year) => year.to >= range.from && year.from <= range.to)
+      .map((year) => ({
+        label: year.label,
+        from: Math.max(year.from, range.from),
+        to: Math.min(year.to, range.to),
+      })),
+  );
 
   /**
    * The shape asked for, or the nearest one this range can hold: a row per year

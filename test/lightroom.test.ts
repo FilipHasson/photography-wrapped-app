@@ -9,7 +9,7 @@ import { indexSource, indexOverview } from "../src/index/source.ts";
 import { rebuildPrimaries } from "../src/index/dedupe.ts";
 import { computeStats } from "../src/stats/aggregate.ts";
 import { resolveRange } from "../src/stats/range.ts";
-import { EXPECTED, makeFixtures } from "../tools/make-fixtures.ts";
+import { EXPECTED, makeFixtures, fixtureNow } from "../tools/make-fixtures.ts";
 import { makeCatalog, type CatalogEntry } from "../tools/make-catalog.ts";
 
 /**
@@ -104,7 +104,7 @@ const stats = () => {
   const overview = indexOverview(db);
   return computeStats(
     db,
-    resolveRange({ kind: "all" }, { firstDay: overview.firstDay, lastDay: overview.lastDay }),
+    resolveRange({ kind: "all" }, { firstDay: overview.firstDay, lastDay: overview.lastDay }, fixtureNow()),
     { includeVideo: true },
   );
 };

@@ -11,7 +11,7 @@ import { computeStats, gearCatalog } from "../src/stats/aggregate.ts";
 import { DEFAULT_NAMING, VERBATIM_NAMING } from "../src/core/gear.ts";
 import { buildDeck } from "../src/stats/slides.ts";
 import { resolveRange } from "../src/stats/range.ts";
-import { EXPECTED, makeFixtures } from "../tools/make-fixtures.ts";
+import { EXPECTED, makeFixtures, fixtureNow } from "../tools/make-fixtures.ts";
 
 /**
  * The end-to-end test: real files with real EXIF, walked, read, deduped and
@@ -24,7 +24,7 @@ let config: AppConfig;
 
 const allTime = (database: Db) => {
   const overview = indexOverview(database);
-  return resolveRange({ kind: "all" }, { firstDay: overview.firstDay, lastDay: overview.lastDay });
+  return resolveRange({ kind: "all" }, { firstDay: overview.firstDay, lastDay: overview.lastDay }, fixtureNow());
 };
 
 const statsFor = (database: Db, range = allTime(database)) =>

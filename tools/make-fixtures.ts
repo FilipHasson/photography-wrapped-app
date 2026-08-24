@@ -70,6 +70,20 @@ export const EXPECTED = {
 } as const;
 
 /**
+ * The fixtures' own present — the day of the last frame in them.
+ *
+ * A range with no end of its own runs to *today*, so a test that resolves one
+ * against the wall clock gets a longer period every day it is run: the deck it
+ * builds drifts, and the calendar in it turns into a run of months the moment
+ * these fixtures are a year old. Anything asking these fixtures for "all time"
+ * passes this instead, which is the day the library stops rather than the day
+ * the test is run.
+ */
+export function fixtureNow(): Date {
+  return new Date(2025, 5, 20);
+}
+
+/**
  * A catalog covering the morning shoot, with the two things a folder cannot say.
  *
  * Ratings and pick flags exist only in a Lightroom catalog — nothing is read

@@ -117,13 +117,31 @@ function applyFloor(range: Range, floor: number | null): Range {
   };
 }
 
+/**
+ * Where a range with no end of its own stops: today.
+ *
+ * "All time" and "since the day I bought it" are open questions, and an open
+ * question ending at the last photograph quietly answers a different one. A
+ * library last touched in March would report a period ending in March — so six
+ * months of not picking the camera up would be missing from the wall of days,
+ * out of the share of days shot on, and out of the year still running. The dry
+ * spell *is* the answer, and it is the one thing the old end date could never
+ * show.
+ *
+ * The last day still wins where it is later than today, because a camera with
+ * its clock set wrong writes days in the future and those frames are real.
+ */
+function endsToday(bounds: RangeBounds, today: number): number {
+  return Math.max(bounds.lastDay ?? today, today);
+}
+
 function resolveSpec(spec: RangeSpec, bounds: RangeBounds, now: Date): Range {
   const today = todayDay(now);
 
   switch (spec.kind) {
     case "all": {
       const from = bounds.firstDay ?? today;
-      const to = bounds.lastDay ?? today;
+      const to = endsToday(bounds, today);
       return {
         spec,
         from,
@@ -138,7 +156,7 @@ function resolveSpec(spec: RangeSpec, bounds: RangeBounds, now: Date): Range {
 
     case "since": {
       const from = Math.min(spec.day, today);
-      const to = Math.max(bounds.lastDay ?? today, from);
+      const to = Math.max(endsToday(bounds, today), from);
       return {
         spec,
         from,

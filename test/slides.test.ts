@@ -21,6 +21,12 @@ import { resolveRange } from "../src/stats/range.ts";
  * have to be visible to be brought back.
  */
 
+/**
+ * A fixed clock. An unbounded range runs to today, so a test that resolves one
+ * without saying when "now" is drifts by a day every day.
+ */
+const NOW = new Date(2026, 6, 1);
+
 function tally(label: string, shots: number, excluded = false): Tally {
   return {
     key: label.toLowerCase().replace(/\W+/g, ""),
@@ -231,6 +237,7 @@ describe("what the opening slide owns up to", () => {
     const range = resolveRange(
       { kind: "all" },
       { firstDay: 20180101, lastDay: 20251231, floorDay: 20230824 },
+      NOW,
     );
     const deck = buildDeck(statsWith({ range }));
     const opening = findSlide(deck.slides, "opening");
@@ -354,6 +361,50 @@ describe("streaks", () => {
       ["wall", "yearBasis"],
     );
     assert.equal(slide.layout, "packed", "one wall by default");
+  });
+
+  /**
+   * The case that made this necessary: a range with no end of its own runs to
+   * today, so for the week after a start-date anniversary "all time" reaches a
+   * day or two into a year that has barely begun. Every row of the wall is the
+   * same height, so that stub took a quarter of it to draw two squares.
+   */
+  const wall = (from: number, to: number) => {
+    const slide = findSlide(
+      buildDeck(
+        statsWith({
+          range: resolveRange({ kind: "custom", from, to }, { firstDay: from, lastDay: to }),
+          daily,
+          longestStreak: { days: 40, from: 20250101, to: 20250209 },
+          longestGap: { days: 12, from: 20250210, to: 20250222 },
+          years: YEARS,
+        }),
+      ).slides,
+      "streaks",
+    );
+    assert.ok(slide && slide.kind === "strip");
+    return slide.years;
+  };
+
+  test("a year the range clips to a sliver does not take a row of its own", () => {
+    const tail = wall(20230824, 20250826);
+    assert.deepEqual(tail.map((year) => year.label), ["2023–24", "2024–25"]);
+    // Folded, not dropped: the row before it runs on to cover those three days,
+    // because the wall promises every day in the range.
+    assert.equal(tail[1]?.to, 20250826);
+
+    const head = wall(20240822, 20251231);
+    assert.deepEqual(head.map((year) => year.label), ["2024–25", "2025–26"]);
+    assert.equal(head[0]?.from, 20240822);
+  });
+
+  test("a whole year with nothing in it still earns its row", () => {
+    // Only a *clipped* end is folded. A year the range covers in full has
+    // something to say even when the camera stayed in the cupboard for it.
+    assert.deepEqual(
+      wall(20230824, 20260816).map((year) => year.label),
+      ["2023–24", "2024–25", "2025–26"],
+    );
   });
 
   test("one year has no row per year to offer, but still has months", () => {
@@ -614,7 +665,7 @@ describe("which slides draw the milestones", () => {
   const base = {
     // Long enough that the day grid gives way to month by month, which is the
     // one of the two that draws marks.
-    range: resolveRange({ kind: "all" }, { firstDay: 20240101, lastDay: 20260630 }),
+    range: resolveRange({ kind: "all" }, { firstDay: 20240101, lastDay: 20260630 }, NOW),
     milestones: KIT,
     busiestDay: { day: 20250115, shots: 30 },
     daily,

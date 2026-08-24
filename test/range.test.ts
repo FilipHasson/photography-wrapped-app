@@ -1,6 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { parseRangeSpec, rangeQuery, resolveRange } from "../src/stats/range.ts";
+import { daysBetween } from "../src/core/time.ts";
 
 /**
  * A monthly report, an annual wrapped and "everything I have ever shot" are the
@@ -12,12 +13,24 @@ const EMPTY = { firstDay: null, lastDay: null };
 const LIBRARY = { firstDay: 20180612, lastDay: 20250801 };
 
 describe("ranges", () => {
-  test("all time is whatever the index holds", () => {
+  test("all time runs to today, not to the last photograph", () => {
     const range = resolveRange({ kind: "all" }, LIBRARY, NOW);
     assert.equal(range.from, 20180612);
-    assert.equal(range.to, 20250801);
+    // The camera has not come out since 1 August. Those seventeen days are part
+    // of the answer to "all time", and stopping at the last frame hid them —
+    // out of the wall of days, out of the share of days shot on, and out of the
+    // year still running.
+    assert.equal(range.to, 20250818);
+    assert.equal(range.days, daysBetween(20180612, 20250818) + 1);
     assert.equal(range.label, "All time");
     assert.equal(range.previous, null, "nothing precedes everything");
+  });
+
+  test("a camera with its clock set wrong keeps its frames", () => {
+    // Days written in the future are common enough, and those frames are real:
+    // where the index reaches past today, the index wins.
+    const range = resolveRange({ kind: "all" }, { firstDay: 20180612, lastDay: 20260101 }, NOW);
+    assert.equal(range.to, 20260101);
   });
 
   test("all time over an empty index is today, not the epoch", () => {
@@ -82,7 +95,7 @@ describe("a library that starts later than the catalog does", () => {
   test("all time starts at the start date", () => {
     const range = resolveRange({ kind: "all" }, FLOOR, NOW);
     assert.equal(range.from, 20230824);
-    assert.equal(range.to, 20250801);
+    assert.equal(range.to, 20250818);
     assert.equal(range.clipped, true);
   });
 
@@ -106,7 +119,8 @@ describe("a library that starts later than the catalog does", () => {
   test("a milestone becomes a range of its own", () => {
     const range = resolveRange({ kind: "since", day: 20230824, label: "the a9 III" }, LIBRARY, NOW);
     assert.equal(range.from, 20230824);
-    assert.equal(range.to, 20250801);
+    // Open at the far end, like all time, and closed the same way: today.
+    assert.equal(range.to, 20250818);
     assert.equal(range.label, "Since the a9 III");
     // Compared against the equally long stretch before it.
     assert.equal(range.previous?.to, 20230823);

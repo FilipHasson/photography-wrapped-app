@@ -326,14 +326,40 @@ re-reading a library for it.
 - `config.startDay` is applied in `resolveRange`, not in the SQL, so one place
   decides what a range means. `Range.clipped` is how the opening slide knows to
   say the start date is holding it back.
+- **A range with no end of its own ends today, not at the last photograph.**
+  All time and "since the day I bought it" are open questions, and `endsToday`
+  in `stats/range.ts` is the one place that closes them. A library last touched
+  in March used to report a period ending in March, which put six months of not
+  picking the camera up outside the wall of days, outside the share of days shot
+  on, and outside the year still running — the dry spell *is* the answer. The
+  index still wins where it reaches past today: a camera with its clock set
+  wrong writes days in the future and those frames are real. The opening slide
+  is unaffected, because its subtitle has always been `totals.firstDay` to
+  `totals.lastDay` — the real first and last frame, not the range.
+- **A year the range clips to a sliver is not a row on the wall.** Every row of
+  `streaksSlide`'s year banding is the same height whatever it holds, so a
+  two-day period at either end would cost a quarter of the wall and take that
+  height off the real years — which is routine now that all time runs to today,
+  for the week after every start-date anniversary. `foldSlivers` folds an end
+  period under `SLIVER_DAYS` into its neighbour, which then runs past its own
+  boundary; no day is dropped, because the slide promises every day in the
+  range. Only a *clipped* end is ever folded: a whole year with nothing in it
+  has earned its row, and saying so is the point of drawing one.
 
 ## Testing
 
 ```bash
-npm test          # 286 tests
+npm test          # 289 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```
+
+**A test that asks for an unbounded range must say when "now" is.** It runs to
+today, so `resolveRange({ kind: "all" }, …)` with no clock covers a longer
+period every day it is run — and the deck it builds drifts, dropping the day
+grid for month by month the moment the fixtures are a year old. Pass
+`fixtureNow()` from `tools/make-fixtures.ts` against the fixture library, or a
+fixed `Date` against synthetic bounds.
 
 `tools/exif-writer.ts` synthesises real APP1/TIFF blocks and real MP4 boxes, so
 fixtures carry genuine metadata rather than committed binaries;

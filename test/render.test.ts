@@ -9,7 +9,7 @@ import { indexSource, indexOverview } from "../src/index/source.ts";
 import { computeStats, gearCatalog } from "../src/stats/aggregate.ts";
 import { buildDeck, type Slide } from "../src/stats/slides.ts";
 import { resolveRange } from "../src/stats/range.ts";
-import { makeFixtures, fixtureCatalog } from "../tools/make-fixtures.ts";
+import { makeFixtures, fixtureCatalog, fixtureNow } from "../tools/make-fixtures.ts";
 import { makeCatalog } from "../tools/make-catalog.ts";
 import { daysBetween } from "../src/core/time.ts";
 
@@ -115,7 +115,7 @@ before(async () => {
   await indexSource(db, catalogSource, config);
 
   const overview = indexOverview(db);
-  const range = resolveRange({ kind: "all" }, { firstDay: overview.firstDay, lastDay: overview.lastDay });
+  const range = resolveRange({ kind: "all" }, { firstDay: overview.firstDay, lastDay: overview.lastDay }, fixtureNow());
 
   // Milestones on days the fixtures actually hold, so every slide that draws
   // time is checked with its annotations on rather than without them.
