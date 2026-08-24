@@ -246,6 +246,27 @@ re-reading a library for it.
   have hidden from the deck is still gear you bought. Old milestones carry no
   category at all and must keep working — `coerceAnchor` degrades anything it
   does not recognise to a plain dated label rather than dropping it.
+- **A milestone is one of five kinds, and two of them carry a window.**
+  `bought`/`sold` point at gear; `custom` is a date and a phrase; `trip` spans
+  days and `shoot` is one. The windowed pair count the frames inside their own
+  range (`Milestone.shots`), which is what keeps them facts rather than
+  captions — a fortnight that says what came out of it earns a mark, a caption
+  does not. Gear milestones leave `shots` null on purpose: the frames taken the
+  day a lens arrived say nothing about the lens, and `gear.shots` is the honest
+  number. `Milestone.until` is always set (equal to `day` where there is no
+  span) so a renderer never has to ask what kind it is, while `Anchor.until` is
+  absent unless it means something. `makeAnchor` demotes a trip with an
+  unusable end date to a `shoot` rather than refusing it — losing a reader's
+  own record of a trip over one mistyped field is the worse failure. Milestones
+  are selected by *overlap* with the range, never containment.
+- **Which kinds are drawn is one answer for the whole deck.** `TypeToggles` /
+  `type.trip=off`, resolved by `resolveTypes` and built by one function,
+  `typeSettings` — offered beside every slide that draws marks, only for the
+  kinds the range holds, and only when it holds more than one. The per-slide
+  `marks.*` switch answers "do I want annotations on this chart"; this answers
+  "do I care about trips", which is not a question whose answer changes between
+  two charts of the same library. A slide × type matrix would be twelve
+  controls doing the work of four. Purchases and sales are one type.
 - **A milestone annotates; it never becomes a series.** `Mark`s ride on
   `Slide.marks` and only the renderers that draw time read them, as a dashed
   hairline in `ink2` with a name where one fits — never a colour from the
@@ -300,7 +321,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 273 tests
+npm test          # 285 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```

@@ -38,11 +38,32 @@ export interface Anchor {
   day: number;
   /** `custom` is a milestone that is nothing but a date and a phrase. */
   kind: AnchorKind;
-  /** On `bought` and `sold`; absent on `custom`. */
+  /** On `bought` and `sold`; absent on the rest. */
   gear?: AnchorGear;
+  /**
+   * The last day of a trip, inclusive. Only ever on `trip`.
+   *
+   * A photoshoot is a day and a gear milestone is a moment, so neither has one.
+   * Absent rather than equal to `day` for those, because "this thing has an end
+   * date" and "this thing ended the day it started" are different claims, and
+   * the second one would put a one-day band on every chart in the deck.
+   */
+  until?: number;
 }
 
-export type AnchorKind = "bought" | "sold" | "custom";
+/**
+ * What a milestone is about.
+ *
+ * `bought` and `sold` point at gear. `trip` covers a span of days and `shoot`
+ * a single one — both of them count the frames inside their own window, which
+ * is what keeps them facts rather than captions: a fortnight in Iceland that
+ * says how many photographs came out of it is worth a mark on a chart, and a
+ * date with a phrase on it is worth rather less.
+ */
+export type AnchorKind = "bought" | "sold" | "custom" | "trip" | "shoot";
+
+/** The kinds that carry a window, and so a count of frames inside it. */
+export const WINDOWED_KINDS: readonly AnchorKind[] = ["trip", "shoot"];
 
 /**
  * The three things a milestone can be about.
@@ -394,19 +415,30 @@ export function makeAnchor(
   label: string,
   day: number,
   taken: readonly string[],
-  about: { kind?: AnchorKind; gear?: AnchorGear | null } = {},
+  about: { kind?: AnchorKind; gear?: AnchorGear | null; until?: number | null } = {},
 ): Anchor {
   const trimmed = label.trim().slice(0, 60);
   const anchor: Anchor = { id: makeKey(trimmed, taken), label: trimmed, day, kind: "custom" };
+  const kind = about.kind ?? "custom";
+
+  // A trip is a span, and a span that ends before it starts is not one. An end
+  // date that fails is dropped rather than rejected: what is left is still a
+  // perfectly good dated milestone, and losing the whole thing over one field
+  // is how a reader's own note disappears.
+  if (kind === "trip") {
+    const until = about.until;
+    const ranged = typeof until === "number" && isValidDay(until) && until >= day;
+    return ranged ? { ...anchor, kind, until } : { ...anchor, kind: "shoot" };
+  }
+  if (kind === "shoot") return { ...anchor, kind };
 
   // A category with nothing behind it is not a category. `bought` without gear
   // would claim a milestone knows which camera it means, and then no slide
   // could ever find one.
-  const kind = about.kind ?? "custom";
   return kind !== "custom" && about.gear ? { ...anchor, kind, gear: about.gear } : anchor;
 }
 
-const ANCHOR_KINDS: readonly AnchorKind[] = ["bought", "sold", "custom"];
+export const ANCHOR_KINDS: readonly AnchorKind[] = ["bought", "sold", "custom", "trip", "shoot"];
 const GEAR_DIMENSIONS: readonly GearDimension[] = ["camera", "lens", "teleconverter"];
 
 /**
@@ -427,8 +459,12 @@ export function coerceAnchor(value: unknown, taken: readonly string[] = []): Anc
   const id = typeof raw.id === "string" && raw.id !== "" ? raw.id : makeKey(label, taken);
   const kind = ANCHOR_KINDS.find((k) => k === raw.kind) ?? "custom";
   const gear = coerceAnchorGear(raw.gear);
+  const until = Number(raw.until);
 
-  return { ...makeAnchor(label, day, [], { kind, gear }), id };
+  return {
+    ...makeAnchor(label, day, [], { kind, gear, until: Number.isFinite(until) ? until : null }),
+    id,
+  };
 }
 
 export function coerceAnchorGear(value: unknown): AnchorGear | null {
@@ -463,5 +499,8 @@ export function anchorRangeLabel(anchor: Anchor): string {
 export function draftAnchorLabel(kind: AnchorKind, gearLabel: string): string {
   if (kind === "bought") return `Bought the ${gearLabel}`;
   if (kind === "sold") return `Sold the ${gearLabel}`;
+  // A trip and a shoot have no gear to name themselves after, so there is
+  // nothing to draft: the reader is typing where they went or what they shot.
+  if (kind === "trip" || kind === "shoot") return "";
   return gearLabel;
 }

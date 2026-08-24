@@ -1,9 +1,10 @@
-import { HEATMAP_MAX_DAYS, MAX_ROWS as MAX_BARS, MAX_SERIES } from "./aggregate.ts";
+import { HEATMAP_MAX_DAYS, MAX_ROWS as MAX_BARS, MAX_SERIES, MARK_TYPES, markTypeOf } from "./aggregate.ts";
 import type {
   DeckStats,
   DayCount,
   Debut,
   MarkToggles,
+  MarkType,
   Milestone,
   Orientation,
   Place,
@@ -83,6 +84,14 @@ export interface SlideSetting {
  */
 export interface Mark {
   day: number;
+  /**
+   * The last day it covers, when that is not the first.
+   *
+   * A trip is a fortnight, not a moment, and a hairline through the middle of
+   * one says the wrong thing. Absent on everything else, so a renderer that
+   * does not know about spans keeps drawing exactly what it drew before.
+   */
+  until?: number;
   /** Short enough to sit above an axis: `+ FE 200-600mm G`. */
   label: string;
   /** The whole milestone, for the hover title. */
@@ -292,6 +301,29 @@ function markLabel(milestone: Milestone): string {
 }
 
 /**
+ * The whole milestone, for the hover.
+ *
+ * A trip says its span and what came out of it, because that is the entire
+ * reason it is a kind of its own rather than a dated phrase — "Iceland · 3 to
+ * 17 Mar 2025 · 1,204 photographs" is a fact, and "Iceland" is a caption.
+ */
+function markTitle(milestone: Milestone): string {
+  const when =
+    milestone.until > milestone.day
+      ? `${formatDay(milestone.day)} to ${formatDay(milestone.until)}`
+      : formatDay(milestone.day);
+
+  const took =
+    milestone.shots === null ? "" : ` · ${fmtInt(milestone.shots)} ${plural(milestone.shots, "photograph")}`;
+
+  return `${milestone.label} · ${when}${took}`;
+}
+
+/** Whether this milestone's kind is one the reader still wants to see. */
+const shownType = (stats: DeckStats) => (milestone: Milestone) =>
+  stats.showTypes[markTypeOf(milestone.kind)];
+
+/**
  * Marks for the slides that draw time, or nothing at all.
  *
  * Annotation is a way of looking rather than a fact about the library, so it is
@@ -300,10 +332,11 @@ function markLabel(milestone: Milestone): string {
  */
 function marksFor(stats: DeckStats, slide: keyof MarkToggles): Mark[] | undefined {
   if (stats.milestones.length === 0 || !stats.showMarks[slide]) return undefined;
-  return stats.milestones.map((milestone) => ({
+  return stats.milestones.filter(shownType(stats)).map((milestone) => ({
     day: milestone.day,
+    ...(milestone.until > milestone.day ? { until: milestone.until } : {}),
     label: markLabel(milestone),
-    full: `${milestone.label} · ${formatDay(milestone.day)}`,
+    full: markTitle(milestone),
   }));
 }
 
@@ -537,9 +570,53 @@ function settingsOf(...offered: Array<SlideSetting | null>): { settings?: SlideS
   return settings.length > 0 ? { settings } : {};
 }
 
+/**
+ * One switch per kind of milestone, deck-wide.
+ *
+ * Offered beside every slide that draws marks — the same setting, built by one
+ * function, exactly as `yearBasisSetting` is shared by the years slide and the
+ * wall. Two chips disagreeing about whether trips are shown would be worse than
+ * having no chips at all.
+ *
+ * Only for kinds the range actually holds, and only when it holds more than
+ * one: filtering to the single kind you have is a control that can only ever
+ * make the chart worse.
+ */
+function typeSettings(stats: DeckStats, slide: keyof MarkToggles): SlideSetting[] {
+  if (!stats.showMarks[slide] || stats.milestones.length === 0) return [];
+
+  const present = MARK_TYPES.filter((type) =>
+    stats.milestones.some((milestone) => markTypeOf(milestone.kind) === type),
+  );
+  if (present.length < 2) return [];
+
+  return present.map((type) => {
+    const count = stats.milestones.filter((m) => markTypeOf(m.kind) === type).length;
+    return {
+      id: `type.${type}`,
+      label: TYPE_LABELS[type],
+      value: stats.showTypes[type] ? "on" : "off",
+      options: [
+        { value: "on", label: "Shown", note: `${fmtInt(count)} in this range` },
+        { value: "off", label: "Hidden" },
+      ],
+    };
+  });
+}
+
+const TYPE_LABELS: Record<MarkType, string> = {
+  gear: "Gear you bought and sold",
+  trip: "Trips",
+  shoot: "Photoshoots",
+  custom: "Everything else",
+};
+
 function marksSetting(stats: DeckStats, slide: keyof MarkToggles): SlideSetting | null {
-  const count = stats.milestones.length;
-  if (count === 0) return null;
+  // What the switch would actually turn on, which is not every milestone once
+  // a type can be hidden: "42 in this range" beside a chart showing six is a
+  // chip that has stopped describing the thing it controls.
+  const count = stats.milestones.filter(shownType(stats)).length;
+  if (stats.milestones.length === 0) return null;
 
   return {
     id: `marks.${slide}`,
@@ -1087,7 +1164,11 @@ function calendarSlide(stats: DeckStats): Slide | null {
     subtitle: "The long view",
     orientation: orientationOf(stats, "calendar", "rows"),
     marks: marksFor(stats, "months"),
-    ...settingsOf(marksSetting(stats, "months"), orientationSetting(stats, "calendar", "rows")),
+    ...settingsOf(
+      marksSetting(stats, "months"),
+      ...typeSettings(stats, "months"),
+      orientationSetting(stats, "calendar", "rows"),
+    ),
     headline,
     note: daysOutNote(stats),
     months: stats.monthly,
@@ -1175,6 +1256,7 @@ function streaksSlide(stats: DeckStats): Slide | null {
         : null,
       years.length > 1 ? yearBasisSetting(stats) : null,
       marksSetting(stats, "streaks"),
+      ...typeSettings(stats, "streaks"),
     ),
     days: daily,
     from: range.from,
@@ -1240,7 +1322,7 @@ function timelineSlide(stats: DeckStats): Slide | null {
         ? `${leader.label} closed out ${formatYearMonth(timeline.months[lastIndex] as number)}`
         : "How your kit rotated",
     note: pooled ? `Your ${named} most-used lenses, the rest pooled` : "Every lens you used",
-    ...settingsOf(rowsChoice, marksSetting(stats, "timeline")),
+    ...settingsOf(rowsChoice, marksSetting(stats, "timeline"), ...typeSettings(stats, "timeline")),
     months: timeline.months,
     series: timeline.series,
     table: tableOf(

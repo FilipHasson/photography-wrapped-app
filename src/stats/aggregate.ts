@@ -21,6 +21,7 @@ import {
   VERBATIM_NAMING,
   type NamingOptions,
 } from "../core/gear.ts";
+import { WINDOWED_KINDS } from "../core/config.ts";
 import type { Anchor, AnchorKind, GearDimension } from "../core/config.ts";
 import { formatHour, sunTimes } from "../core/sun.ts";
 
@@ -115,6 +116,46 @@ export interface MarkToggles {
 }
 
 export const DEFAULT_MARKS = { timeline: true, streaks: false, months: true } as const;
+
+/**
+ * Which *kinds* of milestone are drawn, wherever they are drawn.
+ *
+ * Deliberately one set for the whole deck rather than one per slide. The
+ * per-slide switch above answers "do I want annotations on this chart"; this
+ * one answers "do I care about trips" — a different question, and one whose
+ * answer does not change between two charts of the same library. A slide × type
+ * matrix would be twelve controls to express what four express.
+ *
+ * Purchases and sales are one type. They are the same thing seen twice, they
+ * are drawn with the same `+`/`−` vocabulary, and nobody wants their camera
+ * arriving on a chart that hides it leaving.
+ */
+export interface TypeToggles {
+  gear?: boolean;
+  trip?: boolean;
+  shoot?: boolean;
+  custom?: boolean;
+}
+
+export type MarkType = keyof TypeToggles;
+
+export const MARK_TYPES: readonly MarkType[] = ["gear", "trip", "shoot", "custom"];
+
+export function markTypeOf(kind: AnchorKind): MarkType {
+  if (kind === "bought" || kind === "sold") return "gear";
+  if (kind === "trip") return "trip";
+  if (kind === "shoot") return "shoot";
+  return "custom";
+}
+
+export function resolveTypes(types: TypeToggles = {}): Required<TypeToggles> {
+  return {
+    gear: types.gear !== false,
+    trip: types.trip !== false,
+    shoot: types.shoot !== false,
+    custom: types.custom !== false,
+  };
+}
 
 export function resolveMarks(marks: MarkToggles = {}): Required<MarkToggles> {
   return {
@@ -276,7 +317,21 @@ export interface Milestone {
   /** What the reader called it. This is what any label on a chart says. */
   label: string;
   day: number;
+  /**
+   * The last day it covers. Equal to `day` for everything but a trip, so a
+   * renderer can treat every milestone as a span without asking what kind it is.
+   */
+  until: number;
   kind: AnchorKind;
+  /**
+   * Frames inside the window, for the kinds that have one.
+   *
+   * `null` where the question is meaningless: a purchase is a moment, and the
+   * photographs taken on the day a lens arrived say nothing about the lens.
+   * Gear milestones carry their count on `gear.shots` instead, which is the
+   * frames through that lens rather than the frames on that day.
+   */
+  shots: number | null;
   gear: {
     dimension: GearDimension;
     key: string;
@@ -440,6 +495,8 @@ export interface DeckStats {
   markWeekend: boolean;
   /** Which time slides are annotated with the reader's milestones. */
   showMarks: Required<MarkToggles>;
+  /** Which kinds of milestone are drawn, on every slide that draws any. */
+  showTypes: Required<TypeToggles>;
   /** How much the kit history repeats itself. */
   kit: Required<KitToggles>;
   /**
@@ -490,6 +547,8 @@ export interface StatsOptions {
   anchors?: readonly Anchor[];
   /** Which slides draw those milestones. Each has its own answer. */
   marks?: MarkToggles;
+  /** Which kinds of milestone are worth drawing at all. One answer, deck-wide. */
+  types?: TypeToggles;
   /** Which of the kit history's overlapping rows are folded together. */
   kit?: KitToggles;
   /** Which way each chart's bars run, by slide id. */
@@ -1164,10 +1223,14 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
 
   // --------------------------------------------------------- milestones ----
 
-  const milestones = resolveMilestones(db, options.anchors ?? [], range, naming, {
-    camera: cameraRows,
-    lens: lensRows,
-  });
+  const milestones = resolveMilestones(
+    db,
+    options.anchors ?? [],
+    range,
+    naming,
+    { camera: cameraRows, lens: lensRows },
+    { includeVideo: options.includeVideo ?? true },
+  );
 
   // ------------------------------------------------------------ culling ----
 
@@ -1282,6 +1345,7 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
     weekStart: options.weekStart ?? "mon",
     markWeekend: options.markWeekend ?? false,
     showMarks: resolveMarks(options.marks),
+    showTypes: resolveTypes(options.types),
     kit: resolveKit(options.kit),
     layout: options.layout ?? {},
     wall: options.wall ?? "packed",
@@ -1422,8 +1486,11 @@ function resolveMilestones(
   range: Range,
   naming: NamingOptions,
   rows: { camera: GearRow[]; lens: GearRow[] },
+  options: { includeVideo?: boolean } = {},
 ): Milestone[] {
-  const inRange = anchors.filter((a) => a.day >= range.from && a.day <= range.to);
+  // A trip that started before the range and ended inside it is a trip this
+  // deck is partly about, so overlap rather than containment.
+  const inRange = anchors.filter((a) => a.day <= range.to && (a.until ?? a.day) >= range.from);
   if (inRange.length === 0) return [];
 
   const names = new Map<string, string>();
@@ -1469,6 +1536,35 @@ function resolveMilestones(
     }
   }
 
+  /**
+   * Frames inside each window, for the trips and the photoshoots.
+   *
+   * One query rather than one per milestone, and only when there is something
+   * to count — the same shape as the converter branch above. The count is
+   * clipped to the range, like everything else on a deck: a trip that started
+   * before the range began contributes the part of it the deck is about.
+   */
+  const windows = new Map<string, number>();
+  const windowed = inRange.filter((a) => WINDOWED_KINDS.includes(a.kind));
+  if (windowed.length > 0) {
+    const { where, params } = scope(range, { includeVideo: options.includeVideo ?? true });
+    const perDay = new Map<number, number>();
+    for (const row of db.allAs<{ day: number; n: number }>(
+      `SELECT p.day AS day, COUNT(*) AS n FROM photo p WHERE ${where} GROUP BY p.day`,
+      ...params,
+    )) {
+      perDay.set(row.day, row.n);
+    }
+
+    for (const anchor of windowed) {
+      const from = Math.max(anchor.day, range.from);
+      const to = Math.min(anchor.until ?? anchor.day, range.to);
+      let total = 0;
+      for (const [day, n] of perDay) if (day >= from && day <= to) total += n;
+      windows.set(anchor.id, total);
+    }
+  }
+
   return inRange
     .map((anchor): Milestone => {
       const at = anchor.gear ? `${anchor.gear.dimension}:${anchor.gear.key}` : null;
@@ -1483,7 +1579,9 @@ function resolveMilestones(
         id: anchor.id,
         label: anchor.label,
         day: anchor.day,
+        until: anchor.until ?? anchor.day,
         kind: anchor.kind,
+        shots: windows.has(anchor.id) ? (windows.get(anchor.id) ?? 0) : null,
         gear:
           anchor.gear && at !== null && label !== null
             ? {

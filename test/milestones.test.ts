@@ -159,3 +159,47 @@ describe("a config full of them", () => {
     assert.notEqual(read.anchors[0]?.id, read.anchors[1]?.id);
   });
 });
+
+describe("a trip and a photoshoot", () => {
+  test("a trip keeps the end date it was given", () => {
+    const trip = makeAnchor("Iceland", 20250303, [], { kind: "trip", until: 20250317 });
+    assert.equal(trip.kind, "trip");
+    assert.equal(trip.until, 20250317);
+  });
+
+  test("a photoshoot is a day, and never gets an end", () => {
+    const shoot = makeAnchor("Anna and Tom's wedding", 20250614, [], { kind: "shoot", until: 20250620 });
+    assert.equal(shoot.kind, "shoot");
+    assert.equal(shoot.until, undefined, "a photoshoot grew a span");
+  });
+
+  test("a trip that ends before it starts becomes the day it started", () => {
+    // Dropping the field rather than the milestone: what is left is still a
+    // perfectly good dated note, and losing somebody's own record of a trip
+    // over one mistyped field is the worse failure.
+    for (const until of [20250301, 999, Number.NaN, null]) {
+      const trip = makeAnchor("Iceland", 20250303, [], { kind: "trip", until });
+      assert.equal(trip.kind, "shoot", `until=${until} was kept`);
+      assert.equal(trip.until, undefined);
+    }
+  });
+
+  test("survives a round trip through the config", () => {
+    const saved = coerceAnchor({
+      id: "iceland",
+      label: "Iceland",
+      day: 20250303,
+      kind: "trip",
+      until: 20250317,
+    });
+    assert.deepEqual(saved, { id: "iceland", label: "Iceland", day: 20250303, kind: "trip", until: 20250317 });
+  });
+
+  test("a kind this version does not know becomes a plain dated note", () => {
+    // The rule that lets categories be added at all: an anchor written by a
+    // newer build has to keep working here rather than vanishing.
+    const saved = coerceAnchor({ label: "Something", day: 20250303, kind: "expedition" });
+    assert.equal(saved?.kind, "custom");
+    assert.equal(saved?.label, "Something");
+  });
+});

@@ -581,20 +581,54 @@ function drawMarks(root, area, marks, xOf, theme, L, reserve = 0) {
     const x = xOf(mark.day);
     if (x === null || !Number.isFinite(x) || x < area.x - 1 || x > area.x + area.w + 1) continue;
 
-    root.append(
-      titled(
-        el("line", {
-          x1: x,
-          y1: top,
-          x2: x,
-          y2: area.y + area.h,
-          stroke: theme.ink2,
-          "stroke-dasharray": "3 4",
-          opacity: 0.5,
-        }),
-        mark.full,
-      ),
-    );
+    /**
+     * A trip is a fortnight, and a hairline through the middle of one says the
+     * wrong thing — so a mark with an end date gets a band between its two days
+     * rather than a rule at one of them.
+     *
+     * Still `ink2` and still faint: a mark is context, and the moment it
+     * competes with the data it annotates it has failed. A band is a lot more
+     * ink than a hairline, so it is fainter to compensate, and it keeps the two
+     * rules at its edges — a wash with no edges reads as a smudge rather than
+     * as "from here to here".
+     */
+    const end = mark.until === undefined ? null : xOf(mark.until);
+    const wide = end !== null && Number.isFinite(end) && end > x + 1;
+    const right = wide ? Math.min(end, area.x + area.w) : x;
+
+    if (wide) {
+      root.append(
+        titled(
+          el("rect", {
+            x,
+            y: top,
+            width: right - x,
+            height: area.y + area.h - top,
+            fill: theme.ink2,
+            opacity: 0.09,
+          }),
+          mark.full,
+        ),
+      );
+    }
+
+    for (const at of wide ? [x, right] : [x]) {
+      root.append(
+        titled(
+          el("line", {
+            x1: at,
+            y1: top,
+            x2: at,
+            y2: area.y + area.h,
+            stroke: theme.ink2,
+            "stroke-dasharray": "3 4",
+            opacity: 0.5,
+          }),
+          mark.full,
+        ),
+      );
+    }
+
     // A square rather than a circle, so the frame check can see where it is.
     root.append(
       el("rect", { x: x - 1.5, y: top - 1.5, width: 3, height: 3, fill: theme.ink2, opacity: 0.7 }),

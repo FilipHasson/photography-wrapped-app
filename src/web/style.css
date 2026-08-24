@@ -840,6 +840,11 @@ main {
   flex-direction: column;
   gap: 4px;
 }
+/* Hidden from script when the kind has no end date. Without this the class
+   above wins and the field simply stays. */
+.milestone-field[hidden] {
+  display: none;
+}
 .milestone-field.wide {
   flex: 1;
   min-width: 240px;

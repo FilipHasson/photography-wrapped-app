@@ -5,6 +5,7 @@ import {
   resolveLimits,
   resolveMarks,
   resolveKit,
+  resolveTypes,
   type KitToggles,
   type DeckStats,
   type Milestone,
@@ -54,7 +55,7 @@ function statsWith(overrides: Partial<DeckStats>): DeckStats {
     busiestDay: null, longestStreak: null, longestGap: null,
     places: [], placesKnown: 0, debuts: [], milestones: [], burst: null,
     years: [], yearBasis: "anchor", location: null, home: null,
-    weekStart: "mon", markWeekend: false, showMarks: resolveMarks(), kit: resolveKit(), layout: {}, wall: "packed",
+    weekStart: "mon", markWeekend: false, showMarks: resolveMarks(), showTypes: resolveTypes(), kit: resolveKit(), layout: {}, wall: "packed",
     culling: { picked: 0, rejected: 0, unflagged: 0, removed: 0, removedRejected: 0, watchingSince: null },
     daylight: { mode: "06-18", sunrise: 6, sunset: 18, source: "06:00 to 18:00" },
     daylightHours: { sunrise: 6, sunset: 18 },
@@ -452,7 +453,9 @@ const milestone = (
   id,
   label,
   day,
+  until: day,
   kind,
+  shots: null,
   gear: gear
     ? { ...gear, shots: gear.shots ?? 0, firstDay: day, lastDay: 20251231 }
     : null,
@@ -886,5 +889,106 @@ describe("bought first and sold first", () => {
     ]);
     assert.ok(items.some((item) => item.meta.startsWith("First lens you bought ·")));
     assert.ok(items.some((item) => item.meta.startsWith("First thing you sold ·")));
+  });
+});
+
+describe("which kinds of milestone get drawn", () => {
+  const dated = (id: string, label: string, day: number, kind: "bought" | "custom" | "trip" | "shoot") => ({
+    id,
+    label,
+    day,
+    until: day,
+    kind,
+    shots: kind === "trip" || kind === "shoot" ? 120 : null,
+    gear:
+      kind === "bought"
+        ? { dimension: "camera" as const, key: "a9", label: "a9 III", shots: 10, firstDay: day, lastDay: day }
+        : null,
+  });
+
+  const MIXED: Milestone[] = [
+    dated("b", "Bought the a9 III", 20250110, "bought"),
+    { ...dated("t", "Iceland", 20250301, "trip"), until: 20250315 },
+    dated("s", "The wedding", 20250614, "shoot"),
+    dated("c", "Moved to Lisbon", 20250901, "custom"),
+  ];
+
+  const marksOn = (types: Parameters<typeof resolveTypes>[0]) => {
+    const slide = findSlide(
+      buildDeck(
+        statsWith({
+          milestones: MIXED,
+          showTypes: resolveTypes(types),
+          showMarks: resolveMarks({ streaks: true }),
+          daily: [{ day: 20250110, shots: 5 }],
+          longestStreak: { days: 40, from: 20250101, to: 20250209 },
+          longestGap: { days: 12, from: 20250210, to: 20250222 },
+        }),
+      ).slides,
+      "streaks",
+    );
+    return slide?.kind === "strip" ? slide : null;
+  };
+
+  test("all four kinds by default", () => {
+    assert.equal(marksOn({})?.marks?.length, 4);
+  });
+
+  test("a kind turned off leaves the others alone", () => {
+    const marks = marksOn({ trip: false, custom: false })?.marks ?? [];
+    assert.deepEqual(
+      marks.map((mark) => mark.label),
+      ["+ a9 III", "The wedding"],
+    );
+  });
+
+  test("a trip carries its span, and nothing else does", () => {
+    const marks = marksOn({})?.marks ?? [];
+    const trip = marks.find((mark) => mark.label === "Iceland");
+    assert.equal(trip?.until, 20250315);
+    assert.equal(marks.find((mark) => mark.label === "The wedding")?.until, undefined);
+  });
+
+  test("the hover on a trip says the span and what came out of it", () => {
+    const trip = (marksOn({})?.marks ?? []).find((mark) => mark.label === "Iceland");
+    assert.equal(trip?.full, "Iceland · 1 Mar 2025 to 15 Mar 2025 · 120 photographs");
+    // A purchase counts nothing: the frames taken the day a camera arrived say
+    // nothing about the camera, and `gear.shots` is the honest number.
+    const bought = (marksOn({})?.marks ?? []).find((mark) => mark.label === "+ a9 III");
+    assert.equal(bought?.full, "Bought the a9 III · 10 Jan 2025");
+  });
+
+  test("a switch per kind, and only for the kinds that are there", () => {
+    const settings = marksOn({})?.settings?.map((one) => one.id) ?? [];
+    assert.deepEqual(settings.filter((id) => id.startsWith("type.")), [
+      "type.gear",
+      "type.trip",
+      "type.shoot",
+      "type.custom",
+    ]);
+  });
+
+  test("one kind of milestone is nothing to choose between", () => {
+    const slide = findSlide(
+      buildDeck(
+        statsWith({
+          milestones: [MIXED[0] as Milestone],
+          showMarks: resolveMarks({ streaks: true }),
+          daily: [{ day: 20250110, shots: 5 }],
+          longestStreak: { days: 40, from: 20250101, to: 20250209 },
+          longestGap: { days: 12, from: 20250210, to: 20250222 },
+        }),
+      ).slides,
+      "streaks",
+    );
+    const ids = slide?.settings?.map((one) => one.id) ?? [];
+    assert.deepEqual(ids.filter((id) => id.startsWith("type.")), []);
+  });
+
+  test("the marks switch counts what it would actually show", () => {
+    // "42 in this range" beside a chart drawing six is a chip that has stopped
+    // describing the thing it controls.
+    const setting = marksOn({ trip: false, custom: false })?.settings?.find((one) => one.id === "marks.streaks");
+    assert.equal(setting?.options[0]?.note, "2 in this range");
   });
 });

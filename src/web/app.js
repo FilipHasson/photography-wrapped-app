@@ -644,8 +644,13 @@ const MILESTONE_KINDS = [
   { label: "Sold a camera", kind: "sold", groups: ["cameras"] },
   { label: "Bought a lens", kind: "bought", groups: ["lenses", "teleconverters"] },
   { label: "Sold a lens", kind: "sold", groups: ["lenses", "teleconverters"] },
+  { label: "A trip", kind: "trip", groups: [] },
+  { label: "A photoshoot", kind: "shoot", groups: [] },
   { label: "Something else", kind: "custom", groups: [] },
 ];
+
+/** The kinds that ask for nothing but a date and a name. */
+const NO_GEAR = ["custom", "trip", "shoot"];
 
 const GEAR_GROUPS = { cameras: "Cameras", lenses: "Lenses", teleconverters: "Teleconverters" };
 
@@ -671,7 +676,9 @@ async function openMilestone() {
   milestone.edited = false;
   milestone.dated = false;
 
-  for (const id of ["milestone-search", "milestone-label", "milestone-day"]) $(id).value = "";
+  for (const id of ["milestone-search", "milestone-label", "milestone-day", "milestone-until"]) {
+    $(id).value = "";
+  }
   $("milestone").showModal();
   $("milestone-search").focus();
   renderMilestone();
@@ -708,6 +715,10 @@ function renderMilestone() {
 
   const groups = milestone.choice.groups;
   $("milestone-gear").hidden = groups.length === 0;
+  // Only a trip has an end. A photoshoot is a day by definition, and offering
+  // it an end date would be inviting somebody to record a two-week photoshoot
+  // that the deck would then have to decide what to do with.
+  $("milestone-until-field").hidden = milestone.choice.kind !== "trip";
   if (groups.length > 0) renderGearList(groups);
   renderMilestoneHint();
 }
@@ -808,9 +819,11 @@ function renderMilestoneHint() {
   const item = milestone.gear;
   if (!item) {
     $("milestone-hint").textContent =
-      milestone.choice.kind === "custom"
-        ? "A date and a phrase — anything worth measuring from."
-        : "Pick what this is about.";
+      {
+        custom: "A date and a phrase — anything worth measuring from.",
+        trip: "Where you went, and how long for. The deck counts what came out of it.",
+        shoot: "One day, and what you shot. The deck counts the frames from it.",
+      }[milestone.choice.kind] ?? "Pick what this is about.";
     return;
   }
 
@@ -824,9 +837,10 @@ function renderMilestoneHint() {
 async function saveMilestone() {
   const kind = milestone.choice.kind;
   const day = $("milestone-day").value;
+  const until = $("milestone-until").value;
   const label = $("milestone-label").value.trim();
 
-  if (kind !== "custom" && !milestone.gear) {
+  if (!NO_GEAR.includes(kind) && !milestone.gear) {
     toast("Pick the camera, lens or converter this is about.", true);
     return;
   }
@@ -834,15 +848,22 @@ async function saveMilestone() {
     toast("A milestone needs a date.", true);
     return;
   }
-  if (kind === "custom" && label === "") {
+  if (NO_GEAR.includes(kind) && label === "") {
     toast("A milestone needs a name.", true);
+    return;
+  }
+  if (kind === "trip" && until !== "" && until < day) {
+    toast("A trip cannot end before it starts.", true);
     return;
   }
 
   const gear = milestone.gear ? { dimension: milestone.gear.dimension, key: milestone.gear.key } : null;
 
   try {
-    await api("/api/anchors", { method: "POST", body: { kind, day, label, gear } });
+    await api("/api/anchors", {
+      method: "POST",
+      body: { kind, day, label, gear, until: kind === "trip" && until !== "" ? until : null },
+    });
     $("milestone").close();
     await refreshState();
   } catch (err) {

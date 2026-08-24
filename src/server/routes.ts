@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import fs from "node:fs/promises";
 import type { Db } from "../core/db.ts";
 import {
+  ANCHOR_KINDS,
   coercePaletteSide,
   PALETTE_ROLES,
   anchorRangeLabel,
@@ -31,7 +32,9 @@ import {
   type DaylightMode,
   type GearItem,
   type Layouts,
+  MARK_TYPES,
   type MarkToggles,
+  type TypeToggles,
   type KitToggles,
   type WallLayout,
   type RowLimits,
@@ -359,6 +362,14 @@ export async function handleApi(
         if (asked === "on" || asked === "off") kit[field] = asked === "on";
       }
 
+      // `type.trip=off`: which kinds of milestone are worth drawing. One
+      // answer for the whole deck rather than one per slide — see `TypeToggles`.
+      const types: TypeToggles = {};
+      for (const type of MARK_TYPES) {
+        const asked = url.searchParams.get(`type.${type}`);
+        if (asked === "on" || asked === "off") types[type] = asked === "on";
+      }
+
       // `layout.lenses=columns`: which way one chart's bars run. By slide id,
       // because a lens name reads beside a bar and a shutter speed reads under
       // one, and the reader is the only one who can see their own screen.
@@ -393,6 +404,7 @@ export async function handleApi(
         // there — a mark has to land inside what a slide is drawing.
         anchors: ctx.config.anchors,
         marks,
+        types,
         kit,
         layout,
       });
@@ -477,8 +489,15 @@ export async function handleApi(
       const day = typeof body.day === "string" ? parseIsoDay(body.day) : null;
       if (day === null) throw new HttpError(400, "A milestone needs a date.");
 
-      const kind: AnchorKind = body.kind === "bought" || body.kind === "sold" ? body.kind : "custom";
-      const item = kind === "custom" ? null : requireGear(ctx, body.gear);
+      const kind: AnchorKind = ANCHOR_KINDS.includes(body.kind as AnchorKind)
+        ? (body.kind as AnchorKind)
+        : "custom";
+      // A trip and a photoshoot are about where you were, not what you held.
+      const item = kind === "bought" || kind === "sold" ? requireGear(ctx, body.gear) : null;
+
+      // An end date only means anything on a trip, and `makeAnchor` demotes a
+      // trip without a usable one to a photoshoot rather than refusing it.
+      const until = typeof body.until === "string" ? parseIsoDay(body.until) : null;
 
       // A categorised milestone arrives with a label already drafted from the
       // gear; an empty one means the reader cleared it, and the draft is a
@@ -492,7 +511,7 @@ export async function handleApi(
 
       ctx.config.anchors = [
         ...ctx.config.anchors,
-        makeAnchor(label, day, taken, { kind, gear }),
+        makeAnchor(label, day, taken, { kind, gear, until }),
       ].sort((a, b) => a.day - b.day);
 
       await ctx.saveConfig(ctx.config);
