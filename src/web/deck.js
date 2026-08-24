@@ -27,7 +27,7 @@ const FORMAT_KEY = "wdis-format";
 /** PNG or JPEG. Remembered the same way the slide shape is. */
 const IMAGE_KEY = "wdis-image-type";
 
-export function createDeck({ onExit, onToast, onExclude, onSetting, onColours, palette, backdrop }) {
+export function createDeck({ onExit, onToast, onExclude, onSetting, onColours, palette, backdrop, cardStyle }) {
   /**
    * The reader's colours, asked for rather than held.
    *
@@ -36,7 +36,7 @@ export function createDeck({ onExit, onToast, onExclude, onSetting, onColours, p
    * old one until the page was reloaded. So this is a getter, called at every
    * paint, and `repaint()` is all a colour change has to do.
    */
-  const themeNow = () => currentTheme(palette?.() ?? null, backdrop?.() ?? null);
+  const themeNow = () => currentTheme(palette?.() ?? null, backdrop?.() ?? null, cardStyle?.() ?? null);
   let deck = { title: "", rangeLabel: "", slides: [] };
   let index = 0;
   let tableOpen = false;

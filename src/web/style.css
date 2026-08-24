@@ -945,6 +945,17 @@ main:has(> .deck:not([hidden])) {
   grid-column: 1 / -1;
   max-width: 62ch;
 }
+/* The name over a row of chips. Quiet, because the chips are the thing being
+   read — but present, because three unlabelled rows in one card is a puzzle. */
+.chips-label {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  margin-block-start: 2px;
+}
+
 /* ----------------------------------------------------------- colours ---- */
 
 /* The palette sits beside the slide it paints rather than in a panel of

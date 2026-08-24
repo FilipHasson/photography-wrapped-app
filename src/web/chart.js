@@ -1,5 +1,6 @@
 // @ts-check
 import { drawBackdrop } from "./backdrop.js";
+import { cardsOf } from "./cards.js";
 import { DEFAULT_FORMAT, metrics } from "./formats.js";
 import { seriesColour } from "./theme.js";
 
@@ -1028,69 +1029,6 @@ function drawColumns(root, plot, slide, theme, L) {
  * five stars across a fifth of a slide are specks, and five stars across a
  * whole one are stars.
  */
-/**
- * Cards you can see the slide through.
- *
- * A verdict card used to be a flat panel in `plane`, which is a colour barely
- * a step off the paper — so on a flat backdrop it was a rectangle you had to
- * look for, and over blobs or rings it was a hole punched through them. Glass
- * fixes both: the fill fades down the card so the ground carries on underneath
- * it, and the *edge* does the work of saying where the card is.
- *
- * Two gradients for the whole slide, not two per card. `objectBoundingBox` is
- * the default for a gradient, so one vertical ramp fits every card whatever its
- * size — and the ids carry the slide's own id because the contact sheet puts
- * every slide in one document, where two `url(#glass)` would both find the
- * first one.
- *
- * Both ramps are palette roles rather than a white wash: `plane` is the card
- * the reader chose, and `surface` is lighter than it in both modes, which is
- * what lets one highlight work in light and dark without asking which it is.
- * Neither adds a well to "Colours here" — a `url(...)` is not a hex, so
- * `coloursIn` skips it, and both roles are in Style already.
- */
-function glassOf(root, slide, theme) {
-  const body = `wdis-glass-${slide.id}`;
-  const rim = `wdis-rim-${slide.id}`;
-
-  root.append(
-    el(
-      "defs",
-      {},
-      el(
-        "linearGradient",
-        { id: body, x1: 0, y1: 0, x2: 0, y2: 1 },
-        el("stop", { offset: "0", "stop-color": theme.plane, "stop-opacity": 0.88 }),
-        el("stop", { offset: "1", "stop-color": theme.plane, "stop-opacity": 0.34 }),
-      ),
-      el(
-        "linearGradient",
-        { id: rim, x1: 0, y1: 0, x2: 0, y2: 1 },
-        el("stop", { offset: "0", "stop-color": theme.surface, "stop-opacity": 0.95 }),
-        el("stop", { offset: "0.55", "stop-color": theme.surface, "stop-opacity": 0 }),
-      ),
-    ),
-  );
-
-  return (box, title) => {
-    const { x, y, width, height, rx = 14 } = box;
-    root.append(
-      titled(el("rect", { x, y, width, height, rx, fill: `url(#${body})`, stroke: theme.grid }), title),
-      // Inside the border rather than on it: light catches the near edge of a
-      // pane of glass, it does not outline it.
-      el("rect", {
-        x: x + 1,
-        y: y + 1,
-        width: Math.max(0, width - 2),
-        height: Math.max(0, height - 2),
-        rx: Math.max(0, rx - 1),
-        fill: "none",
-        stroke: `url(#${rim})`,
-      }),
-    );
-  };
-}
-
 function drawVerdictRows(root, plot, slide, theme, L) {
   const n = slide.cards.length;
   const gap = Math.max(8, L.value * 0.5);
@@ -1145,14 +1083,14 @@ function drawVerdictRows(root, plot, slide, theme, L) {
   const valueRight = glyphSpeaks ? plot.x + plot.w - pad : plot.x + pad + glyphW + pad + valueW;
   const textX = valueRight + pad;
   const textW = Math.max(40, plot.x + plot.w - pad - textX);
-  const pane = glassOf(root, slide, theme);
+  const pane = cardsOf(root, slide, theme);
 
   slide.cards.forEach((card, i) => {
     const y = plot.y + i * (rowH + gap);
     const mid = y + rowH / 2;
     const colour = card.glyph.kind === "thumb" && !card.glyph.up ? theme.series[7] : theme.series[0];
 
-    pane({ x: plot.x, y, width: plot.w, height: rowH }, `${card.label}: ${card.value} — ${card.note}`);
+    pane({ x: plot.x, y, width: plot.w, height: rowH }, `${card.label}: ${card.value} — ${card.note}`, colour);
 
     // Left-aligned, not centred in the column: the row of stars is then a bar
     // whose length is the rating, and one star no longer floats in the middle
@@ -1213,9 +1151,12 @@ function drawVerdictRows(root, plot, slide, theme, L) {
   const restTextX = restRight + pad;
   const restTextW = Math.max(40, plot.x + plot.w - pad - restTextX);
 
+  // The undecided are about nothing, so the accent is the quietest role there
+  // is rather than a verdict colour borrowed from the row above.
   pane(
     { x: plot.x, y: restY, width: plot.w, height: restH },
     `${slide.rest.label}: ${slide.rest.value} — ${slide.rest.note}`,
+    theme.axis,
   );
   root.append(
     text(slide.rest.value, restRight, restMid + restValue * 0.36, {
@@ -1419,14 +1360,14 @@ function drawVerdict(root, plot, slide, theme, L) {
   const paint = (glyph) =>
     glyph.kind === "thumb" && !glyph.up ? theme.series[7] : theme.series[0];
 
-  const pane = glassOf(root, slide, theme);
+  const pane = cardsOf(root, slide, theme);
 
   slide.cards.forEach((card, i) => {
     const x = plot.x + i * (cardW + gap);
     const cx = x + cardW / 2;
     const colour = paint(card.glyph);
 
-    pane({ x, y: top, width: cardW, height: cardH }, `${card.label}: ${card.value} — ${card.note}`);
+    pane({ x, y: top, width: cardW, height: cardH }, `${card.label}: ${card.value} — ${card.note}`, colour);
 
     if (card.glyph.kind === "thumb") {
       thumb(root, cx - glyph / 2, top + padY, glyph, card.glyph.up, colour, `${card.label}: ${card.value}`);
@@ -1467,6 +1408,7 @@ function drawVerdict(root, plot, slide, theme, L) {
   pane(
     { x: plot.x, y: restY, width: plot.w, height: restH },
     `${slide.rest.label}: ${slide.rest.value} — ${slide.rest.note}`,
+    theme.axis,
   );
 
   root.append(
@@ -2835,7 +2777,14 @@ function drawMap(root, plot, slide, theme, L) {
     y: box.y + ((view.north - lat) / (view.north - view.south)) * box.h,
   });
 
-  root.append(el("rect", { x: box.x, y: box.y, width: box.w, height: box.h, fill: theme.plane, rx: 8 }));
+  // The ground the points are plotted on is a panel like any other, and was the
+  // last flat one left. It is about nowhere in particular, so it hands over the
+  // quiet role rather than a series colour.
+  cardsOf(root, slide, theme)(
+    { x: box.x, y: box.y, width: box.w, height: box.h, rx: 8 },
+    undefined,
+    theme.axis,
+  );
 
   const step = graticuleStep(Math.max(view.east - view.west, view.north - view.south));
   for (let lon = Math.ceil(view.west / step) * step; lon <= view.east; lon += step) {
@@ -3088,6 +3037,7 @@ function drawYears(root, plot, slide, theme, L) {
 
   const labelSize = Math.min(L.tileLabel, rowHeight * 0.2);
   const valueSize = Math.min(L.tileValue * 1.2, rowHeight * 0.46, cardWidth * 0.34);
+  const pane = cardsOf(root, slide, theme);
 
   years.forEach((year, i) => {
     const y = top + i * (rowHeight + rowGap);
@@ -3118,23 +3068,19 @@ function drawYears(root, plot, slide, theme, L) {
     cards.forEach((card, index) => {
       const x = cardsX + index * (cardWidth + gap);
 
-      root.append(
-        titled(
-          el("rect", {
-            x,
-            y,
-            width: cardWidth,
-            height: rowHeight,
-            rx: Math.min(10, rowHeight / 6),
-            fill: theme.plane,
-            // The first column is the count everything else is a detail of, so
-            // it carries the series colour and the others stay quiet.
-            stroke: index === 0 ? theme.series[0] : theme.grid,
-            "stroke-width": index === 0 ? 2 : 1,
-          }),
-          `${year.label}: ${fmt(card.value)} ${card.label}`,
-        ),
-      );
+      // The first column is the count everything else is a detail of, so it is
+      // the one the series colour is about; the other two are about nothing in
+      // particular and hand over the quietest role there is. Whether a style
+      // spends that is the style's business — only the tinted one does.
+      const box = { x, y, width: cardWidth, height: rowHeight, rx: Math.min(10, rowHeight / 6) };
+      pane(box, `${year.label}: ${fmt(card.value)} ${card.label}`, index === 0 ? theme.series[0] : theme.axis);
+
+      // And the emphasis is drawn over whatever the style did, rather than
+      // through it: a ring is the one way of saying "this column" that survives
+      // all five, including the two that have no border of their own.
+      if (index === 0) {
+        root.append(el("rect", { ...box, fill: "none", stroke: theme.series[0], "stroke-width": 2 }));
+      }
 
       const centre = x + cardWidth / 2;
       const fitted =

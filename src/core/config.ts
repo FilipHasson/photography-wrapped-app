@@ -179,6 +179,12 @@ export interface AppConfig {
    * `Math.random` while drawing.
    */
   backdrop: Backdrop;
+  /**
+   * Which of the five ways a card is drawn. Glass by default — it is the one
+   * that keeps a generated backdrop visible under the panels, which is what
+   * made the flat one look like a hole punched through the slide.
+   */
+  cardStyle: CardStyle;
   /** Port for the local UI. 0 picks a free one. */
   port: number;
 }
@@ -283,6 +289,24 @@ export interface Backdrop {
   seed: number;
 }
 
+/**
+ * How the panels on a slide are drawn — culling, keepers, the figures beside
+ * each year, the ground under the map.
+ *
+ * Ids only. What each one *looks* like lives in `web/cards.js`, along with the
+ * words the chips use, because that is the layer that draws: nothing under
+ * `web/` may be imported from here, and a second copy of the labels would drift
+ * from the first within a month. This list exists so a hand-edited config
+ * cannot put an unknown style into the deck.
+ */
+export type CardStyle = "glass" | "soft" | "outline" | "tinted" | "flat";
+
+export const CARD_STYLES: readonly CardStyle[] = ["glass", "soft", "outline", "tinted", "flat"];
+
+export function coerceCardStyle(value: unknown): CardStyle {
+  return CARD_STYLES.find((entry) => entry === value) ?? "glass";
+}
+
 export function coerceBackdrop(value: unknown): Backdrop {
   const raw = (typeof value === "object" && value !== null ? value : {}) as Record<string, unknown>;
   const kind = BACKDROP_KINDS.find((entry) => entry === raw.kind) ?? "flat";
@@ -337,6 +361,7 @@ export function defaultConfig(): AppConfig {
     location: { ...DEFAULT_CITY },
     palette: { light: {}, dark: {} },
     backdrop: { kind: "flat", seed: 1 },
+    cardStyle: "glass",
     port: 4112,
   };
 }
@@ -476,6 +501,7 @@ function coerce(raw: unknown): AppConfig {
     location: "location" in r ? coercePlace(r.location) : { ...DEFAULT_CITY },
     palette: coercePalette(r.palette),
     backdrop: coerceBackdrop(r.backdrop),
+    cardStyle: coerceCardStyle(r.cardStyle),
     port: typeof r.port === "number" && Number.isFinite(r.port) ? r.port : base.port,
   };
 }

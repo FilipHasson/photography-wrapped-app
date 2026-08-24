@@ -32,7 +32,8 @@ src/server/    HTTP API, job runner, static hosting
 src/web/       the UI — plain HTML/CSS/ES modules, no framework;
                formats.js is the posting shapes, chart.js draws into them,
                picker.js is the colour picker, schemes.js the ready-made
-               palettes, backdrop.js what a slide is drawn on
+               palettes, backdrop.js what a slide is drawn on, cards.js the
+               panel a number is set on
 tools/         fixture generators: an EXIF/MP4 writer and a Lightroom catalog
 ```
 
@@ -336,18 +337,32 @@ re-reading a library for it.
   with, and the comment there says so. The first thing the tests check is that
   the shipped palette raises no warning: a warning nobody can act on teaches
   people to ignore the ones that matter.
-- **A verdict card is glass, and the edge is what draws it.** `glassOf` in
-  `chart.js` hands back a function that paints one: the fill is `plane` fading
-  from 0.88 to 0.34 down the card, so a generated backdrop carries on
-  underneath, and a second inset rect strokes a `surface` ramp that is bright
-  at the top and gone by the middle — light catching the near edge of a pane.
-  `surface` works as the highlight in both modes without asking which, because
-  it is lighter than `plane` in both. Two gradients for the whole slide, not
-  two per card: `objectBoundingBox` is a gradient's default, so one vertical
-  ramp fits every card whatever its size — and the ids carry the slide's id,
-  because the contact sheet puts every slide in one document. Neither adds a
-  well to "Colours here": `url(...)` is not a hex, so `coloursIn` skips it, and
-  both roles are page roles in Style already.
+- **A card is a panel with five ways of being drawn**, and `web/cards.js` owns
+  all of them. `cardsOf(root, slide, theme)` opens one `<defs>` and hands back
+  `(box, title, accent)`; every caller passes the colour its card is *about* and
+  none of them knows which style is on, because only `tinted` spends it. Four
+  slides call it — culling, keepers, the figures beside each year, and the
+  ground under the map — and that is every panel in the deck: no `theme.plane`
+  rect survives outside this module.
+  Three things hold it together. **Every colour is a role or a shade computed
+  from one**, never a hex written in the module: `lift` moves a colour along
+  OKLCH lightness, which is what lets "a step lighter than the card" be one rule
+  instead of a branch on the mode, and is why `soft` gets warm shadows under a
+  warm scheme. **Definitions are per slide, not per card** —
+  `objectBoundingBox` is a gradient's default, so one vertical ramp fits every
+  card whatever its size — and their ids carry the slide's id, because the
+  contact sheet puts every slide in one document where two `url(#card)` would
+  both find the first. **None of it adds a well to "Colours here"**: a
+  `url(...)` is not a hex, so `coloursIn` cannot see the gradient styles at
+  all, and the one style that writes hexes writes `plane` and `grid`, which are
+  page roles in Style already.
+  `soft` sets no filter region on purpose. The default reaches ten per cent
+  beyond each edge, which holds the blur — and a region written the usual way is
+  `x="-25%"`, which `Number` reads as NaN, quietly turning off every frame check
+  in `test/render.test.ts` for that element. There is a test for exactly that.
+  `glass` is the default: it is the one that keeps a generated backdrop visible
+  under the panels, which is what made the flat one look like a hole punched
+  through the slide.
 - **Where a glyph can say it, the words go.** `drawVerdictRows` drops the label
   and the note when *every* card is a row of stars — `glyphSpeaks` — and spends
   the freed half of the row on the stars and the count instead. A rating is a
@@ -509,7 +524,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 320 tests
+npm test          # 326 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```

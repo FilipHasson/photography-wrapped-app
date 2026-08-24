@@ -222,9 +222,14 @@ A few things the slides do rather than say:
   the hover and in the table. It also carries a figure for everything never
   rated, which is usually most of a library and would flatten the five star
   columns if it were a sixth.
-- **Culling and keepers are drawn on glass** — the card fades down its own
-  height so a generated backdrop carries on underneath it, and the lit top edge
-  is what says where the card is.
+- **Cards come in five styles**, chosen once for the whole deck under **Style →
+  Cards**: **Glass** fades down its own height so a generated backdrop carries
+  on underneath and the lit top edge says where the card is; **Soft** is raised
+  off the page by a light shadow and a dark one; **Outline** is a rule and
+  nothing else; **Tinted** washes each card in the colour it is about, so a
+  picked card is blue and a rejected one red; **Flat** is the plain panel it
+  always was. Every panel in the deck follows — culling, keepers, the three
+  figures beside each year, and the ground under the map.
 
 | Key | Does |
 |---|---|

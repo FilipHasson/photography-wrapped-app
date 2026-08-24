@@ -254,12 +254,23 @@
             <!-- The paper and the writing on it, which are the same everywhere. -->
             <aside id="deck-style" class="deck-settings deck-style" aria-label="How the deck looks">
               <h3 class="setting-label">Style</h3>
+              <!--
+                Three groups of chips, and each one needs its name over it: two
+                of them offer a "Flat", and in a stack of unlabelled rows there
+                is nothing to say which flat is the paper and which is the card.
+              -->
+              <span class="chips-label">Colours</span>
               <div id="scheme-chips" class="chips scheme-chips" role="group" aria-label="Colour scheme"></div>
 
+              <span class="chips-label">Behind the slide</span>
               <div class="backdrop-row">
                 <div id="backdrop-chips" class="chips scheme-chips" role="group" aria-label="What the slide is drawn on"></div>
                 <button id="backdrop-shuffle" class="ghost" type="button" hidden>Shuffle</button>
               </div>
+
+              <span class="chips-label">Cards</span>
+              <div id="card-chips" class="chips scheme-chips" role="group" aria-label="How a card is drawn"></div>
+              <span class="chips-label">Colours for</span>
               <div class="colour-modes" role="group" aria-label="Which theme these colours are for">
                 <button id="colour-light" class="chip" type="button" data-mode="light">Light</button>
                 <button id="colour-dark" class="chip" type="button" data-mode="dark">Dark</button>

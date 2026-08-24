@@ -5,6 +5,7 @@ import {
   ANCHOR_KINDS,
   coercePaletteSide,
   coerceBackdrop,
+  coerceCardStyle,
   coerceCount,
   PALETTE_ROLES,
   anchorRangeLabel,
@@ -255,6 +256,7 @@ async function applyConfigPatch(ctx: AppContext, body: Record<string, unknown>):
   // shuffling it are the same kind of change, and a patch that carried one
   // without the other would leave the shapes from the shape before.
   if (body.backdrop !== undefined) next.backdrop = coerceBackdrop(body.backdrop);
+  if (body.cardStyle !== undefined) next.cardStyle = coerceCardStyle(body.cardStyle);
 
   // `location: null` clears it; anything else has to be a real position.
   if (body.location === null) next.location = null;

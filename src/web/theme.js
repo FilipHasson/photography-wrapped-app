@@ -117,10 +117,15 @@ export function themeFor(mode, override) {
  * page all build their theme through this one call. A flat backdrop is left off
  * entirely so the built-in palette objects are still handed back untouched.
  */
-export function currentTheme(palette, backdrop) {
+export function currentTheme(palette, backdrop, cardStyle) {
   const mode = currentMode();
   const theme = themeFor(mode, palette?.[mode]);
-  return backdrop && backdrop.kind && backdrop.kind !== "flat" ? { ...theme, backdrop } : theme;
+  const drawn = backdrop && backdrop.kind && backdrop.kind !== "flat" ? { ...theme, backdrop } : theme;
+  // Both ride on the theme rather than as extra arguments to `renderSlide`,
+  // because everything a drawing needs that is not the slide already travels
+  // there — and the page, the contact sheet and every export build their theme
+  // through this one call.
+  return cardStyle ? { ...drawn, cardStyle } : drawn;
 }
 
 /**

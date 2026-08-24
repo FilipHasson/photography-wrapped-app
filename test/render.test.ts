@@ -1165,3 +1165,105 @@ describe("what the slide is drawn on", () => {
     assert.equal(flat, plain);
   });
 });
+
+/**
+ * How a panel is drawn, which is five answers to one question.
+ *
+ * Culling, keepers, the three figures beside each year and the ground under the
+ * map are all the same object — a box with something in it — and every style
+ * has to survive every one of them in every shape. The bar is the bar the rest
+ * of this file sets: no NaN, nothing outside the frame, and no `class` or
+ * `style`, because a rasterised SVG is rendered with no page around it.
+ */
+describe("how a card is drawn", () => {
+  const STYLES = ["glass", "soft", "outline", "tinted", "flat"];
+  const styled = (id: string) => ({ ...(LIGHT as object), cardStyle: id });
+  const boxed = () => slides.filter((slide) => ["verdict", "years", "map"].includes(slide.kind));
+
+  test("finds the slides it is meant to be checking", () => {
+    // A sweep that quietly matched nothing would pass for ever — and the map is
+    // the one that would go unnoticed, since its card is the ground under the
+    // points rather than anything that looks like a card.
+    const kinds = new Set(boxed().map((slide) => slide.kind));
+    for (const kind of ["verdict", "map"]) {
+      assert.ok(kinds.has(kind as Slide["kind"]), `the sweep no longer sees a ${kind} slide`);
+    }
+  });
+
+  test("every style stays inside the frame, in every shape", () => {
+    for (const style of STYLES) {
+      for (const format of FORMATS) {
+        for (const slide of boxed()) {
+          for (const node of renderSlide(slide, styled(style), format).walk()) {
+            if (node.tag === "svg") continue;
+            const x = Number(node.attrs.get("x") ?? 0);
+            const y = Number(node.attrs.get("y") ?? 0);
+            const width = Number(node.attrs.get("width") ?? 0);
+            const height = Number(node.attrs.get("height") ?? 0);
+            const where = `${style}/${format.id}/${slide.id}: ${node.tag}`;
+
+            assert.ok(Number.isFinite(x + y + width + height), `${where} has a NaN`);
+            assert.ok(width >= 0 && height >= 0, `${where} has a negative size`);
+            assert.ok(
+              x >= -1 && x + width <= format.width + 1 && y >= -1 && y + height <= format.height + 1,
+              `${where} left the frame`,
+            );
+          }
+        }
+      }
+    }
+  });
+
+  /**
+   * A filter region written as a percentage would land in `x` as "-25%", which
+   * `Number` reads as NaN — and the frame check above would then be measuring
+   * nothing at all on that element. The soft style leans on the default region
+   * rather than setting one, and this is what keeps it that way.
+   */
+  test("nothing measures itself in percentages", () => {
+    for (const style of STYLES) {
+      for (const node of renderSlide(boxed()[0]!, styled(style)).walk()) {
+        for (const key of ["x", "y", "width", "height"]) {
+          const raw = node.attrs.get(key);
+          assert.ok(raw === undefined || !raw.includes("%"), `${style}: ${node.tag} ${key}="${raw}"`);
+        }
+      }
+    }
+  });
+
+  test("the palette is still readable back off the drawing", () => {
+    for (const style of STYLES) {
+      for (const node of renderSlide(boxed()[0]!, styled(style)).walk()) {
+        assert.equal(node.attrs.get("class"), undefined, `${style}: ${node.tag} carries a class`);
+        assert.equal(node.attrs.get("style"), undefined, `${style}: ${node.tag} carries a style`);
+      }
+    }
+  });
+
+  /**
+   * The contact sheet puts every slide in one document, so two `url(#card)`
+   * would both find the first definition — which is how a dark card ends up
+   * painted with a light slide's gradient.
+   */
+  test("no two slides define the same id", () => {
+    for (const style of STYLES) {
+      const seen = new Set<string>();
+      for (const slide of boxed()) {
+        for (const node of renderSlide(slide, styled(style)).walk()) {
+          const id = node.attrs.get("id");
+          if (id === undefined) continue;
+          assert.ok(!seen.has(id), `${style}: two slides both define #${id}`);
+          seen.add(id);
+        }
+      }
+    }
+  });
+
+  test("an unknown style falls back rather than drawing nothing", () => {
+    const shape = (theme: unknown) =>
+      [...renderSlide(boxed()[0]!, theme).walk()].map((node) => node.tag).join(",");
+
+    assert.equal(shape(styled("nonsense")), shape(styled("glass")));
+    assert.equal(shape({ ...(LIGHT as object) }), shape(styled("glass")));
+  });
+});

@@ -12,6 +12,7 @@ import { createDeck } from "./deck.js";
 import { colourAt, currentMode, paletteProblems, themeFor } from "./theme.js";
 import { colourPicker } from "./picker.js";
 import { SCHEMES, schemePalette } from "./schemes.js";
+import { CARD_STYLES, cardStyleById } from "./cards.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -85,6 +86,7 @@ const store = {
 const deck = createDeck({
   palette: () => store.state.config?.palette ?? null,
   backdrop: () => store.state.config?.backdrop ?? null,
+  cardStyle: () => store.state.config?.cardStyle ?? null,
   onExit: () => show("view-home"),
   onToast: toast,
   onExclude: (dimension, key, excluded) => void setExcluded(dimension, key, excluded),
@@ -425,6 +427,46 @@ const BACKDROPS = [
   { id: "grain", name: "Grain" },
 ];
 
+/**
+ * How the panels are drawn — the cards on culling and keepers, the figures
+ * beside each year, the ground under the map.
+ *
+ * The list comes from `cards.js` rather than being written out again here. The
+ * backdrop chips above do keep their own copy, which is a wart worth not
+ * repeating: the ids in `core/config.ts` exist to validate a hand-edited file,
+ * and the words belong with the code that draws.
+ */
+function renderCardStyles() {
+  const current = cardStyleById(store.state.config?.cardStyle ?? "glass").id;
+
+  $("card-chips").replaceChildren(
+    ...CARD_STYLES.map((entry) =>
+      el(
+        "button",
+        {
+          type: "button",
+          class: entry.id === current ? "chip is-current" : "chip",
+          "aria-pressed": String(entry.id === current),
+          title: entry.note,
+          onclick: () => void saveCardStyle(entry.id),
+        },
+        el("span", { text: entry.label }),
+      ),
+    ),
+  );
+}
+
+async function saveCardStyle(cardStyle) {
+  try {
+    await api("/api/config", { method: "POST", body: { cardStyle } });
+    await refreshState();
+    deck.repaint();
+    renderCardStyles();
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
 function renderBackdrops() {
   const current = store.state.config?.backdrop?.kind ?? "flat";
 
@@ -497,6 +539,7 @@ async function applyScheme(id) {
 function renderColours() {
   renderSchemes();
   renderBackdrops();
+  renderCardStyles();
   const all = store.state.paletteRoles ?? [];
   const override = store.state.config.palette?.[colourMode] ?? {};
   const theme = themeFor(colourMode, override);
