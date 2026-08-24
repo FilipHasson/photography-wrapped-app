@@ -315,9 +315,16 @@ export type YearBasis = "anchor" | "calendar";
  *
  * "packed" wraps the whole range into as many rows of weeks as make the squares
  * biggest, which fills the slide; "years" gives each year a row of its own,
- * which lines the years up under each other at the cost of empty space.
+ * which lines the years up under each other at the cost of empty space;
+ * "months" is a block per month with the days on their real weekdays, which is
+ * the shape a calendar on a wall has and the only one where "the second Sunday
+ * of every month" is a thing you can see.
+ *
+ * They are three answers to the same question and none of them is best: packed
+ * is the most days per pixel, years compare one year against another, and
+ * months are the easiest to find a particular day in.
  */
-export type WallLayout = "packed" | "years";
+export type WallLayout = "packed" | "years" | "months";
 
 /**
  * Which day a week starts on.

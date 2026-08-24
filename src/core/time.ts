@@ -115,6 +115,19 @@ export function daysBetween(from: number, to: number): number {
   );
 }
 
+/**
+ * Calendar months touched by the span, counting both ends.
+ *
+ * Months, not thirty-day blocks: the 31st of January to the 1st of February is
+ * one day and two months, and a wall that draws a block per month has two to
+ * draw. Never less than one, so a range inside a single month still has a month.
+ */
+export function monthsBetween(from: number, to: number): number {
+  const a = dayParts(from);
+  const b = dayParts(to);
+  return Math.max(1, (b.year - a.year) * 12 + (b.month - a.month) + 1);
+}
+
 export function daysInMonth(year: number, month: number): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }

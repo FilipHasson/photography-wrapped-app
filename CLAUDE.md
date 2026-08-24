@@ -245,6 +245,17 @@ re-reading a library for it.
   one answer in one place. Both halves are checked in every format and both
   themes: the flipped one is the half nobody looks at, and a label gutter that
   eats the plot is invisible to a bounds check.
+- **The wall of days has three shapes and one legend.** `WallLayout` is
+  `packed` (weeks wrapped into as many bands as make the squares biggest),
+  `years` (a row each) or `months` (a block per month, days under their
+  weekdays, Monday first like every other weekday axis here). `streaksSlide`
+  offers only the ones the range can hold — a row per year needs two years, a
+  block per month needs two months — and falls back to `packed` rather than
+  drawing an empty wall when a setting outlives the range it was chosen in. The
+  key is built by `stripKey` and measured by `stripLegendHeight` before
+  anything is drawn: it wraps onto a second line on a 9:16 frame, and a layout
+  that reserved one line would be drawn underneath it. Text has no box, so no
+  bounds check can catch that.
 - **Only months holding photographs are rows** on `drawMonths`, so the axis is a
   run of months rather than a ruler: two years can be neighbours. `monthRow`
   puts a day that falls in a month nobody shot on the boundary between the two
@@ -267,7 +278,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 242 tests
+npm test          # 259 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```

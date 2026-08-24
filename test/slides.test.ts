@@ -355,7 +355,7 @@ describe("streaks", () => {
     assert.equal(slide.layout, "packed", "one wall by default");
   });
 
-  test("one year is one wall, and nothing to choose between", () => {
+  test("one year has no row per year to offer, but still has months", () => {
     const slide = findSlide(
       buildDeck(
         statsWith({
@@ -369,7 +369,57 @@ describe("streaks", () => {
     );
     assert.ok(slide && slide.kind === "strip");
     assert.equal(slide.years.length, 1);
-    assert.equal(slide.settings, undefined);
+
+    // A row per year needs a second year to line up against. A block per month
+    // needs a second month, which this range has twelve of — so the setting is
+    // offered, without the option that would do nothing.
+    assert.deepEqual(
+      slide.settings?.map((setting) => setting.id),
+      ["wall"],
+    );
+    assert.deepEqual(
+      slide.settings?.[0]?.options.map((option) => option.value),
+      ["packed", "months"],
+    );
+  });
+
+  test("a range inside one month is one wall and nothing else", () => {
+    const march = resolveRange({ kind: "custom", from: 20250301, to: 20250331 }, {
+      firstDay: 20250301,
+      lastDay: 20250331,
+    });
+    const slide = findSlide(
+      buildDeck(
+        statsWith({
+          range: march,
+          daily,
+          longestStreak: { days: 8, from: 20250301, to: 20250308 },
+          longestGap: { days: 5, from: 20250310, to: 20250314 },
+          years: YEARS.slice(1, 2),
+        }),
+      ).slides,
+      "streaks",
+    );
+    assert.ok(slide && slide.kind === "strip");
+    assert.equal(slide.settings, undefined, "nothing to lay out differently");
+  });
+
+  test("a shape the range cannot hold falls back rather than emptying", () => {
+    // A wall saved as "a row per year" while looking at five years, then opened
+    // on a range with one. The setting outlives the range it was chosen in.
+    const slide = findSlide(
+      buildDeck(
+        statsWith({
+          daily,
+          longestStreak: { days: 40, from: 20250101, to: 20250209 },
+          longestGap: { days: 12, from: 20250210, to: 20250222 },
+          years: YEARS.slice(1, 2),
+          wall: "years",
+        }),
+      ).slides,
+      "streaks",
+    );
+    assert.equal(slide?.kind === "strip" ? slide.layout : null, "packed");
   });
 
   test("says which number is the days out and which is the period", () => {

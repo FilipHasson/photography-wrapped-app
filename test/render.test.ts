@@ -11,6 +11,7 @@ import { buildDeck, type Slide } from "../src/stats/slides.ts";
 import { resolveRange } from "../src/stats/range.ts";
 import { makeFixtures, fixtureCatalog } from "../tools/make-fixtures.ts";
 import { makeCatalog } from "../tools/make-catalog.ts";
+import { daysBetween } from "../src/core/time.ts";
 
 /**
  * Renders every slide without a browser.
@@ -790,6 +791,98 @@ describe("two verdicts and the pile nobody judged", () => {
  * that was never rated — and it has to survive every shape. It used to be
  * fitted into whatever room was left, which on the narrow formats was none.
  */
+describe("the wall as a calendar", () => {
+  /** The real streaks slide, laid out a block per month. */
+  const asMonths = (): Slide => {
+    const streaks = slides.find((slide) => slide.id === "streaks");
+    assert.ok(streaks && streaks.kind === "strip", "no streaks slide to lay out");
+    return { ...streaks, layout: "months" };
+  };
+
+  /** Every day square that carries a count, as `{ day, x, y }`. */
+  const squares = (svg: ShimNode) => {
+    const found: Array<{ day: number; x: number; y: number }> = [];
+    for (const node of svg.walk()) {
+      if (node.tag !== "rect") continue;
+      const title = node.children.find((child) => child.tag === "title");
+      // Split rather than matched: the title is "5 Apr 2025 — 12", and a
+      // pattern is one escape away from silently matching nothing.
+      const [date, month, year, dash] = (title?.textContent ?? "").split(" ");
+      if (dash !== "—" || !MONTHS.includes(month as string)) continue;
+      found.push({
+        day: Number(year) * 10000 + (MONTHS.indexOf(month as string) + 1) * 100 + Number(date),
+        x: Number(node.attrs.get("x")),
+        y: Number(node.attrs.get("y")),
+      });
+    }
+    return found;
+  };
+
+  test("draws every day in the range exactly once, and none outside it", () => {
+    const slide = asMonths();
+    assert.ok(slide.kind === "strip");
+    const drawn = squares(renderSlide(slide, LIGHT));
+
+    const days = new Set(drawn.map((square) => square.day));
+    assert.equal(days.size, drawn.length, "a day was drawn twice");
+    assert.ok(days.has(slide.from), "the first day of the range is missing");
+    assert.ok(days.has(slide.to), "the last day of the range is missing");
+
+    for (const day of days) {
+      assert.ok(day >= slide.from && day <= slide.to, `${day} is outside the range`);
+    }
+    // Whole months in the middle are whole: the count is the span itself.
+    assert.equal(days.size, daysBetween(slide.from, slide.to) + 1);
+  });
+
+  test("a column is a weekday, all the way down the block", () => {
+    // What the layout is for. Inside one month, every Monday shares one x, and
+    // the seven weekdays take seven columns — that is the whole difference
+    // between this and the packed wall.
+    const drawn = squares(renderSlide(asMonths(), LIGHT));
+    const columns = new Map<string, Set<number>>();
+
+    for (const square of drawn) {
+      const year = Math.floor(square.day / 10000);
+      const month = Math.floor(square.day / 100) % 100;
+      const date = new Date(Date.UTC(year, month - 1, square.day % 100));
+      const key = `${year}-${month}-${(date.getUTCDay() + 6) % 7}`;
+      if (!columns.has(key)) columns.set(key, new Set());
+      (columns.get(key) as Set<number>).add(square.x);
+    }
+
+    assert.ok(columns.size > 7, `only ${columns.size} weekday columns across the whole range`);
+    for (const [key, xs] of columns) {
+      assert.equal(xs.size, 1, `${key} landed on ${xs.size} different columns`);
+    }
+  });
+
+  test("stays inside the frame, in every shape and both themes", () => {
+    for (const format of FORMATS) {
+      for (const theme of [LIGHT, DARK]) {
+        const svg = renderSlide(asMonths(), theme, format);
+        for (const node of svg.walk()) {
+          if (node.tag === "svg") continue;
+          for (const [key, value] of node.attrs) {
+            if (!NUMERIC_ATTRS.has(key)) continue;
+            assert.ok(Number.isFinite(Number(value)), `${format.id}: ${node.tag}.${key} is "${value}"`);
+          }
+          const x = Number(node.attrs.get("x") ?? 0);
+          const y = Number(node.attrs.get("y") ?? 0);
+          const width = Number(node.attrs.get("width") ?? 0);
+          const height = Number(node.attrs.get("height") ?? 0);
+          assert.ok(
+            x >= -1 && x + width <= format.width + 1 && y >= -1 && y + height <= format.height + 1,
+            `${format.id}: ${node.tag} left the frame`,
+          );
+        }
+      }
+    }
+  });
+});
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
 describe("a figure beside the chart", () => {
   const withFigure: Slide = {
     kind: "columns",

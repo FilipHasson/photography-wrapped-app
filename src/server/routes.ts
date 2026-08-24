@@ -31,6 +31,7 @@ import {
   type Layouts,
   type MarkToggles,
   type KitToggles,
+  type WallLayout,
   type RowLimits,
   type WeekStart,
 } from "../stats/aggregate.ts";
@@ -119,6 +120,11 @@ function appState(ctx: AppContext) {
  * label reaches the deck's title, and a label off a URL is a label anyone could
  * have written.
  */
+/** `wall=months`: which of the three shapes the days are laid out in. */
+function wallLayout(asked: string | null): WallLayout {
+  return asked === "years" || asked === "months" ? asked : "packed";
+}
+
 function rangeSpecFor(ctx: AppContext, params: URLSearchParams): RangeSpec {
   if (params.get("range") === "anchor") {
     const anchor = ctx.config.anchors.find((a) => a.id === params.get("id"));
@@ -353,7 +359,7 @@ export async function handleApi(
         location: ctx.config.location,
         weekStart,
         markWeekend: url.searchParams.get("weekend") === "mark",
-        wall: url.searchParams.get("wall") === "years" ? "years" : "packed",
+        wall: wallLayout(url.searchParams.get("wall")),
         // An anchor year starts where the library does; failing that, where the
         // photographs do.
         anchorDay: ctx.config.startDay ?? overview.firstDay,

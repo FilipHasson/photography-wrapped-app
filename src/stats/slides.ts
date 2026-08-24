@@ -9,10 +9,11 @@ import type {
   Place,
   Series,
   Streak,
+  WallLayout,
   WeekStart,
   YearBucket,
 } from "./aggregate.ts";
-import { daysBetween, formatDay, formatYearMonth, WEEKDAYS } from "../core/time.ts";
+import { daysBetween, formatDay, formatYearMonth, monthsBetween, WEEKDAYS } from "../core/time.ts";
 
 /**
  * Turning numbers into slides.
@@ -153,8 +154,11 @@ export type Slide =
       gap: Streak | null;
       /** The years the range covers: a row each, or labels along the wall. */
       years: Array<{ label: string; from: number; to: number }>;
-      /** "packed" fills the slide; "years" gives each year its own row. */
-      layout: "packed" | "years";
+      /**
+       * "packed" fills the slide, "years" gives each year its own row, and
+       * "months" is a block per month with the days on their real weekdays.
+       */
+      layout: WallLayout;
     })
   | (Common & {
       kind: "years";
@@ -1116,6 +1120,8 @@ function streaksSlide(stats: DeckStats): Slide | null {
       ? `${run} days in a row`
       : `${fmtInt(quiet)} days without picking it up`;
 
+  const months = monthsBetween(range.from, range.to);
+
   // The years the range covers, on whichever kind of year the reader is
   // thinking in. They are labels along a packed wall, or rows of their own.
   // With less than two there is nothing to choose between, so neither the basis
@@ -1128,6 +1134,18 @@ function streaksSlide(stats: DeckStats): Slide | null {
       to: Math.min(year.to, range.to),
     }));
 
+  /**
+   * The shape asked for, or the nearest one this range can hold: a row per year
+   * needs more than one year and a block per month more than one month, and a
+   * setting saved against a wider range should not leave a narrow one empty.
+   */
+  const layout: WallLayout =
+    stats.wall === "years" && years.length > 1
+      ? "years"
+      : stats.wall === "months" && months > 1
+        ? "months"
+        : "packed";
+
   return {
     kind: "strip",
     id: "streaks",
@@ -1138,14 +1156,20 @@ function streaksSlide(stats: DeckStats): Slide | null {
     // "330 of 1,090 days" said nothing about which number was which.
     note: daysOutNote(stats),
     ...settingsOf(
-      years.length > 1
+      // A row per year needs more than one year to line up, but a block per
+      // month needs only more than one month — so the setting is offered to
+      // ranges the year option alone would have left without one.
+      years.length > 1 || months > 1
         ? {
             id: "wall",
             label: "Lay the days out",
-            value: stats.wall,
+            value: layout,
             options: [
               { value: "packed", label: "As one wall", note: "as large as the slide allows" },
-              { value: "years", label: "A row per year" },
+              ...(years.length > 1 ? [{ value: "years", label: "A row per year" }] : []),
+              ...(months > 1
+                ? [{ value: "months", label: "A block per month", note: "days on their weekdays" }]
+                : []),
             ],
           }
         : null,
@@ -1158,7 +1182,7 @@ function streaksSlide(stats: DeckStats): Slide | null {
     streak: longestStreak,
     gap: longestGap,
     years,
-    layout: years.length > 1 ? stats.wall : "packed",
+    layout,
     table: tableOf(
       ["Measure", "Days", "From", "To"],
       [

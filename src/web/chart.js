@@ -477,27 +477,72 @@ function drawShadeLegend(root, plot, labels, theme, L) {
     labels.map((label, index) => ({ label, colour: shadeOf(index, labels.length, theme) })),
     theme,
     L,
+    plot.w,
   );
 }
 
-/** A row of swatches with names beside them, from a given point. */
-function drawKeyLegend(root, at, items, theme, L) {
-  let x = at.x;
+/**
+ * A row of swatches with names beside them, from a given point.
+ *
+ * Wraps upward when `width` is given and the row will not fit inside it.
+ * Upward because the caller has put this on the last line it has — the note
+ * lives below it — and four labels carrying day counts ("Longest quiet spell ·
+ * 1,301 days") run off the side of a 9:16 frame, which is the shape these are
+ * read in. Text has no box, so no bounds check could ever have caught it.
+ */
+function legendPitch(label, L) {
+  return L.axis + measure(label, L.axis) + L.axis * 1.6;
+}
+
+/**
+ * The swatches grouped into the lines they will occupy.
+ *
+ * Separate from the drawing because the caller has to reserve the height
+ * *before* the legend is drawn — a legend that wrapped onto a second line
+ * without anyone knowing would simply sit on top of the chart.
+ */
+function legendLines(items, L, width) {
+  const lines = [[]];
+  let used = 0;
 
   for (const item of items) {
-    root.append(
-      el("rect", {
-        x,
-        y: at.y - L.axis * 0.75,
-        width: L.axis * 0.7,
-        height: L.axis * 0.7,
-        rx: 3,
-        fill: item.colour,
-      }),
-    );
-    root.append(text(item.label, x + L.axis, at.y, { size: L.axis, fill: theme.ink2 }));
-    x += L.axis + measure(item.label, L.axis) + L.axis * 1.6;
+    const step = legendPitch(item.label, L);
+    if (used > 0 && used + step > width) {
+      lines.push([]);
+      used = 0;
+    }
+    lines[lines.length - 1].push(item);
+    used += step;
   }
+
+  return lines;
+}
+
+/** What one legend line costs, top to top. */
+const LEGEND_LINE = 1.7;
+
+function drawKeyLegend(root, at, items, theme, L, width = Infinity) {
+  const lines = legendLines(items, L, width);
+
+  lines.forEach((line, index) => {
+    const y = at.y - (lines.length - 1 - index) * L.axis * LEGEND_LINE;
+    let x = at.x;
+
+    for (const item of line) {
+      root.append(
+        el("rect", {
+          x,
+          y: y - L.axis * 0.75,
+          width: L.axis * 0.7,
+          height: L.axis * 0.7,
+          rx: 3,
+          fill: item.colour,
+        }),
+      );
+      root.append(text(item.label, x + L.axis, y, { size: L.axis, fill: theme.ink2 }));
+      x += legendPitch(item.label, L);
+    }
+  });
 }
 
 /**
@@ -1377,6 +1422,180 @@ function drawVerdict(root, plot, slide, theme, L) {
 }
 
 /**
+ * The wall as a calendar: a block per month, days under their weekdays.
+ *
+ * The packed wall is the most days per pixel and the least like anything anyone
+ * has on a fridge. Here a week runs left to right and the weeks stack down, so
+ * a column is a weekday all the way through the range — which is the only
+ * layout where "I never shoot on a Tuesday" is a thing you can see rather than
+ * a thing you have to be told.
+ *
+ * Monday first, like every other weekday axis in the deck. The blocks are all
+ * six weeks tall whether the month needs six or four, because a grid of blocks
+ * that each chose their own height would not line up, and lining up is the
+ * entire point.
+ */
+function drawMonthBlocks(root, plot, slide, theme, L) {
+  const counts = new Map(slide.days.map((entry) => [entry.day, entry.shots]));
+  const marks = slide.marks ?? [];
+
+  // Every month the range touches, first to last, including any it holds no
+  // photographs in — a month you did not pick the camera up is the point.
+  const months = [];
+  {
+    const first = toDate(slide.from);
+    const last = toDate(slide.to);
+    let year = first.getUTCFullYear();
+    let month = first.getUTCMonth();
+    while (year < last.getUTCFullYear() || (year === last.getUTCFullYear() && month <= last.getUTCMonth())) {
+      months.push({ year, month });
+      month += 1;
+      if (month > 11) { month = 0; year += 1; }
+    }
+  }
+
+  const legendH = stripLegendHeight(slide, theme, L, plot.w);
+  const usable = plot.h - legendH;
+
+  /**
+   * How many blocks across, chosen by trying every count and keeping the one
+   * that makes the day squares biggest — the same trick the calendar and the
+   * packed wall use, for the same reason.
+   */
+  const arrange = () => {
+    let best = { columns: 1, rows: months.length, cell: 0, labelH: 0 };
+    for (let columns = 1; columns <= months.length; columns++) {
+      const rows = Math.ceil(months.length / columns);
+      const blockW = plot.w / columns;
+      const blockH = usable / rows;
+      const labelH = Math.min(L.tiny * 1.6, blockH * 0.2);
+      // A block is seven days across and six weeks down, with a gutter of one
+      // day's width between it and the next.
+      const cell = Math.min(blockW / 7.8, (blockH - labelH) / 6.5);
+      if (cell > best.cell) best = { columns, rows, cell, labelH };
+    }
+    return best;
+  };
+
+  const { columns, rows, cell, labelH } = arrange();
+  const size = Math.max(1, cell - (cell > 5 ? 1.5 : 0.4));
+  const blockW = 7 * cell;
+  const blockH = 6 * cell + labelH;
+  const gapX = (plot.w - columns * blockW) / Math.max(1, columns);
+  const gapY = Math.max(0, (usable - rows * blockH) / Math.max(1, rows));
+
+  const originOf = (index) => ({
+    x: plot.x + (index % columns) * (blockW + gapX) + gapX / 2,
+    y: plot.y + Math.floor(index / columns) * (blockH + gapY) + gapY / 2,
+  });
+
+  const within = (span, key) => span && key >= span.from && key <= span.to;
+  const inside = (span, key) => span && key > span.from && key < span.to;
+
+  /** Where a day sits, or null when it is not in a month being drawn. */
+  const locate = (day) => {
+    const date = toDate(day);
+    const index = months.findIndex(
+      (m) => m.year === date.getUTCFullYear() && m.month === date.getUTCMonth(),
+    );
+    if (index < 0) return null;
+
+    const origin = originOf(index);
+    const lead = (new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1)).getUTCDay() + 6) % 7;
+    const offset = lead + date.getUTCDate() - 1;
+    return {
+      x: origin.x + (offset % 7) * cell,
+      y: origin.y + labelH + Math.floor(offset / 7) * cell,
+      band: index,
+    };
+  };
+
+  months.forEach((month, index) => {
+    const origin = originOf(index);
+    const days = new Date(Date.UTC(month.year, month.month + 1, 0)).getUTCDate();
+    const lead = (new Date(Date.UTC(month.year, month.month, 1)).getUTCDay() + 6) % 7;
+
+    root.append(
+      text(
+        `${MONTH_SHORT[month.month]}${month.month === 0 || index === 0 ? ` ${month.year}` : ""}`,
+        origin.x,
+        origin.y + labelH * 0.8,
+        { size: Math.max(8, Math.min(L.tiny, labelH * 0.9)), fill: theme.muted },
+      ),
+    );
+
+    for (let d = 1; d <= days; d++) {
+      const key = month.year * 10000 + (month.month + 1) * 100 + d;
+      const offset = lead + d - 1;
+      const x = origin.x + (offset % 7) * cell;
+      const y = origin.y + labelH + Math.floor(offset / 7) * cell;
+
+      if (key < slide.from || key > slide.to) {
+        // In the month but outside the range — drawn hollow, the same as the
+        // part-weeks at either end of the packed wall, so a range that starts
+        // on the 12th does not look like a fortnight nobody shot.
+        root.append(
+          el("rect", {
+            x, y, width: size, height: size,
+            rx: Math.min(2, size / 3),
+            fill: theme.surface,
+            stroke: theme.blank,
+          }),
+        );
+        continue;
+      }
+
+      const value = counts.get(key) ?? 0;
+      let fill = theme.blank;
+      let what = "nothing";
+      if (value === 0 && inside(slide.gap, key)) {
+        fill = theme.series[7];
+        what = "the longest quiet spell";
+      } else if (value > 0 && within(slide.streak, key)) {
+        fill = mix(theme.series[0], theme.surface, 0.45);
+        what = `${fmt(value)} — the longest run`;
+      } else if (value > 0) {
+        fill = theme.series[0];
+        what = fmt(value);
+      }
+
+      root.append(
+        titled(
+          el("rect", { x, y, width: size, height: size, rx: Math.min(2, size / 3), fill }),
+          `${d} ${MONTH_SHORT[month.month]} ${month.year} — ${what}`,
+        ),
+      );
+    }
+  });
+
+  // Milestones are a ring on the day and nothing more here: the strip above each
+  // block already carries the month's own name, and a label written over that
+  // would cost the reader the thing that makes this layout findable. The hover
+  // still says what happened, as it does on a four-pixel square anywhere else.
+  for (const mark of marks) {
+    const at = locate(mark.day);
+    if (!at) continue;
+    root.append(
+      titled(
+        el("rect", {
+          x: at.x,
+          y: at.y,
+          width: size,
+          height: size,
+          rx: Math.min(2, size / 3),
+          fill: "none",
+          stroke: theme.ink,
+          "stroke-width": Math.max(1, Math.min(2, size * 0.18)),
+        }),
+        mark.full,
+      ),
+    );
+  }
+
+  stripLegend(root, plot, slide, theme, L);
+}
+
+/**
  * Every day in the range as a square, a week to a column.
  *
  * The calendar answers "when"; this answers "how steadily". A day is a day
@@ -1390,10 +1609,12 @@ function drawVerdict(root, plot, slide, theme, L) {
  * trick the month grid uses. Every day in the period is drawn either way.
  */
 function drawStrip(root, plot, slide, theme, L) {
+  if (slide.layout === "months") return drawMonthBlocks(root, plot, slide, theme, L);
+
   const counts = new Map(slide.days.map((entry) => [entry.day, entry.shots]));
   const years = slide.years ?? [];
 
-  const legendH = L.axis * 2.8;
+  const legendH = stripLegendHeight(slide, theme, L, plot.w);
   const usable = plot.h - legendH;
 
   // One row of weeks per year lines the years up under each other; packed wraps
@@ -1621,7 +1842,18 @@ function drawStrip(root, plot, slide, theme, L) {
     }, claimed);
   }
 
-  const key = [
+  stripLegend(root, plot, slide, theme, L);
+}
+
+/**
+ * What the four fills on a wall of days mean.
+ *
+ * One function because there are two walls now — packed and a block per month —
+ * and a legend that disagreed with itself between two layouts of the same slide
+ * would be worse than no legend at all.
+ */
+function stripKey(slide, theme) {
+  return [
     { label: "You shot", colour: theme.series[0] },
     {
       label: slide.streak ? `Longest run · ${fmt(slide.streak.days)} days` : "Longest run",
@@ -1633,7 +1865,21 @@ function drawStrip(root, plot, slide, theme, L) {
     },
     { label: "Nothing", colour: theme.blank },
   ];
-  drawKeyLegend(root, { x: plot.x, y: plot.y + plot.h - L.axis }, key, theme, L);
+}
+
+/**
+ * The room to leave for it.
+ *
+ * Four labels carrying day counts wrap onto a second line on a 9:16 frame, and
+ * a wall that reserved one line's worth would then be drawn underneath them.
+ */
+function stripLegendHeight(slide, theme, L, width) {
+  const lines = legendLines(stripKey(slide, theme), L, width).length;
+  return L.axis * (2.8 + LEGEND_LINE * (lines - 1));
+}
+
+function stripLegend(root, plot, slide, theme, L) {
+  drawKeyLegend(root, { x: plot.x, y: plot.y + plot.h - L.axis }, stripKey(slide, theme), theme, L, plot.w);
 }
 
 /** Twenty-four spokes: a day, read as a clock face. */
@@ -1810,6 +2056,7 @@ function drawWeekAsRows(root, plot, slide, theme, L) {
       ],
       theme,
       L,
+      plot.w,
     );
   }
 }
@@ -1879,6 +2126,7 @@ function drawWeek(root, plot, slide, theme, L) {
       ],
       theme,
       L,
+      plot.w,
     );
   }
 }
