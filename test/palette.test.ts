@@ -20,10 +20,12 @@ let themeFor: (mode: string, override: Record<string, string>) => Theme;
 let paletteProblems: (theme: Theme) => Problem[];
 let seriesColour: (index: number, theme: Theme) => string;
 let colourAt: (theme: Theme, role: string) => string | null;
+let oklchOf: (hex: string) => { l: number; c: number; h: number };
+let hexOf: (l: number, c: number, h: number) => string;
 
 before(async () => {
   // @ts-expect-error — untyped module, imported for its behaviour.
-  ({ themeFor, paletteProblems, seriesColour, colourAt } = await import("../src/web/theme.js"));
+  ({ themeFor, paletteProblems, seriesColour, colourAt, oklchOf, hexOf } = await import("../src/web/theme.js"));
 });
 
 describe("a palette the reader has changed", () => {
@@ -138,5 +140,50 @@ describe("the colours past the eighth slot", () => {
     const mine = themeFor("dark", { "series.0": "#7d3cb5", "series.3": "#0f8a8a" });
     const colours = Array.from({ length: 25 }, (_, i) => seriesColour(i, mine));
     assert.equal(new Set(colours).size, 25);
+  });
+});
+
+/**
+ * The axes the in-app picker slides along.
+ *
+ * OKLCH rather than HSL because every gate above is measured in OKLab: a
+ * lightness slider that moves the number `paletteProblems` is complaining about
+ * is a slider someone can actually fix a warning with.
+ */
+describe("lightness, chroma and hue", () => {
+  const SAMPLES = ["#2a78d6", "#eb6834", "#1baf7a", "#ffffff", "#000000", "#7f7f7f", "#e34948"];
+
+  test("a colour survives the round trip", () => {
+    for (const hex of SAMPLES) {
+      const { l, c, h } = oklchOf(hex);
+      const back = hexOf(l, c, h);
+      // Byte-for-byte, not merely close: the picker writes what it reads, and a
+      // colour that drifts a step every time a well is opened is a palette that
+      // rots by being looked at.
+      assert.equal(back, hex, `${hex} came back as ${back}`);
+    }
+  });
+
+  test("grey has no hue to lose", () => {
+    for (const hex of ["#ffffff", "#000000", "#7f7f7f"]) {
+      assert.ok(oklchOf(hex).c < 0.002, `${hex} is not neutral: ${oklchOf(hex).c}`);
+    }
+  });
+
+  test("asking for a colour sRGB cannot show still gives one back", () => {
+    // The chroma slider runs to the edge of the space, which most hues cannot
+    // reach at most lightnesses. Every position on it has to mean something.
+    for (let h = 0; h < 360; h += 15) {
+      for (const l of [0.05, 0.5, 0.95]) {
+        const hex = hexOf(l, 0.4, h);
+        assert.match(hex, /^#[0-9a-f]{6}$/, `l=${l} h=${h} gave ${hex}`);
+      }
+    }
+  });
+
+  test("clamps rather than throwing at the ends of the sliders", () => {
+    for (const [l, c, h] of [[-1, 0.1, 200], [2, 0.1, 200], [0.5, -1, 200], [0.5, 0.1, 720]]) {
+      assert.match(hexOf(l as number, c as number, h as number), /^#[0-9a-f]{6}$/);
+    }
   });
 });

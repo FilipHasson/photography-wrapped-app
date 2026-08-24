@@ -10,6 +10,7 @@
 
 import { createDeck } from "./deck.js";
 import { colourAt, currentMode, paletteProblems, themeFor } from "./theme.js";
+import { colourPicker } from "./picker.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -392,27 +393,19 @@ function renderColours() {
       const hex = colourAt(theme, role.id) ?? "#000000";
       const value = el("span", { class: "hint", text: role.id in override ? `${hex} · yours` : hex });
 
-      return el(
-        "label",
+      const swatch = el("button", {
+        type: "button",
+        class: "colour-chip",
+        "aria-label": `${role.label} — ${hex}`,
+        "aria-expanded": String(livePicker?.role === role.id),
+        onclick: () => openColourPicker(role, hex),
+      });
+      swatch.style.background = hex;
+
+      const well = el(
+        "div",
         { class: trouble.get(role.id) === "warn" ? "colour-well is-trouble" : "colour-well" },
-        el("input", {
-          type: "color",
-          value: hex,
-          "aria-label": role.label,
-          // `input` fires while the picker is being dragged, which is what makes
-          // the deck behind it move too; `change` is the one that saves. Only
-          // this one well is touched while that is happening — rebuilding the
-          // list would replace the very input the picker is attached to.
-          oninput: (event) => {
-            pickingColour = true;
-            value.textContent = `${event.target.value} · yours`;
-            previewColour(role.id, event.target.value);
-          },
-          onchange: (event) => {
-            pickingColour = false;
-            void saveColour(role.id, event.target.value);
-          },
-        }),
+        swatch,
         el(
           "span",
           {},
@@ -421,6 +414,15 @@ function renderColours() {
           role.note ? el("span", { class: "hint", text: role.note }) : null,
         ),
       );
+
+      // The picker is not rebuilt with the list around it — it is the thing
+      // being used, and replacing it mid-drag would drop the slider under the
+      // pointer. Reopening it here is only for the one rebuild that happens
+      // when the list is drawn while a picker is already up.
+      if (livePicker?.role === role.id) {
+        return el("div", { class: "colour-slot" }, well, livePicker.picker.node);
+      }
+      return well;
     }),
   );
 
@@ -442,6 +444,71 @@ function renderColours() {
   );
 }
 
+/**
+ * The picker on screen, if there is one, and the palette it opened over.
+ *
+ * One at a time: a second picker under a second swatch would be two live
+ * previews of the same deck, and the reader could not tell which slider was
+ * doing what.
+ */
+let livePicker = null;
+
+function openColourPicker(role, hex) {
+  if (livePicker?.role === role.id) {
+    closeColourPicker(true);
+    return;
+  }
+  closeColourPicker(true);
+
+  const picker = colourPicker(hex, {
+    label: role.label,
+    onInput: (next) => previewColour(role.id, next),
+    onDone: (kept) => {
+      const held = livePicker;
+      livePicker = null;
+      pickingColour = false;
+      if (kept === null) {
+        // Nothing to keep: put the palette back exactly as it was found, rather
+        // than to this colour's default. Previewing wrote an entry that was not
+        // there before, and a role marked "yours" for a colour the reader never
+        // chose is a lie the reset button then has to explain.
+        store.state.config.palette[colourMode] = held?.before ?? {};
+        deck.repaint();
+        renderColours();
+        return;
+      }
+      void saveColour(role.id, kept);
+    },
+  });
+
+  livePicker = { role: role.id, picker, before: { ...(store.state.config.palette?.[colourMode] ?? {}) } };
+  pickingColour = true;
+  renderColours();
+  picker.focus();
+}
+
+function closeColourPicker(keep) {
+  livePicker?.picker.close(keep);
+}
+
+/**
+ * One repaint a frame, however fast the slider is dragged.
+ *
+ * A slider fires an event per pixel and a repaint redraws every mark on the
+ * slide — eleven hundred of them on the wall of days. Without this the browser
+ * is drawing frames nobody will ever see, and the one the reader is waiting for
+ * is behind them.
+ */
+let repaintQueued = false;
+function queueRepaint() {
+  if (repaintQueued) return;
+  repaintQueued = true;
+  requestAnimationFrame(() => {
+    repaintQueued = false;
+    deck.repaint();
+  });
+}
+
 /** The colour as it is being dragged: shown everywhere, saved nowhere. */
 function previewColour(role, hex) {
   const palette = store.state.config.palette ?? { light: {}, dark: {} };
@@ -450,7 +517,7 @@ function previewColour(role, hex) {
   // The repaint comes back through `onColours`, which is what rebuilds the
   // list — so there is no second call to make here, and while a picker is open
   // that rebuild is the one thing that must not happen.
-  deck.repaint();
+  queueRepaint();
 }
 
 async function saveColour(role, hex) {
@@ -1124,12 +1191,20 @@ $("setting-video").addEventListener("change", () => void saveSettings());
 
 for (const mode of ["light", "dark"]) {
   $(`colour-${mode}`).addEventListener("click", () => {
+    // Anything that changes what the list is showing closes the picker first:
+    // a slider left open over a well that is about to be a different role is a
+    // slider that would edit the wrong colour.
+    closeColourPicker(true);
     colourMode = mode;
     renderColours();
   });
 }
-$("colour-reset").addEventListener("click", () => void resetColours());
+$("colour-reset").addEventListener("click", () => {
+  closeColourPicker(false);
+  void resetColours();
+});
 $("colour-all").addEventListener("click", () => {
+  closeColourPicker(true);
   everyColour = !everyColour;
   renderColours();
 });

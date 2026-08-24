@@ -924,15 +924,111 @@ main {
   background: color-mix(in srgb, var(--danger) 6%, transparent);
 }
 
-.colour-well input[type="color"] {
+/* A button, not `<input type="color">`: that opens an operating-system dialog
+   which covers the slide being edited, and on Windows will not let go of it. */
+.colour-chip {
   inline-size: 34px;
   block-size: 34px;
   padding: 0;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: 6px;
-  background: none;
   cursor: pointer;
   flex: none;
+}
+
+.colour-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.colour-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--plane);
+}
+
+.picker-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* The track is the colours this slider would give you with the other two held
+   where they are — a hue strip at full saturation would be a lie about what
+   moving it does to *this* colour. `--track` is set from the script. */
+.picker-row input[type="range"] {
+  appearance: none;
+  -webkit-appearance: none;
+  inline-size: 100%;
+  block-size: 15px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--track, var(--raised));
+  cursor: pointer;
+}
+.picker-row input[type="range"]::-webkit-slider-runnable-track {
+  background: transparent;
+  block-size: 100%;
+}
+.picker-row input[type="range"]::-moz-range-track {
+  background: transparent;
+  block-size: 100%;
+}
+/* Two rings, light over dark, so the thumb is findable at both ends of every
+   track it slides along — a single-colour thumb vanishes at one of them. */
+.picker-row input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  inline-size: 15px;
+  block-size: 15px;
+  border-radius: 50%;
+  background: transparent;
+  border: 2px solid #ffffff;
+  outline: 1px solid rgb(0 0 0 / 0.65);
+  outline-offset: -3px;
+}
+.picker-row input[type="range"]::-moz-range-thumb {
+  inline-size: 13px;
+  block-size: 13px;
+  border-radius: 50%;
+  background: transparent;
+  border: 2px solid #ffffff;
+  outline: 1px solid rgb(0 0 0 / 0.65);
+  outline-offset: -3px;
+}
+
+.picker-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.picker-swatch {
+  inline-size: 22px;
+  block-size: 22px;
+  border-radius: 5px;
+  border: 1px solid var(--border-strong);
+  flex: none;
+}
+
+.picker-hex {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  padding: 4px 7px;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.picker-done {
+  padding: 4px 10px;
+  font-size: 0.85rem;
 }
 
 .colour-well > span {

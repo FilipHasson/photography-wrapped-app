@@ -384,6 +384,27 @@ function oklchToHex(lightness, chroma, hue, floor) {
   return null;
 }
 
+/**
+ * A hex colour as lightness, chroma and hue — the axes the picker moves along.
+ *
+ * OKLCH rather than HSL because every rule this tool has about colour is
+ * measured in OKLab: the contrast floor, the distance between two series
+ * through simulated colour blindness, the heat ramp climbing in steps of 0.06
+ * lightness. A slider in this space moves the number the warning is about, and
+ * a step of lightness looks like a step of lightness at every hue, which is the
+ * one thing HSL cannot do.
+ */
+export function oklchOf(hex) {
+  const [l, a, b] = oklabOf(hex);
+  const hue = (Math.atan2(b, a) * 180) / Math.PI;
+  return { l, c: Math.hypot(a, b), h: hue < 0 ? hue + 360 : hue };
+}
+
+/** The way back, pulled into sRGB by dropping chroma until it fits. */
+export function hexOf(l, c, h) {
+  return oklchToHex(Math.min(1, Math.max(0, l)), Math.max(0, c), h, 0) ?? "#000000";
+}
+
 /** Distance in OKLab, on the same ×100 scale the palette validator reports. */
 function deltaE(a, b) {
   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) * 100;

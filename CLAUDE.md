@@ -30,7 +30,8 @@ src/index/     walking sources into the index, and deciding what is a duplicate
 src/stats/     ranges, the aggregation queries, and the slide copy
 src/server/    HTTP API, job runner, static hosting
 src/web/       the UI — plain HTML/CSS/ES modules, no framework;
-               formats.js is the posting shapes, chart.js draws into them
+               formats.js is the posting shapes, chart.js draws into them,
+               picker.js is the colour picker
 tools/         fixture generators: an EXIF/MP4 writer and a Lightroom catalog
 ```
 
@@ -224,8 +225,26 @@ re-reading a library for it.
   answers four; the rest are behind "Every colour". Two things this rests on: the
   palette is written on as attributes, which `test/render.test.ts` asserts along
   with the absence of any `class` or `style`, and the list is **not** rebuilt
-  while a picker is open (`pickingColour`) — replacing the `<input>` under an
-  open colour picker closes it.
+  while a picker is open (`pickingColour`) — replacing the control under an
+  open picker drops the slider from under the pointer.
+- **The colour picker is ours, and its axes are OKLCH.** `web/picker.js`, not
+  `<input type="color">`: that opens an OS dialog which covers the slide being
+  edited and, on Windows, will not let go of it until dismissed — which defeats
+  the point of putting the palette beside the slide. Lightness, chroma and hue
+  rather than RGB or HSL because every gate in `paletteProblems` is measured in
+  OKLab, so a slider moves the number a warning is actually about, and a step of
+  lightness looks like a step of lightness at every hue. Each track is drawn
+  with the other two channels held where they are — a hue strip at full
+  saturation would be a lie about what moving it does to *this* colour.
+  `oklchOf`/`hexOf` in `theme.js` round-trip byte-for-byte (`test/palette.test.ts`),
+  because a colour that drifts a step each time a well is opened is a palette
+  that rots by being looked at, and `hexOf` always answers: the chroma slider
+  runs past what most hues can reach, and every position on it has to mean
+  something. Preview repaints are coalesced to one a frame — a slider fires an
+  event per pixel and the wall of days is eleven hundred marks. Escape puts the
+  palette back exactly as the picker found it rather than to the role's default:
+  previewing writes an entry that was not there before, and a role marked
+  "yours" for a colour nobody chose is a lie the reset button has to explain.
 - **`paletteProblems` warns, and never blocks.** Colour-blind safety is a
   property of the set, not of any colour in it, so the gates are the palette
   validator's own: adjacent pairs at ΔE ≥ 6 through `min(protan, deutan)`, a
@@ -377,7 +396,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 292 tests
+npm test          # 296 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```
