@@ -243,7 +243,28 @@ describe("what the opening slide owns up to", () => {
     const opening = findSlide(deck.slides, "opening");
 
     assert.ok(range.clipped);
-    assert.ok(opening?.note?.includes("24 Aug 2023"), opening?.note);
+    // The date is in the subtitle; the note says what that date *is*, because
+    // "All time" starting years after the first photograph needs explaining.
+    assert.ok(opening?.note?.includes("start date"), opening?.note);
+    assert.ok(opening?.subtitle?.startsWith("24 Aug 2023 — "), opening?.subtitle);
+  });
+
+  test("the period is the range, not the frames inside it", () => {
+    // The bug this exists for: an all-time deck that runs to today said the
+    // day of the last frame, while the tile beside it counted days to today.
+    // The stub's frames run 1 Jan to 31 Dec 2025; the period is wider at both
+    // ends, which is what an unbounded range running to today looks like.
+    const range = resolveRange({ kind: "custom", from: 20241201, to: 20260101 }, {
+      firstDay: 20250101,
+      lastDay: 20251231,
+    });
+    const opening = findSlide(buildDeck(statsWith({ range })).slides, "opening");
+
+    assert.ok(opening?.subtitle?.startsWith("1 Dec 2024 — 1 Jan 2026"), opening?.subtitle);
+    // Not lost, only moved: the frames themselves are rows in the table.
+    const rows = opening?.table?.rows.map((row) => row.join(" = "));
+    assert.ok(rows?.includes("First frame = 1 Jan 2025"), JSON.stringify(rows));
+    assert.ok(rows?.includes("Last frame = 31 Dec 2025"), JSON.stringify(rows));
   });
 
   test("never mentions what is hidden, or counts files at anyone", () => {

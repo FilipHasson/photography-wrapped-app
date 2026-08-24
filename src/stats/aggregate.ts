@@ -666,6 +666,40 @@ export function yearPeriods(
   return periods;
 }
 
+/** The month after this one, on a `YYYYMM` integer. */
+const nextMonth = (ym: number) => (ym % 100 === 12 ? ym + 89 : ym + 1);
+
+/**
+ * Keeps the empty months at either end of the range.
+ *
+ * The run of months is deliberately not a ruler: a library with a three-year
+ * break puts the years either side of it next to each other rather than
+ * drawing thirty-six blank rows, and `monthRow` in `web/chart.js` knows how to
+ * place a day falling in the hole. That compression is right in the middle of
+ * a range and wrong at its ends — a range with no end of its own runs to
+ * *today*, so stopping at the last month holding a frame quietly deletes the
+ * dry spell, which is the thing that end date exists to show. A month by month
+ * chart of 2025 that starts in March also says 2025 started in March.
+ *
+ * It cannot grow the run past the range itself, and a library that shot in
+ * every month of it already produced exactly that many rows.
+ */
+function padToRange(months: MonthCount[], range: Range): MonthCount[] {
+  const first = Math.floor(range.from / 100);
+  const last = Math.floor(range.to / 100);
+  if (last < first) return months;
+
+  const head: MonthCount[] = [];
+  const until = months[0]?.ym ?? nextMonth(last);
+  for (let ym = first; ym < until; ym = nextMonth(ym)) head.push({ ym, shots: 0 });
+
+  const tail: MonthCount[] = [];
+  const after = months.length === 0 ? nextMonth(last) : nextMonth(months[months.length - 1]?.ym ?? last);
+  for (let ym = after; ym <= last; ym = nextMonth(ym)) tail.push({ ym, shots: 0 });
+
+  return head.length === 0 && tail.length === 0 ? months : [...head, ...months, ...tail];
+}
+
 /** An hour of the day, or the default when it is not one. */
 function clampHour(value: number | undefined, fallback: number): number {
   return value === undefined || !Number.isFinite(value) ? fallback : Math.min(24, Math.max(0, value));
@@ -1097,9 +1131,16 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
     ...args,
   );
 
-  const monthly = db.allAs<{ ym: number; shots: number }>(
-    `SELECT p.ym AS ym, COUNT(*) AS shots FROM photo p WHERE ${where} AND p.ym IS NOT NULL GROUP BY p.ym ORDER BY p.ym`,
-    ...args,
+  const monthly = padToRange(
+    db
+      .allAs<{ ym: number; shots: number }>(
+        `SELECT p.ym AS ym, COUNT(*) AS shots FROM photo p WHERE ${where} AND p.ym IS NOT NULL GROUP BY p.ym ORDER BY p.ym`,
+        ...args,
+      )
+      // Off the null-prototype rows and into plain objects, since the padding
+      // below adds ones of its own and a mixed array is a trap for a test.
+      .map((row) => ({ ym: row.ym, shots: row.shots })),
+    range,
   );
 
   const busiestDay = daily.reduce<DayCount | null>(

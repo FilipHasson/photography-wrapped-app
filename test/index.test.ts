@@ -279,6 +279,33 @@ describe("time", () => {
     assert.equal(stats.totals.shots, EXPECTED.shotsMarch2025);
   });
 
+  /**
+   * The run of months is not a ruler — a break in the middle of a library puts
+   * the months either side of it next to each other. That compression is wrong
+   * at the *ends* of a range: one with no end of its own runs to today, so a
+   * run stopping at the last month with a frame in it deletes the dry spell
+   * the reader came to see.
+   */
+  test("the months run to the ends of the range, and only compress inside it", () => {
+    const stats = computeStats(
+      db,
+      resolveRange({ kind: "custom", from: 20241101, to: 20251231 }, { firstDay: null, lastDay: null }, fixtureNow()),
+      { includeVideo: true },
+    );
+    const months = stats.monthly.map((entry) => entry.ym);
+
+    assert.equal(months[0], 202411, "the range starts two months before the first frame");
+    assert.equal(months[months.length - 1], 202512, "and ends six months after the last");
+    // The empty months between shoots are still folded away.
+    assert.ok(!months.includes(202501), `January is a gap, not a row: ${months.join(",")}`);
+    // Padding is padding: it never invents frames.
+    assert.equal(stats.monthly.find((entry) => entry.ym === 202511)?.shots, 0);
+    assert.equal(
+      stats.monthly.reduce((sum, entry) => sum + entry.shots, 0),
+      stats.totals.shots,
+    );
+  });
+
   test("finds the longest burst", () => {
     const stats = statsFor(db);
     assert.equal(stats.burst?.frames, EXPECTED.longestBurst);

@@ -299,11 +299,21 @@ re-reading a library for it.
   anything is drawn: it wraps onto a second line on a 9:16 frame, and a layout
   that reserved one line would be drawn underneath it. Text has no box, so no
   bounds check can catch that.
-- **Only months holding photographs are rows** on `drawMonths`, so the axis is a
-  run of months rather than a ruler: two years can be neighbours. `monthRow`
-  puts a day that falls in a month nobody shot on the boundary between the two
-  either side of it rather than dropping it, because a camera bought and then
-  not touched for a fortnight is exactly the mark worth having.
+- **The run of months spans the range, and compresses only inside it.**
+  `padToRange` in `stats/aggregate.ts` fills in the empty months at either end;
+  the ones in the middle are still left out, so the axis on `drawMonths` is a
+  run rather than a ruler and two years can be neighbours. `monthRow` puts a
+  day that falls in a month nobody shot on the boundary between the two either
+  side of it rather than dropping it, because a camera bought and then not
+  touched for a fortnight is exactly the mark worth having. The ends are
+  different from the middle: a range with no end of its own runs to today, so
+  stopping at the last month holding a frame deletes the dry spell that end
+  date exists to show — and a month by month chart of 2025 that starts in March
+  also says 2025 started in March. Padding cannot make the run longer than the
+  range, which a library that shot every month already produced. `stats.monthly`
+  feeds the gear-over-time series too, so both charts end where the period does,
+  and the timeline's "closed out" headline falls back when the last month is
+  empty rather than crediting a lens with a month nobody shot.
 - **A span is a band on every layout that draws time**, never a rule at its first
   day: on a time axis, and equally on the run of months, where the unit is the
   month and six weeks drawn as one hairline reads as a date. `monthEdge` is
@@ -334,8 +344,13 @@ re-reading a library for it.
   on, and outside the year still running — the dry spell *is* the answer. The
   index still wins where it reaches past today: a camera with its clock set
   wrong writes days in the future and those frames are real. The opening slide
-  is unaffected, because its subtitle has always been `totals.firstDay` to
-  `totals.lastDay` — the real first and last frame, not the range.
+  slide's subtitle **is the period**, `range.from` to `range.to` — it used to
+  be the first and last frame, which read as the period and was not: an
+  all-time deck said "16 Aug 2026" on the 24th while the tile beside it counted
+  days to today and the clause after it named the period before. The frames
+  themselves are two rows in that slide's table, which is where a detail that
+  is not the headline belongs, and the clipped note says *what* the start date
+  is rather than repeating a day the subtitle already carries.
 - **A year the range clips to a sliver is not a row on the wall.** Every row of
   `streaksSlide`'s year banding is the same height whatever it holds, so a
   two-day period at either end would cost a quarter of the wall and take that
@@ -349,7 +364,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 289 tests
+npm test          # 291 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```

@@ -458,7 +458,17 @@ function opening(stats: DeckStats, rangeLabel: string): Slide {
     tiles.push({ label: "A week", value: `${Math.round(perWeek)}`, note: "photographs, on average" });
   }
 
-  let subtitle = `${formatDay(totals.firstDay ?? range.from)} — ${formatDay(totals.lastDay ?? range.to)}`;
+  /**
+   * The period, not the frames inside it.
+   *
+   * This used to be the first and last frame, which read as the period and was
+   * not: an all-time deck ending today said "16 Aug 2026" on the 24th, and
+   * every other number on the slide — days in range, the share of the period,
+   * the clause naming the period before — was already measuring something
+   * else. The first and last frame are still worth knowing, and they are in
+   * the table, which is where a detail that is not the headline belongs.
+   */
+  let subtitle = `${formatDay(range.from)} — ${formatDay(range.to)}`;
   if (totals.previousShots !== null && range.previous) {
     const previous = totals.previousShots;
     if (previous === 0) {
@@ -483,12 +493,17 @@ function opening(stats: DeckStats, rangeLabel: string): Slide {
     tiles,
     // Footnotes are a phrase, never a paragraph, and never a count of frames —
     // the numbers are the slide, and every denominator is in the table view.
-    note: range.clipped ? `From ${formatDay(range.from)}` : undefined,
+    // The date itself is in the subtitle now, so this says what it is instead
+    // of repeating it: "All time" starting in 2023 needs explaining, not a
+    // second copy of the day it starts on.
+    note: range.clipped ? "Your start date, not your first photograph" : undefined,
     table: tableOf(
       ["Measure", "Value"],
       [
         ["Photographs", totals.shots],
         ["Files", totals.files],
+        ["First frame", totals.firstDay ? formatDay(totals.firstDay) : "—"],
+        ["Last frame", totals.lastDay ? formatDay(totals.lastDay) : "—"],
         ["Days shot", totals.daysShot],
         ["Days in range", totals.daysInRange],
         ["Cameras", totals.cameras],
