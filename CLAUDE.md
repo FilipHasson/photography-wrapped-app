@@ -304,6 +304,15 @@ re-reading a library for it.
   puts a day that falls in a month nobody shot on the boundary between the two
   either side of it rather than dropping it, because a camera bought and then
   not touched for a fortnight is exactly the mark worth having.
+- **A span is a band on every layout that draws time**, never a rule at its first
+  day: on a time axis, and equally on the run of months, where the unit is the
+  month and six weeks drawn as one hairline reads as a date. `monthEdge` is
+  `monthRow` with the ends of a span pinned to the ends of the run — milestones
+  are selected by *overlap*, so a trip can begin before the first month drawn,
+  and both `drawMonths` and `drawMarks` place such a start at the frame edge
+  rather than dropping the whole mark for having nowhere honest to begin. Only a
+  span end is ever pinned: a purchase outside the range has no row, and putting
+  one at the edge would claim it happened there.
 - A teleconverter is stored beside the lens (`photo.tc`), never inside its name.
   One lens is one row and one bar; the converter is a shade within it. The key
   is computed from the optics with the converter stripped, so bare and converted
@@ -321,7 +330,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 285 tests
+npm test          # 286 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```

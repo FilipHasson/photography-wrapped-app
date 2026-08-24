@@ -150,8 +150,6 @@ export type Slide =
       items: Array<{ label: string; value: number }>;
       highlight: number;
       axisLabel: string;
-      /** An answer the columns cannot give, set beside them in full size. */
-      figure?: { value: string; label: string };
     })
   | (Common & {
       kind: "strip";

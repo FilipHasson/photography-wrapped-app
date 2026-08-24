@@ -578,7 +578,14 @@ function drawMarks(root, area, marks, xOf, theme, L, reserve = 0) {
   let free = -Infinity;
 
   for (const mark of [...marks].sort((a, b) => a.day - b.day)) {
-    const x = xOf(mark.day);
+    const from = xOf(mark.day);
+    const to = mark.until === undefined ? null : xOf(mark.until);
+
+    // A span reaching into the chart from before it begins is a span the chart
+    // is partly about — milestones are chosen by overlapping the range, not by
+    // sitting inside it — so its left edge is pinned to the frame rather than
+    // the whole mark being dropped for having no honest place to start.
+    const x = from === null && to !== null && Number.isFinite(to) ? area.x : from;
     if (x === null || !Number.isFinite(x) || x < area.x - 1 || x > area.x + area.w + 1) continue;
 
     /**
@@ -592,9 +599,8 @@ function drawMarks(root, area, marks, xOf, theme, L, reserve = 0) {
      * rules at its edges — a wash with no edges reads as a smudge rather than
      * as "from here to here".
      */
-    const end = mark.until === undefined ? null : xOf(mark.until);
-    const wide = end !== null && Number.isFinite(end) && end > x + 1;
-    const right = wide ? Math.min(end, area.x + area.w) : x;
+    const wide = to !== null && Number.isFinite(to) && to > x + 1;
+    const right = wide ? Math.min(to, area.x + area.w) : x;
 
     if (wide) {
       root.append(
@@ -662,6 +668,23 @@ function monthRow(months, day) {
 
   const after = months.findIndex((month) => month > ym);
   return after > 0 ? after : null;
+}
+
+/**
+ * The same position, pinned to the ends of the run rather than dropped off it.
+ *
+ * `monthRow` answers null for a day outside the months drawn, which is right
+ * for a purchase — there is no honest row for it — and wrong for the end of a
+ * span. Milestones are chosen by *overlapping* the range, so a trip can begin
+ * before the first month here and end after the last, and refusing to place
+ * either end would throw away a band that is genuinely most of the chart.
+ */
+function monthEdge(months, day) {
+  if (months.length === 0) return null;
+  const ym = Math.floor(day / 100);
+  if (ym < months[0]) return 0;
+  if (ym > months[months.length - 1]) return months.length;
+  return monthRow(months, day);
 }
 
 /** The same position, along an axis of bands rather than rows. */
@@ -800,10 +823,9 @@ function drawColumnsAsRows(root, plot, slide, theme, L) {
   const max = Math.max(...items.map((item) => item.value), 1);
   const ceiling = niceCeiling(max);
 
-  const cardH = slide.figure ? Math.min(plot.h * 0.28, L.tileValue * 2.4 + L.value * 2.2) : 0;
   const headH = L.axis * 2;
   const top = plot.y + headH;
-  const height = plot.h - headH - cardH;
+  const height = plot.h - headH;
   const rowH = height / items.length;
 
   const labelSize = Math.max(9, Math.min(L.label, rowH / 1.25));
@@ -870,8 +892,6 @@ function drawColumnsAsRows(root, plot, slide, theme, L) {
   root.append(
     text(slide.axisLabel, plot.x, plot.y + L.axis, { size: L.axis, fill: theme.muted }),
   );
-
-  figureCard(root, plot, cardH, slide.figure, theme, L);
 }
 
 function drawColumns(root, plot, slide, theme, L) {
@@ -883,11 +903,7 @@ function drawColumns(root, plot, slide, theme, L) {
   const ceiling = niceCeiling(max);
   const band = plot.w / items.length;
   const thickness = Math.min(24, Math.max(5, band - 14));
-  // The card under the chart gets its space reserved before anything is drawn,
-  // rather than being fitted into whatever happens to be left: it used to be
-  // dropped silently on the shapes where it did not fit.
-  const cardH = slide.figure ? Math.min(plot.h * 0.28, L.tileValue * 2.4 + L.value * 2.2) : 0;
-  const baseline = plot.y + plot.h - L.axis * 3 - cardH;
+  const baseline = plot.y + plot.h - L.axis * 3;
   const height = Math.max(40, baseline - plot.y - L.value * 2);
 
   // Two hairlines are enough to read a histogram against.
@@ -996,59 +1012,8 @@ function drawColumns(root, plot, slide, theme, L) {
       anchor: "end",
     }),
   );
-
-  figureCard(root, plot, cardH, slide.figure, theme, L);
 }
 
-/**
- * A number the chart cannot show, in a card under it.
- *
- * The frames that were never rated at all dwarf the rated ones, and a column of
- * their own would flatten the other five into the baseline. A card says it as a
- * fact beside the chart rather than as a stray caption under it — and its space
- * is reserved before anything is drawn, whichever way the bars run, because it
- * used to be dropped silently on the shapes where it did not fit.
- */
-function figureCard(root, plot, cardH, figure, theme, L) {
-  if (!figure || cardH <= 0) return;
-
-  const top = plot.y + plot.h - cardH;
-  const size = Math.min(L.tileValue * 1.5, cardH * 0.52, plot.w * 0.32);
-
-  root.append(
-    el("rect", {
-      x: plot.x,
-      y: top,
-      width: plot.w,
-      height: cardH - L.value * 0.4,
-      rx: 12,
-      fill: theme.plane,
-      stroke: theme.grid,
-    }),
-  );
-  root.append(
-    text(figure.value, plot.x + L.value, top + size * 1.05, {
-      size,
-      weight: 600,
-      fill: theme.series[0],
-    }),
-  );
-  root.append(
-    text(ellipsize(figure.label, plot.w - L.value * 2, L.value), plot.x + L.value, top + size * 1.05 + L.value * 1.5, {
-      size: L.value,
-      fill: theme.ink2,
-    }),
-  );
-}
-
-/**
- * A thumb, up or down.
- *
- * Drawn in slide coordinates rather than as a transformed group, on purpose:
- * `test/render.test.ts` checks every x and y it can see against the frame, and
- * a transform would hide the real position from it. Turning the thumb over is a
- * flip of the unit v axis, which is exactly how the two gestures differ.
- */
 /**
  * The same judgements, stacked one per row.
  *
@@ -1233,6 +1198,14 @@ function starRow(root, cx, y, size, count, fill, label) {
 /** The space between two stars, as a fraction of one. Also sizes the row. */
 const STAR_GAP = 0.16;
 
+/**
+ * A thumb, up or down.
+ *
+ * Drawn in slide coordinates rather than as a transformed group, on purpose:
+ * `test/render.test.ts` checks every x and y it can see against the frame, and
+ * a transform would hide the real position from it. Turning the thumb over is a
+ * flip of the unit v axis, which is exactly how the two gestures differ.
+ */
 function thumb(root, x, y, size, up, fill, label) {
   const s = size / 24;
   const px = (u) => x + u * s;
@@ -2547,28 +2520,53 @@ function drawMonths(root, plot, slide, theme, L) {
 
   root.append(el("line", { x1: x0, y1: top, x2: x0, y2: top + rowH * months.length, stroke: theme.axis }));
 
-  // Milestones read across a row rather than down a column here, so the rule is
-  // horizontal and the name sits at the end of it in its own strip.
+  /**
+   * Milestones read across a row rather than down a column here, so the rule is
+   * horizontal and the name sits at the end of it in its own strip — and a span
+   * is the band between its two rows, exactly as it is on a time axis.
+   *
+   * Six weeks drawn as a single rule is the whole reason: this layout's unit is
+   * the month, so a trip that crosses one is a trip whose mark says the wrong
+   * thing. `monthRow` places a day *within* its month, so a fortnight that never
+   * leaves one gets a band across part of a row rather than being rounded away —
+   * which is the honest answer, and the same one the time axis gives.
+   */
+  const run = months.map((entry) => entry.ym);
   let free = -Infinity;
   for (const mark of [...marks].sort((a, b) => a.day - b.day)) {
-    const row = monthRow(months.map((entry) => entry.ym), mark.day);
+    const row = monthEdge(run, mark.day);
     if (row === null) continue;
     const y = top + rowH * row;
 
-    root.append(
-      titled(
-        el("line", {
-          x1: x0,
-          y1: y,
-          x2: x0 + width,
-          y2: y,
-          stroke: theme.ink2,
-          "stroke-dasharray": "3 4",
-          opacity: 0.5,
-        }),
-        mark.full,
-      ),
-    );
+    const end = mark.until === undefined ? null : monthEdge(run, mark.until);
+    const wide = end !== null && end > row + 0.02;
+    const bottom = wide ? top + rowH * end : y;
+
+    if (wide) {
+      root.append(
+        titled(
+          el("rect", { x: x0, y, width, height: bottom - y, fill: theme.ink2, opacity: 0.09 }),
+          mark.full,
+        ),
+      );
+    }
+
+    for (const at of wide ? [y, bottom] : [y]) {
+      root.append(
+        titled(
+          el("line", {
+            x1: x0,
+            y1: at,
+            x2: x0 + width,
+            y2: at,
+            stroke: theme.ink2,
+            "stroke-dasharray": "3 4",
+            opacity: 0.5,
+          }),
+          mark.full,
+        ),
+      );
+    }
     root.append(
       el("rect", { x: x0 + width - 1.5, y: y - 1.5, width: 3, height: 3, fill: theme.ink2, opacity: 0.7 }),
     );

@@ -563,6 +563,65 @@ describe("months down the page", () => {
 
     assert.ok(named.includes("+ FE 200-600mm G"), "the mark in an empty month was dropped");
   });
+
+  /**
+   * The unit of this layout is the month, so a trip that crosses one and is
+   * drawn as a single rule says the wrong thing — it reads as a date. The band
+   * has to cover the rows it actually spans, which is what is asserted here
+   * rather than a height in pixels: the rows are sized off the frame.
+   */
+  test("a trip that crosses months covers the rows it crosses", () => {
+    const spanning: Slide = {
+      ...slide,
+      marks: [
+        ...(slide.marks ?? []),
+        {
+          day: 20240210,
+          until: 20240405,
+          label: "Two months away",
+          full: "Two months away · 10 Feb 2024 to 5 Apr 2024 · 45 photographs",
+        },
+      ],
+    };
+
+    for (const format of FORMATS) {
+      const rects: ShimNode[] = [...renderSlide(spanning, LIGHT, format).walk()].filter((node) => node.tag === "rect");
+      const bands = rects.filter((node) => Number(node.attrs.get("opacity")) === 0.09);
+      assert.equal(bands.length, 1, `${format.id}: expected one band, got ${bands.length}`);
+
+      const band = bands[0]!;
+      const from = Number(band.attrs.get("y"));
+      const to = from + Number(band.attrs.get("height"));
+      assert.ok(to > from, `${format.id}: the band has no height`);
+
+      // The bars are the only thing drawn in the series colour, and one of them
+      // is one month. Three months are spanned; two inside the band is enough
+      // to prove it is a band rather than a rule that grew a pixel.
+      const covered = rects
+        .filter((node) => node.attrs.get("fill") === (LIGHT as { series: string[] }).series[0])
+        .filter((node) => Number(node.attrs.get("y")) >= from - 1 && Number(node.attrs.get("y")) <= to + 1);
+
+      assert.ok(covered.length >= 2, `${format.id}: the band covers ${covered.length} months`);
+    }
+  });
+
+  test("a trip that began before the first month is still drawn", () => {
+    // Milestones are chosen by overlapping the range, so this is a trip the
+    // deck is genuinely partly about — and both layouts used to drop it whole
+    // for having no row or column to start in.
+    const early: Slide = {
+      ...slide,
+      marks: [{ day: 20180101, until: 20190310, label: "A long way round", full: "A long way round" }],
+    };
+
+    for (const orientation of ["rows", "columns"] as const) {
+      const named = [...renderSlide({ ...early, orientation }, LIGHT, FORMATS[4]!).walk()]
+        .filter((node) => node.tag === "text")
+        .map((node) => node.textContent);
+
+      assert.ok(named.includes("A long way round"), `${orientation}: the trip was dropped`);
+    }
+  });
 });
 
 /**
@@ -883,46 +942,6 @@ describe("the wall as a calendar", () => {
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-describe("a figure beside the chart", () => {
-  const withFigure: Slide = {
-    kind: "columns",
-    id: "keepers",
-    title: "Keepers",
-    headline: "455 frames at four stars or better",
-    items: [
-      { label: "★", value: 1200 },
-      { label: "★★", value: 800 },
-      { label: "★★★", value: 400 },
-      { label: "★★★★", value: 300 },
-      { label: "★★★★★", value: 155 },
-    ],
-    highlight: 4,
-    axisLabel: "Rating",
-    figure: { value: "158,766", label: "never rated  ·  99%" },
-    table: { columns: ["Rating", "Photographs"], rows: [] },
-  };
-
-  test("is drawn, in every shape, inside the frame", () => {
-    for (const format of FORMATS) {
-      const svg = renderSlide(withFigure, LIGHT, format);
-      const texts = [...svg.walk()].filter((node) => node.tag === "text").map((n) => n.textContent);
-      assert.ok(texts.includes("158,766"), `${format.id}: the figure was dropped`);
-
-      for (const node of svg.walk()) {
-        if (node.tag === "svg") continue;
-        const x = Number(node.attrs.get("x") ?? 0);
-        const y = Number(node.attrs.get("y") ?? 0);
-        const width = Number(node.attrs.get("width") ?? 0);
-        const height = Number(node.attrs.get("height") ?? 0);
-        assert.ok(
-          x >= -1 && x + width <= format.width + 1 && y >= -1 && y + height <= format.height + 1,
-          `${format.id}: ${node.tag} left the frame`,
-        );
-      }
-    }
-  });
-});
-
 /**
  * Every bar chart draws both ways round now, and the flipped half is the half
  * nobody looks at: a label gutter that eats the plot, a value written off the
@@ -955,7 +974,6 @@ describe("bars either way round", () => {
       })),
       highlight: 5,
       axisLabel: "Shutter",
-      figure: { value: "158,766", label: "never rated  ·  99%" },
       table: { columns: ["Shutter"], rows: [] },
     },
     {
