@@ -290,6 +290,9 @@ function renderSettings() {
   $("setting-owner").value = config.ownerName ?? "";
   $("setting-merge").checked = config.mergeRawJpegPairs;
   $("setting-video").checked = config.includeVideo;
+  // Empty rather than "0", so the field reads as a question nobody has answered
+  // rather than as an answer of none.
+  $("setting-deleted").value = config.deletedBefore > 0 ? String(config.deletedBefore) : "";
 
   const place = config.location;
   $("location-label").value = place?.label ?? "";
@@ -809,6 +812,7 @@ async function saveSettings() {
         ownerName: $("setting-owner").value,
         mergeRawJpegPairs: $("setting-merge").checked,
         includeVideo: $("setting-video").checked,
+        deletedBefore: $("setting-deleted").value,
       },
     });
     await refreshState();
@@ -1330,6 +1334,7 @@ $("nav-home").addEventListener("click", () => show("view-home"));
 $("setting-owner").addEventListener("change", () => void saveSettings());
 $("setting-merge").addEventListener("change", () => void saveSettings());
 $("setting-video").addEventListener("change", () => void saveSettings());
+$("setting-deleted").addEventListener("change", () => void saveSettings());
 
 for (const mode of ["light", "dark"]) {
   $(`colour-${mode}`).addEventListener("click", () => {

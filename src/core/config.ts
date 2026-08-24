@@ -120,6 +120,21 @@ export interface AppConfig {
   mergeRawJpegPairs: boolean;
   /** Include video clips in the counts, or leave the deck to stills only. */
   includeVideo: boolean;
+  /**
+   * Photographs thrown away before this tool ever saw the library.
+   *
+   * Nothing in a catalog records what used to be in it, so every frame deleted
+   * before the first sweep is invisible here — and for most photographers that
+   * is the larger half of the culling. This is the reader's own answer to
+   * "roughly how many?", and all it claims is that those frames were shot and
+   * then thrown out.
+   *
+   * It carries no date, and that decides where it may be spent: an all-time
+   * deck is not asking about a period either, so the number is added there and
+   * nowhere else. Putting it in a deck of 2025 would date a decade of deletions
+   * to 2025. `computeStats` is the one place that decides.
+   */
+  deletedBefore: number;
   /** Optional, and only ever used to title the deck ("Filip's 2025"). */
   ownerName: string;
   /**
@@ -273,6 +288,18 @@ export function coerceBackdrop(value: unknown): Backdrop {
   return { kind, seed: Number.isFinite(seed) ? Math.abs(Math.trunc(seed)) % 100000 : 1 };
 }
 
+/**
+ * A count somebody typed.
+ *
+ * Floored at zero and rounded down, because a negative photograph is not one
+ * and neither is two thirds of one. The ceiling exists only so a slipped
+ * keypress cannot put a nine-digit number on the opening slide.
+ */
+export function coerceCount(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.min(Math.trunc(n), 100_000_000) : 0;
+}
+
 export function coercePalette(value: unknown): Palette {
   const raw = (typeof value === "object" && value !== null ? value : {}) as Record<string, unknown>;
   return { light: coercePaletteSide(raw.light), dark: coercePaletteSide(raw.dark) };
@@ -297,6 +324,7 @@ export function defaultConfig(): AppConfig {
     naming: { ...DEFAULT_NAMING },
     mergeRawJpegPairs: true,
     includeVideo: true,
+    deletedBefore: 0,
     ownerName: "",
     location: { ...DEFAULT_CITY },
     palette: { light: {}, dark: {} },
@@ -433,6 +461,7 @@ function coerce(raw: unknown): AppConfig {
     naming: coerceNaming(r.naming),
     mergeRawJpegPairs: r.mergeRawJpegPairs !== false,
     includeVideo: r.includeVideo !== false,
+    deletedBefore: coerceCount(r.deletedBefore),
     ownerName: typeof r.ownerName === "string" ? r.ownerName.trim().slice(0, 60) : "",
     // A config from before locations existed has no key at all; that is not the
     // same as `null`, which is somebody having pressed Clear.

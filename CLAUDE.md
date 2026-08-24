@@ -155,6 +155,21 @@ them. Counts only, never anything about the photograph itself. The culling slide
 therefore always says *since when* it has been watching, and never implies it
 knows about deletions from before it was first run.
 
+Everything from *before* that leaves no trace at all, which is why
+`config.deletedBefore` is a number the reader types. Three things follow from it
+having no date, and all three are load-bearing: `computeStats` is the **one**
+place that decides it may be spent, and only on an all-time deck — a deck of
+2025 that gained a decade of deletions is a worse answer than not asking; it
+sits *beside* `totals.shots` rather than inside it, so every share in the deck
+still divides by frames that were actually measured; and only the two slides
+that answer "how many photographs" — the opening and the closing, through
+`taken()` — add the pair. On culling it is a **reject**, because a frame that
+was taken and then permanently deleted is a decision and it is not "keep", and
+because rejects is the only bucket it can honestly join: those frames have no
+rating, no flag and no file. That makes a folder-only library, which carries no
+flags at all, able to reach the culling slide for the first time — hence the
+headline that does not name a flag nobody has set.
+
 **`core/cities.ts`** puts a name to a pair of coordinates without a network
 request — a short table, nearest match, and nothing at all past 120km. It also
 holds `DEFAULT_CITY`, which is where a fresh config starts.
@@ -459,7 +474,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 305 tests
+npm test          # 316 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```

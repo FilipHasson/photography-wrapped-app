@@ -10,6 +10,7 @@ import type {
   Place,
   Series,
   Streak,
+  Totals,
   WallLayout,
   WeekStart,
   YearBucket,
@@ -341,6 +342,17 @@ function marksFor(stats: DeckStats, slide: keyof MarkToggles): Mark[] | undefine
 /** `2,481 photographs` — the phrase that appears in half the headlines. */
 const shotsPhrase = (n: number): string => `${fmtInt(n)} ${plural(n, "photograph")}`;
 
+/**
+ * Photographs taken, which is not the same as photographs in the library.
+ *
+ * The reader's own count of what they deleted before this tool first looked is
+ * part of what they shot and part of nothing else — it has no day, no camera
+ * and no exposure behind it. So it is added here, by the two slides that
+ * answer "how many photographs", and by no denominator anywhere: a share is
+ * still a share of `totals.shots`. See `Totals.deletedBefore`.
+ */
+const taken = (totals: Totals): number => totals.shots + totals.deletedBefore;
+
 function tableOf(columns: string[], rows: Array<Array<string | number>>): SlideTable {
   return { columns, rows };
 }
@@ -437,6 +449,9 @@ export function buildDeck(stats: DeckStats, ownerName = ""): Deck {
 
 function opening(stats: DeckStats, rangeLabel: string): Slide {
   const { totals, range } = stats;
+  const shot = taken(totals);
+  // Per *day*, so the frames with no day cannot be in it. Same for the week
+  // below, and for every tile beside them.
   const perDay = totals.daysShot > 0 ? totals.shots / totals.daysShot : 0;
 
   const tiles: Tile[] = [
@@ -484,11 +499,11 @@ function opening(stats: DeckStats, rangeLabel: string): Slide {
     kind: "hero",
     id: "opening",
     title: rangeLabel,
-    headline: shotsPhrase(totals.shots),
-    value: fmtInt(totals.shots),
+    headline: shotsPhrase(shot),
+    value: fmtInt(shot),
     caption: totals.videos > 0
       ? `photographs and ${fmtInt(totals.videos)} ${plural(totals.videos, "clip")}`
-      : plural(totals.shots, "photograph"),
+      : plural(shot, "photograph"),
     subtitle,
     tiles,
     // Footnotes are a phrase, never a paragraph, and never a count of frames —
@@ -500,7 +515,16 @@ function opening(stats: DeckStats, rangeLabel: string): Slide {
     table: tableOf(
       ["Measure", "Value"],
       [
-        ["Photographs", totals.shots],
+        ["Photographs", shot],
+        // Only where the two differ. The headline counts everything that was
+        // shot; these two say how that number is made up, which is exactly the
+        // kind of detail the table exists for.
+        ...(totals.deletedBefore > 0
+          ? [
+              ["Still in the library", totals.shots],
+              ["Deleted before indexing", totals.deletedBefore],
+            ]
+          : []),
         ["Files", totals.files],
         ["First frame", totals.firstDay ? formatDay(totals.firstDay) : "—"],
         ["Last frame", totals.lastDay ? formatDay(totals.lastDay) : "—"],
@@ -1396,41 +1420,69 @@ function timelineSlide(stats: DeckStats): Slide | null {
  * — and the number most photographers cannot guess is the third one.
  *
  * The deletions figure is honest about its own age: nothing in a catalog says
- * what used to be in it, so this counts only what has vanished since this tool
- * first looked, and the note says when that was.
+ * what used to be in it, so what has vanished *since* this tool first looked is
+ * counted, the note says when that was, and everything from before it is a
+ * number only the reader can supply.
  */
 function cullingSlide(stats: DeckStats): Slide | null {
   const { picked, rejected, unflagged, removed, removedRejected, watchingSince } = stats.culling;
-  const decided = picked + rejected;
-  // A library where nobody has ever flagged anything has nothing to say here.
+  const { deletedBefore } = stats.culling;
+
+  /**
+   * Rejects, including the ones there is nothing left of.
+   *
+   * A photograph that was taken and then permanently deleted is a decision, and
+   * it is not "keep" — so the reader's own count of what they threw out before
+   * indexing belongs in this bucket rather than in a footnote beside it. It is
+   * the only bucket it can honestly join: those frames have no rating, no flag
+   * and no file, and `computeStats` has already refused to hand one over to
+   * any deck narrower than all time.
+   */
+  const rejects = rejected + deletedBefore;
+  const decided = picked + rejects;
+  // A library where nothing has ever been decided has nothing to say here.
   if (decided === 0) return null;
 
-  const total = picked + rejected + unflagged;
+  const total = picked + rejects + unflagged;
   const share = (n: number) => (total > 0 ? n / total : 0);
 
   // The ratio rather than either share: both shares are on the cards below, and
   // no number should appear twice on one slide. It is also the way the decision
   // is actually described out loud — "I keep about one in three".
-  const ratio = Math.max(picked, rejected) / Math.max(1, Math.min(picked, rejected));
+  const ratio = Math.max(picked, rejects) / Math.max(1, Math.min(picked, rejects));
   const headline =
-    rejected === 0
+    rejects === 0
       ? "Every flag you have set is a keeper"
       : picked === 0
-        ? "The only flag you use is reject"
+        ? // A folder library carries no flags at all, so somebody who fills the
+          // deletions figure in can reach this slide having never flagged
+          // anything — and "the only flag you use" would then name a flag they
+          // have never set.
+          rejected === 0
+          ? "Everything you have decided about, you deleted"
+          : "The only flag you use is reject"
         : ratio < 1.15
           ? "You keep about as many as you throw out"
-          : picked > rejected
+          : picked > rejects
             ? `You keep ${ratio.toFixed(1)} frames for every one you throw out`
             : `You throw out ${ratio.toFixed(1)} frames for every one you keep`;
 
-  // What has actually left, which no card can hold: these frames are not in the
-  // library any more, so they are in none of the counts beside it either.
+  /**
+   * One line, and the deletions from before indexing get it when there are any.
+   *
+   * The reject card is then showing frames that are not in the library, and a
+   * number on screen that needs explaining beats a number that is merely worth
+   * knowing. What has left *since* the first sweep is in the table either way,
+   * which is where a denominator belongs.
+   */
   const note =
-    removed > 0 && watchingSince
-      ? `${fmtInt(removed)} gone from the library since ${formatDay(dayOf(watchingSince))}${
-          removedRejected > 0 ? `, ${fmtInt(removedRejected)} of them rejects` : ""
-        }`
-      : undefined;
+    deletedBefore > 0
+      ? "Rejects include the ones you had already deleted"
+      : removed > 0 && watchingSince
+        ? `${fmtInt(removed)} gone from the library since ${formatDay(dayOf(watchingSince))}${
+            removedRejected > 0 ? `, ${fmtInt(removedRejected)} of them rejects` : ""
+          }`
+        : undefined;
 
   return {
     kind: "verdict",
@@ -1449,8 +1501,8 @@ function cullingSlide(stats: DeckStats): Slide | null {
       {
         glyph: { kind: "thumb", up: false },
         label: "Rejected",
-        value: fmtInt(rejected),
-        note: `${fmtPct(share(rejected))} of your frames`,
+        value: fmtInt(rejects),
+        note: `${fmtPct(share(rejects))} of your frames`,
       },
     ],
     rest: {
@@ -1462,8 +1514,13 @@ function cullingSlide(stats: DeckStats): Slide | null {
       ["Flag", "Photographs", "Share"],
       [
         ["Picked", picked, fmtPct(share(picked))],
-        ["Rejected", rejected, fmtPct(share(rejected))],
+        ["Rejected", rejects, fmtPct(share(rejects))],
         ["Neither", unflagged, fmtPct(share(unflagged))],
+        // Two deletion rows, and they say opposite things about the count above
+        // them on purpose: one is inside it, the other never can be.
+        ...(deletedBefore > 0
+          ? [["Deleted before indexing", deletedBefore, "counted as rejects above"]]
+          : []),
         ["Deleted since indexing", removed, removed > 0 ? "not in any count above" : "—"],
       ],
     ),
@@ -1964,7 +2021,7 @@ function closing(stats: DeckStats): Slide {
   const topCombo = stats.combos[0];
 
   const tiles: Tile[] = [
-    { label: "Photographs", value: fmtInt(totals.shots) },
+    { label: "Photographs", value: fmtInt(taken(totals)) },
     { label: "Days out", value: fmtInt(totals.daysShot) },
   ];
   if (topCamera) tiles.push({ label: "Camera of the period", value: topCamera.label, note: `${fmtInt(topCamera.shots)} frames` });
@@ -1979,12 +2036,12 @@ function closing(stats: DeckStats): Slide {
     subtitle: stats.range.label,
     headline: topCombo
       ? `${topCombo.label} — ${fmtPct(topCombo.share)} of everything`
-      : shotsPhrase(totals.shots),
+      : shotsPhrase(taken(totals)),
     tiles,
     table: tableOf(
       ["Measure", "Value"],
       [
-        ["Photographs", totals.shots],
+        ["Photographs", taken(totals)],
         ["Days out", totals.daysShot],
         ["Camera", topCamera?.label ?? "—"],
         ["Lens", topLens?.label ?? "—"],

@@ -258,6 +258,16 @@ export interface Totals {
   keepers: number;
   /** Same count over the equally long window before this one. */
   previousShots: number | null;
+  /**
+   * Frames the reader says they deleted before this library was ever indexed.
+   *
+   * Beside `shots` rather than folded into it, deliberately. Every share on
+   * every slide divides by frames that were actually measured, and there is
+   * nothing behind this number but itself: it has no camera, no lens, no day
+   * and no exposure. The two slides that report *how many photographs* — the
+   * opening and the closing — add the pair; nothing else may.
+   */
+  deletedBefore: number;
 }
 
 export interface DayCount {
@@ -437,6 +447,13 @@ export interface Culling {
   removed: number;
   /** How many of those had been flagged as rejects. */
   removedRejected: number;
+  /**
+   * Frames deleted before the first sweep, from the reader's own count.
+   *
+   * Counted as rejects wherever it is spent: a photograph that was taken and
+   * then permanently deleted is a decision, and it is not "keep".
+   */
+  deletedBefore: number;
   /** When this tool first swept, and could first have noticed. */
   watchingSince: number | null;
 }
@@ -553,6 +570,11 @@ export interface StatsOptions {
   kit?: KitToggles;
   /** Which way each chart's bars run, by slide id. */
   layout?: Layouts;
+  /**
+   * The reader's count of what they deleted before indexing. Undated, so
+   * `computeStats` spends it on an all-time deck and nowhere else.
+   */
+  deletedBefore?: number;
 }
 
 /**
@@ -866,6 +888,19 @@ function tallies(
 export function computeStats(db: Db, range: Range, options: StatsOptions): DeckStats {
   const { where, params: args } = scope(range, options);
 
+  /**
+   * What the reader threw away before this tool existed — and the one place
+   * that decides whether this deck is allowed to know about it.
+   *
+   * The number carries no date, because nothing in a catalog records what used
+   * to be in it. So it can only be added to a deck that is not asking about a
+   * period: all time. A deck of 2025 that gained a decade of deletions would
+   * be a worse answer than not asking the question at all, and would put a
+   * denominator on the culling slide that no other slide could agree with.
+   */
+  const deletedBefore =
+    range.spec.kind === "all" ? Math.max(0, Math.trunc(options.deletedBefore ?? 0)) : 0;
+
   const totalsRow = db.getAs<Record<string, number | null>>(
     `SELECT
        COUNT(*) AS shots,
@@ -940,6 +975,7 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
     rated: num(totalsRow?.rated),
     keepers: num(totalsRow?.keepers),
     previousShots,
+    deletedBefore,
   };
 
   // ------------------------------------------------------------- gear ----
@@ -1302,6 +1338,7 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
     removed: num(gone?.removed),
     removedRejected: num(gone?.rejected),
     watchingSince: firstSweep?.at ?? gone?.first ?? null,
+    deletedBefore,
   };
 
   // Three numbers per year, over whichever kind of year was asked for. One

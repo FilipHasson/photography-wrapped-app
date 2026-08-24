@@ -201,7 +201,12 @@ A few things the slides do rather than say:
 - **Culling counts flags, not stars** — picked, rejected, and the ones you never
   went back to. It also counts what has actually *left*: a photograph deleted
   from a catalog leaves no trace in it, so the index counts what disappears each
-  time it sweeps, and the slide says how long it has been watching.
+  time it sweeps, and the slide says how long it has been watching. Everything
+  deleted *before* the first sweep is gone without trace, so **Settings →
+  Photographs deleted before indexing** is a number you supply: it joins the
+  all-time total and counts as rejects, since a frame you took and then threw
+  out is a decision and it is not "keep". It carries no date, so an all-time
+  deck is the only one that can use it.
 - **Day of the week starts where you do** — Monday, Sunday or Saturday — and the
   weekend can be given a colour of its own.
 - **A lens used with a teleconverter is one row, not three.** The bar splits

@@ -5,6 +5,7 @@ import {
   ANCHOR_KINDS,
   coercePaletteSide,
   coerceBackdrop,
+  coerceCount,
   PALETTE_ROLES,
   anchorRangeLabel,
   coerceAnchorGear,
@@ -209,6 +210,9 @@ async function applyConfigPatch(ctx: AppContext, body: Record<string, unknown>):
 
   if (typeof body.ownerName === "string") next.ownerName = body.ownerName.trim().slice(0, 60);
   if (typeof body.includeVideo === "boolean") next.includeVideo = body.includeVideo;
+  // A number field sends "" when it is cleared, which `coerceCount` reads as
+  // nought — the same thing the reader meant by emptying it.
+  if (body.deletedBefore !== undefined) next.deletedBefore = coerceCount(body.deletedBefore);
 
   // `startDay: null` clears it; anything unparseable is a mistake, not a clear.
   if (body.startDay === null) next.startDay = null;
@@ -391,6 +395,9 @@ export async function handleApi(
 
       const stats = computeStats(ctx.db, range, {
         includeVideo: ctx.config.includeVideo,
+        // Spent on an all-time deck and nowhere else; `computeStats` decides,
+        // because it is the only place that has the range in its hand.
+        deletedBefore: ctx.config.deletedBefore,
         excluded: ctx.config.excluded,
         naming: ctx.config.naming,
         yearBasis,

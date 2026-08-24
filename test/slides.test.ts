@@ -50,7 +50,7 @@ function statsWith(overrides: Partial<DeckStats>): DeckStats {
       shots: 100, files: 100, stills: 100, videos: 0, raws: 60, jpegs: 40, bytes: 1024,
       videoSeconds: 0, daysShot: 20, daysInRange: 365, cameras: 2, lenses: 3, bodies: 1,
       firstDay: 20250101, lastDay: 20251231, withGps: 0, withFlash: 0, rated: 0, keepers: 0,
-      previousShots: null,
+      previousShots: null, deletedBefore: 0,
     },
     cameras: [], lenses: [], combos: [], hiddenCameras: [], hiddenLenses: [],
     focal: empty, focalClasses: [], aperture: empty, iso: empty, shutter: empty,
@@ -62,7 +62,7 @@ function statsWith(overrides: Partial<DeckStats>): DeckStats {
     places: [], placesKnown: 0, debuts: [], milestones: [], burst: null,
     years: [], yearBasis: "anchor", location: null, home: null,
     weekStart: "mon", markWeekend: false, showMarks: resolveMarks(), showTypes: resolveTypes(), kit: resolveKit(), layout: {}, wall: "packed",
-    culling: { picked: 0, rejected: 0, unflagged: 0, removed: 0, removedRejected: 0, watchingSince: null },
+    culling: { picked: 0, rejected: 0, unflagged: 0, removed: 0, removedRejected: 0, watchingSince: null, deletedBefore: 0 },
     daylight: { mode: "06-18", sunrise: 6, sunset: 18, source: "06:00 to 18:00" },
     daylightHours: { sunrise: 6, sunset: 18 },
     limits: resolveLimits(),
@@ -1062,5 +1062,108 @@ describe("which kinds of milestone get drawn", () => {
     // describing the thing it controls.
     const setting = marksOn({ trip: false, custom: false })?.settings?.find((one) => one.id === "marks.streaks");
     assert.equal(setting?.options[0]?.note, "2 in this range");
+  });
+});
+
+/**
+ * The frames that are not there any more.
+ *
+ * Nothing in a catalog records what used to be in it, so everything thrown out
+ * before this tool first ran is a number only the reader can supply. What it is
+ * allowed to touch is the whole question: the two slides that answer "how many
+ * photographs" add it, the culling slide counts it as a reject because a
+ * permanently deleted frame is a decision and it is not "keep", and no
+ * denominator anywhere else moves — those frames have no day, no camera and no
+ * exposure behind them.
+ */
+describe("photographs deleted before indexing", () => {
+  const withDeleted = (deletedBefore: number, culling: Partial<DeckStats["culling"]> = {}) => {
+    const base = statsWith({});
+    return statsWith({
+      totals: { ...base.totals, deletedBefore },
+      culling: { ...base.culling, deletedBefore, ...culling },
+    });
+  };
+
+  test("the opening total counts them, and nothing else does", () => {
+    const slide = findSlide(buildDeck(withDeleted(40)).slides, "opening");
+    assert.ok(slide && slide.kind === "hero");
+
+    assert.equal(slide.value, "140");
+    assert.equal(slide.headline, "140 photographs");
+
+    // The rate is per *day*, and these frames have no day. 100 in the library
+    // over 20 days out is still five a day — folding the deleted ones in would
+    // date them all to days the reader happened to be shooting.
+    assert.equal(slide.tiles.find((tile) => tile.label === "Busiest average")?.value, "5/day");
+  });
+
+  test("the table says how that total is made up", () => {
+    const slide = findSlide(buildDeck(withDeleted(40)).slides, "opening");
+    const rows = new Map((slide?.table?.rows ?? []).map((row) => [row[0], row[1]]));
+
+    assert.equal(rows.get("Photographs"), 140);
+    assert.equal(rows.get("Still in the library"), 100);
+    assert.equal(rows.get("Deleted before indexing"), 40);
+  });
+
+  test("a library with none of them is left exactly as it was", () => {
+    const slide = findSlide(buildDeck(statsWith({})).slides, "opening");
+    assert.ok(slide && slide.kind === "hero");
+    assert.equal(slide.value, "100");
+
+    const labels = (slide.table?.rows ?? []).map((row) => row[0]);
+    assert.ok(!labels.includes("Still in the library"), labels.join(", "));
+    assert.ok(!labels.includes("Deleted before indexing"), labels.join(", "));
+  });
+
+  test("the closing slide agrees with the opening one", () => {
+    const slide = findSlide(buildDeck(withDeleted(40)).slides, "closing");
+    assert.ok(slide && slide.kind === "tiles");
+    assert.equal(slide.tiles.find((tile) => tile.label === "Photographs")?.value, "140");
+  });
+
+  test("culling counts them as rejects, and says so", () => {
+    const slide = findSlide(
+      buildDeck(withDeleted(100, { picked: 60, rejected: 20, unflagged: 20 })).slides,
+      "culling",
+    );
+    assert.ok(slide && slide.kind === "verdict");
+
+    const rejected = slide.cards[1];
+    assert.equal(rejected?.label, "Rejected");
+    assert.equal(rejected?.value, "120");
+    // 120 of 200 decided-or-not, not 20 of 100.
+    assert.equal(rejected?.note, "60% of your frames");
+    assert.equal(slide.headline, "You throw out 2.0 frames for every one you keep");
+    assert.equal(slide.note, "Rejects include the ones you had already deleted");
+  });
+
+  test("the culling table keeps the two kinds of deletion apart", () => {
+    const slide = findSlide(
+      buildDeck(withDeleted(100, { picked: 60, rejected: 20, unflagged: 20, removed: 7 })).slides,
+      "culling",
+    );
+    const rows = new Map((slide?.table?.rows ?? []).map((row) => [row[0], [row[1], row[2]]]));
+
+    assert.deepEqual(rows.get("Rejected"), [120, "60%"]);
+    assert.deepEqual(rows.get("Deleted before indexing"), [100, "counted as rejects above"]);
+    assert.deepEqual(rows.get("Deleted since indexing"), [7, "not in any count above"]);
+  });
+
+  /**
+   * A folder library carries no flags at all, so somebody who fills this figure
+   * in can reach the culling slide having never flagged a single frame — and
+   * the headline must not then name a flag they have never set.
+   */
+  test("a library with no flags at all still has something to say", () => {
+    const slide = findSlide(buildDeck(withDeleted(100, { unflagged: 500 })).slides, "culling");
+    assert.ok(slide && slide.kind === "verdict");
+    assert.equal(slide.headline, "Everything you have decided about, you deleted");
+    assert.equal(slide.cards[1]?.value, "100");
+  });
+
+  test("without them, a library with no flags has no culling slide", () => {
+    assert.equal(findSlide(buildDeck(statsWith({})).slides, "culling"), undefined);
   });
 });

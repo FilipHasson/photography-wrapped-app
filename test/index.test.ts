@@ -458,3 +458,36 @@ describe("what leaves the library", () => {
     fresh.close();
   });
 });
+
+/**
+ * The other half of the same question, and the half nothing on disk can answer.
+ *
+ * What left the library *since* the first sweep is counted at the sweep. What
+ * left before it is gone without trace, so it is a number the reader supplies —
+ * and an undated one, which is the whole reason `computeStats` guards it: it
+ * may only be added to a deck that is not asking about a period.
+ */
+describe("what left before anyone was watching", () => {
+  test("an all-time deck counts it, in the total and as rejects", () => {
+    const stats = computeStats(db, allTime(db), { includeVideo: true, deletedBefore: 500 });
+
+    assert.equal(stats.totals.deletedBefore, 500);
+    assert.equal(stats.culling.deletedBefore, 500);
+    // Beside `shots`, never inside it: every share in the deck divides by
+    // frames that were actually measured.
+    assert.equal(stats.totals.shots, EXPECTED.shots);
+  });
+
+  test("a deck of one year does not, because the number has no year", () => {
+    const range = resolveRange({ kind: "year", year: 2025 }, { firstDay: null, lastDay: null }, fixtureNow());
+    const stats = computeStats(db, range, { includeVideo: true, deletedBefore: 500 });
+
+    assert.equal(stats.totals.deletedBefore, 0);
+    assert.equal(stats.culling.deletedBefore, 0);
+  });
+
+  test("nonsense is nought rather than a negative photograph", () => {
+    const stats = computeStats(db, allTime(db), { includeVideo: true, deletedBefore: -20 });
+    assert.equal(stats.totals.deletedBefore, 0);
+  });
+});

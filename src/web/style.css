@@ -930,6 +930,21 @@ main:has(> .deck:not([hidden])) {
   flex-direction: column;
   gap: 8px;
 }
+/* A figure with a paragraph behind it: the number is small, the reason it is
+   being asked for is not, so the hint takes a row of its own. */
+.setting.deleted-before {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 10px;
+  align-items: center;
+}
+.setting.deleted-before input {
+  width: 12ch;
+}
+.setting.deleted-before .hint {
+  grid-column: 1 / -1;
+  max-width: 62ch;
+}
 /* ----------------------------------------------------------- colours ---- */
 
 /* The palette sits beside the slide it paints rather than in a panel of
