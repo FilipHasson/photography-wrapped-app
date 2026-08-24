@@ -157,23 +157,6 @@
               </span>
             </div>
 
-            <div class="setting colours">
-              <span class="setting-label">Colours</span>
-              <div class="colour-modes" role="group" aria-label="Which theme these colours are for">
-                <button id="colour-light" class="chip" type="button" data-mode="light">Light</button>
-                <button id="colour-dark" class="chip" type="button" data-mode="dark">Dark</button>
-                <button id="colour-reset" class="ghost" type="button">Back to the defaults</button>
-              </div>
-              <div id="colour-wells" class="colour-wells"></div>
-              <div id="colour-problems" class="colour-problems" aria-live="polite" hidden></div>
-              <span class="hint">
-                Light and dark are set separately — they are not inversions of each other, and a
-                colour picked against a near-white page is not the colour to draw on a near-black
-                one. Anything you have not changed follows the built-in palette, so it keeps
-                improving.
-              </span>
-            </div>
-
             <div class="setting location">
               <span class="setting-label">Where you are</span>
               <div class="location-row">
@@ -221,7 +204,36 @@
         <div class="deck-body">
           <aside id="deck-table" class="deck-data" aria-label="The numbers behind this slide" hidden></aside>
           <div id="stage" class="stage" tabindex="0" aria-live="polite"></div>
-          <aside id="deck-settings" class="deck-settings" aria-label="Settings for this slide" hidden></aside>
+          <!--
+            Everything about the slide on screen, beside it: the choices it
+            offers, and the colours it is actually drawn in. Colours used to
+            live in the library settings two screens away, where changing one
+            meant guessing at what it would do.
+          -->
+          <aside id="deck-settings" class="deck-settings" aria-label="Settings for this slide">
+            <div id="slide-settings"></div>
+            <div class="deck-colours">
+              <h3 class="setting-label">Colours</h3>
+              <div class="colour-modes" role="group" aria-label="Which theme these colours are for">
+                <button id="colour-light" class="chip" type="button" data-mode="light">Light</button>
+                <button id="colour-dark" class="chip" type="button" data-mode="dark">Dark</button>
+              </div>
+              <div id="colour-wells" class="colour-wells"></div>
+              <div id="colour-problems" class="colour-problems" aria-live="polite" hidden></div>
+              <div class="colour-foot">
+                <button id="colour-all" class="chip" type="button" aria-pressed="false">
+                  Every colour
+                </button>
+                <button id="colour-reset" class="ghost" type="button">Defaults</button>
+              </div>
+              <span class="hint">
+                Light and dark are set separately — they are not inversions of each other, and a
+                colour picked against a near-white page is not the colour to draw on a near-black
+                one. Anything you have not changed follows the built-in palette, so it keeps
+                improving.
+              </span>
+            </div>
+          </aside>
           <!-- Every slide at once, sized to fit the window in one screenshot. -->
           <div id="sheet" class="sheet" aria-label="Every slide" hidden></div>
         </div>

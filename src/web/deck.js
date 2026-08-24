@@ -18,7 +18,7 @@ import { exportDeckPdf, exportDeckZip, exportSlidePng, fileNameFor } from "./exp
 const $ = (id) => document.getElementById(id);
 const FORMAT_KEY = "wdis-format";
 
-export function createDeck({ onExit, onToast, onExclude, onSetting, palette }) {
+export function createDeck({ onExit, onToast, onExclude, onSetting, onColours, palette }) {
   /**
    * The reader's colours, asked for rather than held.
    *
@@ -60,13 +60,14 @@ export function createDeck({ onExit, onToast, onExclude, onSetting, palette }) {
       return;
     }
 
+    $("deck-settings").hidden = false;
     stage.dataset.orientation = format.width >= format.height ? "landscape" : "portrait";
     // The window is the shape of the slide and no larger: changing the aspect
     // moves everything around it rather than leaving a letterboxed gap.
     stage.style.setProperty("--slide-aspect", `${format.width} / ${format.height}`);
-    stage.replaceChildren(
-      renderSlide(current, themeNow(), format),
-    );
+    const drawn = renderSlide(current, themeNow(), format);
+    stage.replaceChildren(drawn);
+    onColours?.(coloursIn(drawn));
 
     dots.replaceChildren(
       ...deck.slides.map((entry, i) => {
@@ -86,6 +87,27 @@ export function createDeck({ onExit, onToast, onExclude, onSetting, palette }) {
   }
 
   /**
+   * Every colour the slide on screen is actually drawn in.
+   *
+   * The picker beside a slide offers that slide's own colours, and this is how
+   * it knows which they are. The palette is written onto the elements as
+   * attributes — export rasterises the serialised SVG through an `<img>`, so it
+   * has to be — which makes the drawing its own record of what it used. Reading
+   * it back beats a table of which slide uses which role: that would be a
+   * second source of truth, and wrong within a month of the next slide.
+   */
+  function coloursIn(root) {
+    const found = new Set();
+    for (const node of [root, ...root.querySelectorAll("*")]) {
+      for (const name of ["fill", "stroke"]) {
+        const value = node.getAttribute(name);
+        if (value && value.startsWith("#")) found.add(value.toLowerCase());
+      }
+    }
+    return found;
+  }
+
+  /**
    * The choices belonging to the slide on screen, beside it.
    *
    * A setting that changes one slide does not belong in a panel of library-wide
@@ -94,15 +116,9 @@ export function createDeck({ onExit, onToast, onExclude, onSetting, palette }) {
    * the deck and comes back to the same slide.
    */
   function renderSettings() {
-    const panel = $("deck-settings");
+    const panel = $("slide-settings");
     const current = slide();
     const settings = current?.settings ?? [];
-
-    panel.hidden = settings.length === 0;
-    if (panel.hidden) {
-      panel.replaceChildren();
-      return;
-    }
 
     panel.replaceChildren(
       ...settings.flatMap((setting) => {

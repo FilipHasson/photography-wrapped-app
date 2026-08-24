@@ -213,6 +213,19 @@ re-reading a library for it.
   the palette that produced them, never against the mode alone — they are
   *searched for* relative to the slots already in use, so a mode-keyed cache
   hands a ninth lens a colour chosen for somebody else's palette.
+- **The palette is edited beside the slide it paints**, in `#deck-settings`
+  under the slide's own choices — not in the library settings two screens away,
+  where changing a colour meant guessing at what it would do. The panel offers
+  the roles *that slide* is drawn in, and it finds them by reading the `fill`
+  and `stroke` attributes back off the rendered SVG (`coloursIn` in `deck.js`,
+  matched against `colourAt` per role) rather than from a table of which slide
+  uses which role — a second source of truth that would be wrong within a month.
+  Nineteen wells beside a bar chart is nineteen questions about a chart that
+  answers four; the rest are behind "Every colour". Two things this rests on: the
+  palette is written on as attributes, which `test/render.test.ts` asserts along
+  with the absence of any `class` or `style`, and the list is **not** rebuilt
+  while a picker is open (`pickingColour`) — replacing the `<input>` under an
+  open colour picker closes it.
 - **`paletteProblems` warns, and never blocks.** Colour-blind safety is a
   property of the set, not of any colour in it, so the gates are the palette
   validator's own: adjacent pairs at ΔE ≥ 6 through `min(protan, deutan)`, a
@@ -364,7 +377,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 291 tests
+npm test          # 292 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```

@@ -474,6 +474,37 @@ describe("colours past the palette", () => {
       for (const hex of colours) assert.match(hex, /^#[0-9a-f]{6}$/);
     }
   });
+
+  /**
+   * The picker beside a slide offers the colours *that slide* is drawn in, and
+   * it finds them by reading the fills and strokes back off the drawing — no
+   * table of which slide uses which role, which would be a second source of
+   * truth. That only works while the palette is written on as attributes, which
+   * it has to be anyway: export rasterises through an `<img>`, where anything
+   * inherited from the page is gone. A move to classes or inline styles would
+   * empty the panel silently, so it is asserted here rather than noticed later.
+   */
+  test("the palette is readable back off the drawing", () => {
+    const series0 = (LIGHT as { series: string[] }).series[0]?.toLowerCase();
+    let found = 0;
+
+    for (const slide of slides) {
+      const drawn = new Set<string>();
+      for (const node of renderSlide(slide, LIGHT, FORMATS[0]!).walk()) {
+        for (const name of ["fill", "stroke"]) {
+          const value = node.attrs.get(name)?.toLowerCase();
+          if (value?.startsWith("#")) drawn.add(value);
+        }
+        // A colour reachable only through a class or a style attribute is a
+        // colour the picker cannot offer and the PNG will not carry.
+        assert.equal(node.attrs.get("class"), undefined, `${slide.id}: ${node.tag} carries a class`);
+        assert.equal(node.attrs.get("style"), undefined, `${slide.id}: ${node.tag} carries a style`);
+      }
+      if (drawn.has(series0 ?? "")) found += 1;
+    }
+
+    assert.ok(found > 3, `only ${found} slides draw in the main colour`);
+  });
 });
 
 /**

@@ -89,6 +89,12 @@ const deck = createDeck({
     store.slideSettings[id] = value;
     void buildDeck(true);
   },
+  // Reported by the deck after every paint, because the colours a slide uses
+  // are a property of the slide and change as it does.
+  onColours: (colours) => {
+    slideColours = colours;
+    if (!pickingColour) renderColours();
+  },
 });
 
 function show(view) {
@@ -310,8 +316,8 @@ function renderSettings() {
     ),
   );
 
-  renderColours();
-
+  // Colours are not here any more: they live beside the slide they change,
+  // where the deck rebuilds the list on every paint.
   const examples = store.state.namingExamples ?? [];
   $("naming-preview").replaceChildren(
     ...(examples.length === 0
@@ -332,14 +338,49 @@ function renderSettings() {
  */
 let colourMode = currentMode();
 
+/**
+ * The colours the slide on screen is drawn in, as the deck last reported them.
+ *
+ * Null until a slide has been drawn — before that there is nothing to filter
+ * by, so everything is offered.
+ */
+let slideColours = null;
+
+/** True while a picker is open, so the list it lives in is left alone. */
+let pickingColour = false;
+
+/** The reader asking for the whole palette rather than this slide's part of it. */
+let everyColour = false;
+
+/**
+ * Which wells to put beside this slide.
+ *
+ * Nineteen swatches in a column beside a bar chart is nineteen questions about
+ * a chart that answers four of them, so the panel offers the colours the slide
+ * is actually drawn in and keeps the rest behind a chip. Matching is by the hex
+ * the theme resolves each role to, which is why it survives the reader changing
+ * one: the slide is repainted with the new colour before this runs again.
+ */
+function rolesOnShow(roles, theme) {
+  if (everyColour || slideColours === null) return roles;
+  const used = roles.filter((role) => slideColours.has((colourAt(theme, role.id) ?? "").toLowerCase()));
+  // A slide drawn only in page tokens and generated colours has none of its own
+  // to offer, and an empty panel reads as broken rather than as an answer.
+  return used.length === 0 ? roles : used;
+}
+
 function renderColours() {
-  const roles = store.state.paletteRoles ?? [];
+  const all = store.state.paletteRoles ?? [];
   const override = store.state.config.palette?.[colourMode] ?? {};
   const theme = themeFor(colourMode, override);
+  const roles = rolesOnShow(all, theme);
 
   for (const mode of ["light", "dark"]) {
     $(`colour-${mode}`).setAttribute("aria-pressed", String(mode === colourMode));
   }
+  $("colour-all").setAttribute("aria-pressed", String(everyColour));
+  $("colour-all").className = everyColour ? "chip is-current" : "chip";
+  $("colour-all").hidden = roles.length === all.length && !everyColour;
   $("colour-reset").disabled = Object.keys(override).length === 0;
 
   const problems = paletteProblems(theme);
@@ -349,7 +390,7 @@ function renderColours() {
   $("colour-wells").replaceChildren(
     ...roles.map((role) => {
       const hex = colourAt(theme, role.id) ?? "#000000";
-      const changed = role.id in override;
+      const value = el("span", { class: "hint", text: role.id in override ? `${hex} · yours` : hex });
 
       return el(
         "label",
@@ -359,15 +400,24 @@ function renderColours() {
           value: hex,
           "aria-label": role.label,
           // `input` fires while the picker is being dragged, which is what makes
-          // the deck behind this move with it; `change` is the one that saves.
-          oninput: (event) => previewColour(role.id, event.target.value),
-          onchange: (event) => void saveColour(role.id, event.target.value),
+          // the deck behind it move too; `change` is the one that saves. Only
+          // this one well is touched while that is happening — rebuilding the
+          // list would replace the very input the picker is attached to.
+          oninput: (event) => {
+            pickingColour = true;
+            value.textContent = `${event.target.value} · yours`;
+            previewColour(role.id, event.target.value);
+          },
+          onchange: (event) => {
+            pickingColour = false;
+            void saveColour(role.id, event.target.value);
+          },
         }),
         el(
           "span",
           {},
           el("span", { class: "setting-label", text: role.label }),
-          el("span", { class: "hint", text: changed ? `${hex} · yours` : hex }),
+          value,
           role.note ? el("span", { class: "hint", text: role.note }) : null,
         ),
       );
@@ -397,7 +447,9 @@ function previewColour(role, hex) {
   const palette = store.state.config.palette ?? { light: {}, dark: {} };
   palette[colourMode] = { ...palette[colourMode], [role]: hex };
   store.state.config.palette = palette;
-  renderColours();
+  // The repaint comes back through `onColours`, which is what rebuilds the
+  // list — so there is no second call to make here, and while a picker is open
+  // that rebuild is the one thing that must not happen.
   deck.repaint();
 }
 
@@ -1077,6 +1129,10 @@ for (const mode of ["light", "dark"]) {
   });
 }
 $("colour-reset").addEventListener("click", () => void resetColours());
+$("colour-all").addEventListener("click", () => {
+  everyColour = !everyColour;
+  renderColours();
+});
 
 $("location-here").addEventListener("click", useDeviceLocation);
 $("location-clear").addEventListener("click", () => void saveLocation(null));
