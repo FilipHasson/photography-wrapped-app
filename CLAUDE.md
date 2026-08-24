@@ -31,7 +31,8 @@ src/stats/     ranges, the aggregation queries, and the slide copy
 src/server/    HTTP API, job runner, static hosting
 src/web/       the UI — plain HTML/CSS/ES modules, no framework;
                formats.js is the posting shapes, chart.js draws into them,
-               picker.js is the colour picker, schemes.js the ready-made palettes
+               picker.js is the colour picker, schemes.js the ready-made
+               palettes, backdrop.js what a slide is drawn on
 tools/         fixture generators: an EXIF/MP4 writer and a Lightroom catalog
 ```
 
@@ -223,7 +224,16 @@ re-reading a library for it.
   and live in Style; `data` roles (series, ramp, the clock's poles) are what a
   chart encodes with and are filtered to the slide. One card held both, and on
   the slides with the most colours in them the background scrolled off the top
-  of a card nobody realised scrolled.
+  of a card nobody realised scrolled. They sit **side by side** and wrap one at
+  a time as the window narrows — a column of three is a scrollpane, and a
+  scrollpane is where a setting goes to be missed. Each card carries its own
+  height cap rather than the column carrying one for all three, because only
+  "Every colour" is ever tall enough to need it. The deck view is also allowed
+  more page width than the library pages (`main:has(> .deck…)`): three cards is
+  the better part of 800px of chrome, and the slide has to survive it. The three
+  `.deck-body` columns are **placed** rather than flowed, because a
+  `display: none` grid item is removed from the grid entirely — hiding the data
+  column used to shuffle the slide into the track meant for it.
 - **Which data roles a slide offers is read off the drawing.** `coloursIn` in
   `deck.js` collects the `fill` and `stroke` attributes from the rendered SVG
   and matches them against `colourAt` per role — never a table of which slide
@@ -274,6 +284,26 @@ re-reading a library for it.
   series and the difference between a violet deck and a blue one on the first.
   `test/palette.test.ts` holds every scheme to the gate the shipped palette
   passes. "As it comes" is an empty override, never a copy of today's defaults.
+- **A generated backdrop is seeded, never random.** `web/backdrop.js` draws
+  blobs, rings or grain under a slide, and the arrangement comes from a
+  mulberry32 keyed on the *slide's own id* mixed with `config.backdrop.seed`.
+  `Math.random` is wrong here twice over: the same slide is drawn on screen,
+  again on the contact sheet and again into a PNG and a PDF, and three different
+  pictures of one slide is not one deck — and a backdrop that reshuffled on
+  every paint would crawl while the reader drags a colour slider. Shuffling is
+  picking a new seed in the config. It rides on the theme (`currentTheme(palette,
+  backdrop)`) rather than as a fourth argument to `renderSlide`, because
+  everything a drawing needs that is not the slide already travels there, and
+  the page, the sheet and the export all build their theme through that one call.
+- **The backdrop is decoration, and says so.** It lives in a `<g data-backdrop>`
+  that `coloursIn` skips, so it never adds a well to "Colours here" — that card
+  answers what the *chart* encodes with, and the answer must not change because
+  someone turned some shapes on. It also stays out of the middle of the frame by
+  construction: blob centres ride the border so only the soft outside of a
+  circle lands inside, rings are swung from a corner that is never the top left
+  where the headline is, and grain thins towards the centre. Blob gradients need
+  ids, and those ids carry the slide id — the contact sheet puts every slide in
+  one document, where two `url(#blob0)` would both find the first one.
 - **`paletteProblems` warns, and never blocks.** Colour-blind safety is a
   property of the set, not of any colour in it, so the gates are the palette
   validator's own: adjacent pairs at ΔE ≥ 6 through `min(protan, deutan)`, a
@@ -425,7 +455,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 300 tests
+npm test          # 305 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```

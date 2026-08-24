@@ -18,7 +18,7 @@ import { exportDeckPdf, exportDeckZip, exportSlidePng, fileNameFor } from "./exp
 const $ = (id) => document.getElementById(id);
 const FORMAT_KEY = "wdis-format";
 
-export function createDeck({ onExit, onToast, onExclude, onSetting, onColours, palette }) {
+export function createDeck({ onExit, onToast, onExclude, onSetting, onColours, palette, backdrop }) {
   /**
    * The reader's colours, asked for rather than held.
    *
@@ -27,7 +27,7 @@ export function createDeck({ onExit, onToast, onExclude, onSetting, onColours, p
    * old one until the page was reloaded. So this is a getter, called at every
    * paint, and `repaint()` is all a colour change has to do.
    */
-  const themeNow = () => currentTheme(palette?.() ?? null);
+  const themeNow = () => currentTheme(palette?.() ?? null, backdrop?.() ?? null);
   let deck = { title: "", rangeLabel: "", slides: [] };
   let index = 0;
   let tableOpen = false;
@@ -96,14 +96,18 @@ export function createDeck({ onExit, onToast, onExclude, onSetting, onColours, p
    * it back beats a table of which slide uses which role: that would be a
    * second source of truth, and wrong within a month of the next slide.
    */
-  function coloursIn(root) {
-    const found = new Set();
-    for (const node of [root, ...root.querySelectorAll("*")]) {
-      for (const name of ["fill", "stroke"]) {
-        const value = node.getAttribute(name);
-        if (value && value.startsWith("#")) found.add(value.toLowerCase());
-      }
+  function coloursIn(root, found = new Set()) {
+    // The backdrop is decoration drawn from the same palette, and walking into
+    // it would put a well in "Colours here" for a colour the *chart* does not
+    // use — that card answers what this slide encodes with, and the answer must
+    // not change because somebody turned some shapes on.
+    if (root.hasAttribute?.("data-backdrop")) return found;
+
+    for (const name of ["fill", "stroke"]) {
+      const value = root.getAttribute(name);
+      if (value && value.startsWith("#")) found.add(value.toLowerCase());
     }
+    for (const child of root.children ?? []) coloursIn(child, found);
     return found;
   }
 

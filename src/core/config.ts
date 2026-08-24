@@ -150,6 +150,18 @@ export interface AppConfig {
    * than one and a filter.
    */
   palette: Palette;
+  /**
+   * What a slide is drawn *on*, before anything is drawn.
+   *
+   * Flat is the default and always will be: these are data slides, and a
+   * backdrop is decoration that has to earn its place by staying out of the
+   * way. The seed is what makes "randomly generated" repeatable — the same deck
+   * has to come back the same on screen, on the contact sheet and in the
+   * exported PNG, or the shapes are a different picture every time anyone
+   * looks. Shuffling is therefore picking a new number here, never calling
+   * `Math.random` while drawing.
+   */
+  backdrop: Backdrop;
   /** Port for the local UI. 0 picks a free one. */
   port: number;
 }
@@ -236,6 +248,31 @@ export function coercePaletteSide(value: unknown): PaletteOverride {
   return out;
 }
 
+/**
+ * The four grounds a slide can be drawn on.
+ *
+ * `blobs` is soft fields of colour riding the edges of the frame, `rings` is
+ * arcs swung from a corner — the one shape a camera suggests — and `grain` is a
+ * thin scatter of dots. All three are drawn from the reader's own palette, and
+ * all three keep out of the middle of the frame, where the words are.
+ */
+export type BackdropKind = "flat" | "blobs" | "rings" | "grain";
+
+export const BACKDROP_KINDS: readonly BackdropKind[] = ["flat", "blobs", "rings", "grain"];
+
+export interface Backdrop {
+  kind: BackdropKind;
+  /** Which arrangement of it. The page shuffles by picking a different number. */
+  seed: number;
+}
+
+export function coerceBackdrop(value: unknown): Backdrop {
+  const raw = (typeof value === "object" && value !== null ? value : {}) as Record<string, unknown>;
+  const kind = BACKDROP_KINDS.find((entry) => entry === raw.kind) ?? "flat";
+  const seed = Number(raw.seed);
+  return { kind, seed: Number.isFinite(seed) ? Math.abs(Math.trunc(seed)) % 100000 : 1 };
+}
+
 export function coercePalette(value: unknown): Palette {
   const raw = (typeof value === "object" && value !== null ? value : {}) as Record<string, unknown>;
   return { light: coercePaletteSide(raw.light), dark: coercePaletteSide(raw.dark) };
@@ -263,6 +300,7 @@ export function defaultConfig(): AppConfig {
     ownerName: "",
     location: { ...DEFAULT_CITY },
     palette: { light: {}, dark: {} },
+    backdrop: { kind: "flat", seed: 1 },
     port: 4112,
   };
 }
@@ -400,6 +438,7 @@ function coerce(raw: unknown): AppConfig {
     // same as `null`, which is somebody having pressed Clear.
     location: "location" in r ? coercePlace(r.location) : { ...DEFAULT_CITY },
     palette: coercePalette(r.palette),
+    backdrop: coerceBackdrop(r.backdrop),
     port: typeof r.port === "number" && Number.isFinite(r.port) ? r.port : base.port,
   };
 }

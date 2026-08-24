@@ -165,6 +165,14 @@ main {
   margin: 0 auto;
   padding: 22px;
 }
+/* The deck earns more width than the library pages do. Three cards beside a
+   slide is the better part of 800px of chrome, and a slide squeezed into what
+   is left of 1180 is not a slide anybody would post. Where `:has` is missing
+   this simply does not apply and the cards wrap, which is the behaviour a
+   narrow window gets anyway. */
+main:has(> .deck:not([hidden])) {
+  max-width: 1640px;
+}
 .view[hidden] {
   display: none;
 }
@@ -385,19 +393,33 @@ main {
  */
 .deck-body {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  /* The stage keeps a floor so the cards beside it cannot squeeze the slide
+     into a strip; past that they wrap instead. */
+  grid-template-columns: auto minmax(300px, 1fr) auto;
   gap: 16px;
   align-items: start;
 }
+/* Side by side while there is room, and only stacked when there is not: three
+   cards in one narrow column is a scrollpane, and a scrollpane is where a
+   setting goes to be missed. The cards wrap one at a time as the window
+   narrows, so a wide screen shows all three and a laptop shows two. */
+/* Placed rather than flowed. A `display: none` grid item is removed from the
+   grid entirely, so hiding the data column used to shuffle the slide into the
+   track meant for it — which only ever showed as everything being slightly the
+   wrong width. */
+.deck-data {
+  grid-column: 1;
+}
+.stage {
+  grid-column: 2;
+}
 .deck-side {
+  grid-column: 3;
   display: flex;
-  flex-direction: column;
+  flex-flow: row wrap;
+  align-items: flex-start;
   gap: 12px;
-  /* The two cards scroll together: "every colour" is nineteen wells, and a
-     column taller than the slide it belongs beside is a column that pushes the
-     slide off the screen. */
-  max-block-size: 78vh;
-  overflow-y: auto;
+  max-inline-size: 780px;
 }
 .deck-side[hidden] {
   display: none;
@@ -419,7 +441,23 @@ main {
   flex-direction: column;
   gap: 10px;
   flex: none;
+  /* Each card carries its own cap rather than the column carrying one for all
+     three: only "every colour" is ever tall enough to need it, and making the
+     other two scroll to pay for that is what put the background out of reach. */
+  max-block-size: 76vh;
+  overflow-y: auto;
 }
+.backdrop-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.backdrop-row .ghost {
+  padding: 4px 10px;
+  font-size: 0.82rem;
+}
+
 /* The scheme chips sit tight: six of them in a 244px column need the room. */
 .scheme-chips {
   gap: 5px;

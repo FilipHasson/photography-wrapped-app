@@ -108,10 +108,19 @@ export function themeFor(mode, override) {
   return theme;
 }
 
-/** Follows the toggle when one is set, and the OS otherwise. */
-export function currentTheme(palette) {
+/**
+ * Follows the toggle when one is set, and the OS otherwise.
+ *
+ * The backdrop rides along here rather than being a fourth argument to
+ * `renderSlide`: everything a drawing needs that is not the slide already
+ * travels in this object, and the export path, the contact sheet and the live
+ * page all build their theme through this one call. A flat backdrop is left off
+ * entirely so the built-in palette objects are still handed back untouched.
+ */
+export function currentTheme(palette, backdrop) {
   const mode = currentMode();
-  return themeFor(mode, palette?.[mode]);
+  const theme = themeFor(mode, palette?.[mode]);
+  return backdrop && backdrop.kind && backdrop.kind !== "flat" ? { ...theme, backdrop } : theme;
 }
 
 /**

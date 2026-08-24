@@ -1,4 +1,5 @@
 // @ts-check
+import { drawBackdrop } from "./backdrop.js";
 import { DEFAULT_FORMAT, metrics } from "./formats.js";
 import { seriesColour } from "./theme.js";
 
@@ -163,6 +164,7 @@ function frame(slide, theme, L) {
   });
 
   root.append(el("rect", { x: 0, y: 0, width: L.width, height: L.height, fill: theme.surface }));
+  drawBackdrop(root, slide, theme, L);
 
   const inner = L.width - L.pad * 2;
   const eyebrowY = L.pad + L.eyebrow * 0.5;

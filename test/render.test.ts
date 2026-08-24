@@ -1090,3 +1090,78 @@ describe("bars either way round", () => {
     }
   }
 });
+
+/**
+ * The ground a slide is drawn on.
+ *
+ * Decoration, and therefore held to the same bar as everything else: no NaN, no
+ * shape outside the frame, and above all *repeatable* — the same deck is drawn
+ * on screen, again in the contact sheet, and again into a PNG and a PDF, and a
+ * backdrop that differed between those would be three pictures of one slide.
+ */
+describe("what the slide is drawn on", () => {
+  const KINDS = ["blobs", "rings", "grain"];
+  const on = (kind: string, seed = 3) => ({ ...(LIGHT as object), backdrop: { kind, seed } });
+
+  test("stays inside the frame and out of the numbers, in every shape", () => {
+    for (const kind of KINDS) {
+      for (const format of FORMATS) {
+        for (const slide of slides) {
+          for (const node of renderSlide(slide, on(kind), format).walk()) {
+            if (node.tag === "svg") continue;
+            const numbers = ["x", "y", "width", "height", "cx", "cy", "r"].map((key) =>
+              Number(node.attrs.get(key) ?? 0),
+            );
+            assert.ok(
+              numbers.every((value) => Number.isFinite(value)),
+              `${kind}/${format.id}/${slide.id}: ${node.tag} has a NaN`,
+            );
+          }
+        }
+      }
+    }
+  });
+
+  test("the same slide comes back the same, and a shuffle changes it", () => {
+    const draw = (theme: unknown) =>
+      [...renderSlide(slides[0]!, theme, FORMATS[0]!).walk()]
+        .map((node) => `${node.tag}:${[...node.attrs].join(",")}`)
+        .join("|");
+
+    for (const kind of KINDS) {
+      assert.equal(draw(on(kind, 3)), draw(on(kind, 3)), `${kind} is not repeatable`);
+      assert.notEqual(draw(on(kind, 3)), draw(on(kind, 4)), `${kind} ignores the shuffle`);
+    }
+  });
+
+  test("two slides are not the same picture", () => {
+    // Keyed on the slide's own id, so a deck is a deck rather than one shape
+    // printed twenty times.
+    const shapes = (slide: Slide) =>
+      [...renderSlide(slide, on("blobs"), FORMATS[0]!).walk()]
+        .filter((node) => node.tag === "circle")
+        .map((node) => `${node.attrs.get("cx")},${node.attrs.get("cy")},${node.attrs.get("r")}`)
+        .join("|");
+
+    assert.notEqual(shapes(slides[0]!), shapes(slides[1]!));
+  });
+
+  test("it is never mistaken for data", () => {
+    // `coloursIn` in deck.js skips this group, which is what keeps a backdrop
+    // from putting a well in "Colours here" for a colour no chart uses.
+    for (const kind of KINDS) {
+      const root = renderSlide(slides[0]!, on(kind), FORMATS[0]!);
+      const layers = [...root.walk()].filter((node) => node.attrs.has("data-backdrop"));
+      assert.equal(layers.length, 1, `${kind}: expected one backdrop layer, got ${layers.length}`);
+      assert.ok((layers[0]?.children.length ?? 0) > 0, `${kind}: the layer is empty`);
+    }
+  });
+
+  test("a flat backdrop draws exactly what no backdrop draws", () => {
+    // The default has to stay the default: a config that has never heard of
+    // this must render byte for byte what it rendered before.
+    const plain = [...renderSlide(slides[0]!, LIGHT, FORMATS[0]!).walk()].length;
+    const flat = [...renderSlide(slides[0]!, on("flat"), FORMATS[0]!).walk()].length;
+    assert.equal(flat, plain);
+  });
+});

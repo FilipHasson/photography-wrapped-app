@@ -84,6 +84,7 @@ const store = {
 
 const deck = createDeck({
   palette: () => store.state.config?.palette ?? null,
+  backdrop: () => store.state.config?.backdrop ?? null,
   onExit: () => show("view-home"),
   onToast: toast,
   onExclude: (dimension, key, excluded) => void setExcluded(dimension, key, excluded),
@@ -412,6 +413,48 @@ function currentScheme() {
   return null;
 }
 
+/** What a slide is drawn on. The names are the reader's, the ids are the config's. */
+const BACKDROPS = [
+  { id: "flat", name: "Flat" },
+  { id: "blobs", name: "Blobs" },
+  { id: "rings", name: "Rings" },
+  { id: "grain", name: "Grain" },
+];
+
+function renderBackdrops() {
+  const current = store.state.config?.backdrop?.kind ?? "flat";
+
+  $("backdrop-chips").replaceChildren(
+    ...BACKDROPS.map((entry) =>
+      el(
+        "button",
+        {
+          type: "button",
+          class: entry.id === current ? "chip is-current" : "chip",
+          "aria-pressed": String(entry.id === current),
+          onclick: () => void saveBackdrop({ kind: entry.id }),
+        },
+        el("span", { text: entry.name }),
+      ),
+    ),
+  );
+
+  // Nothing to shuffle about a flat colour.
+  $("backdrop-shuffle").hidden = current === "flat";
+}
+
+async function saveBackdrop(patch) {
+  const backdrop = { ...(store.state.config?.backdrop ?? { kind: "flat", seed: 1 }), ...patch };
+  try {
+    await api("/api/config", { method: "POST", body: { backdrop } });
+    await refreshState();
+    deck.repaint();
+    renderBackdrops();
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
 function renderSchemes() {
   const current = currentScheme();
 
@@ -449,6 +492,7 @@ async function applyScheme(id) {
 
 function renderColours() {
   renderSchemes();
+  renderBackdrops();
   const all = store.state.paletteRoles ?? [];
   const override = store.state.config.palette?.[colourMode] ?? {};
   const theme = themeFor(colourMode, override);
@@ -1398,3 +1442,11 @@ document.addEventListener("keydown", (event) => {
 
 listenForJobs();
 await refreshState();
+
+$("backdrop-shuffle").addEventListener("click", () => {
+  // A new arrangement is a new number, never a new random call at draw time:
+  // the deck on screen, the contact sheet and the exported PNG all have to be
+  // the same picture, and only a seed in the config can promise that.
+  const seed = store.state.config?.backdrop?.seed ?? 1;
+  void saveBackdrop({ seed: (seed + 1 + Math.floor(Math.random() * 97)) % 100000 });
+});
