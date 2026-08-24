@@ -16,6 +16,8 @@ import { hexOf, oklchOf } from "./theme.js";
  * the distance between two series through simulated colour blindness, the heat
  * ramp climbing in steps of 0.06 — is measured in that space. Moving the
  * lightness slider moves the number the warning is about.
+ *
+ * The middle one is labelled Saturation rather than Chroma. See `channels`.
  */
 
 /**
@@ -44,9 +46,19 @@ export function colourPicker(hex, { onInput, onDone, label }) {
   const node = document.createElement("div");
   node.className = "colour-picker";
 
+  /**
+   * The chroma slider is labelled "Saturation", and that is deliberate.
+   *
+   * Chroma is what it *is* — the code says so everywhere, because a name that
+   * lies about the maths is how the maths gets broken. But the label is the
+   * reader's, the same way `series.0` is "The main colour" and `blank` is
+   * "Nothing happened": this is a photographer's tool, and the slider they have
+   * moved ten thousand times in Lightroom is called Saturation. Beside
+   * Lightness and Hue it also reads as the trio everybody already knows.
+   */
   const channels = [
     { key: "l", name: "Lightness", min: 0, max: 1, step: 0.005, get: () => l, set: (v) => (l = v) },
-    { key: "c", name: "Chroma", min: 0, max: MAX_CHROMA, step: 0.002, get: () => c, set: (v) => (c = v) },
+    { key: "c", name: "Saturation", min: 0, max: MAX_CHROMA, step: 0.002, get: () => c, set: (v) => (c = v) },
     { key: "h", name: "Hue", min: 0, max: 360, step: 1, get: () => h, set: (v) => (h = v) },
   ];
 

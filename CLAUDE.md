@@ -254,7 +254,11 @@ re-reading a library for it.
   OKLab, so a slider moves the number a warning is actually about, and a step of
   lightness looks like a step of lightness at every hue. Each track is drawn
   with the other two channels held where they are — a hue strip at full
-  saturation would be a lie about what moving it does to *this* colour.
+  saturation would be a lie about what moving it does to *this* colour. The
+  chroma slider is **labelled "Saturation"** and is chroma everywhere in the
+  code: the label is the reader's, the way `series.0` is "The main colour", and
+  this is a photographer's tool where that slider has a name already. Don't
+  "correct" either half towards the other.
   `oklchOf`/`hexOf` in `theme.js` round-trip byte-for-byte (`test/palette.test.ts`),
   because a colour that drifts a step each time a well is opened is a palette
   that rots by being looked at, and `hexOf` always answers: the chroma slider
