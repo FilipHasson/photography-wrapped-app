@@ -149,11 +149,17 @@
 
             <label class="setting deleted-before">
               <span class="setting-label">Photographs deleted before indexing</span>
-              <input id="setting-deleted" type="number" min="0" step="1" inputmode="numeric" placeholder="0" />
+              <!--
+                Text, not `type="number"`: a number field silently reports an
+                empty string for anything it dislikes — a typed thousands
+                separator included — so a count entered the way people write
+                counts vanished without a word. `coerceCount` does the reading.
+              -->
+              <input id="setting-deleted" type="text" inputmode="numeric" maxlength="12" placeholder="0" />
               <span class="hint">
                 Nothing records what a library used to hold, so anything you deleted before this tool
-                first looked is invisible to it. Your own figure joins the all-time total and counts as
-                rejects — it has no date, so no shorter range can use it.
+                first looked is invisible to it. Your own figure joins the total and counts as rejects.
+                It has no date, so it is the same figure whatever range you build.
               </span>
             </label>
 
@@ -196,6 +202,7 @@
           </div>
           <div class="deck-actions">
             <div id="deck-formats" class="chips" role="group" aria-label="Slide shape"></div>
+            <div id="deck-image-types" class="chips" role="group" aria-label="Picture format"></div>
             <button id="deck-table-toggle" class="ghost" type="button" title="Show the data (t)">
               Data
             </button>

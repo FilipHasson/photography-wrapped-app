@@ -448,21 +448,38 @@ export function buildDeck(stats: DeckStats, ownerName = ""): Deck {
 // -------------------------------------------------------------- slides -----
 
 function opening(stats: DeckStats, rangeLabel: string): Slide {
-  const { totals, range } = stats;
+  const { totals, range, busiestDay } = stats;
   const shot = taken(totals);
-  // Per *day*, so the frames with no day cannot be in it. Same for the week
-  // below, and for every tile beside them.
-  const perDay = totals.daysShot > 0 ? totals.shots / totals.daysShot : 0;
 
   const tiles: Tile[] = [
     { label: "Days out shooting", value: fmtInt(totals.daysShot), note: `of ${fmtInt(totals.daysInRange)}` },
-    { label: "Busiest average", value: `${perDay.toFixed(0)}/day`, note: "on days you shot" },
-    {
-      label: "Cameras",
-      value: fmtInt(totals.cameras),
-      note: totals.lenses > 0 ? `${fmtInt(totals.lenses)} ${plural(totals.lenses, "lens", "lenses")}` : undefined,
-    },
   ];
+
+  /**
+   * The best day, not the average of the days you were out.
+   *
+   * An average per day shot is a number nobody recognises — it is the shape of
+   * a habit, and the opening slide is not the place for one. The day you came
+   * home with three thousand frames is a day you remember, and it dates itself.
+   * The calendar slide headlines the same day, which is fine: the rule is that
+   * no number appears twice on *one* slide.
+   *
+   * Counted, so it is `totals.shots` behind it and never the deletions — those
+   * frames have no day to be the busiest one.
+   */
+  if (busiestDay) {
+    tiles.push({
+      label: "Busiest day",
+      value: fmtInt(busiestDay.shots),
+      note: formatDay(busiestDay.day),
+    });
+  }
+
+  tiles.push({
+    label: "Cameras",
+    value: fmtInt(totals.cameras),
+    note: totals.lenses > 0 ? `${fmtInt(totals.lenses)} ${plural(totals.lenses, "lens", "lenses")}` : undefined,
+  });
 
   // A catalog-only library knows nothing about file sizes, and a tile reading
   // "0 B" is worse than a tile that is not there.
@@ -1270,10 +1287,20 @@ function streaksSlide(stats: DeckStats): Slide | null {
   // Nothing to say about a fortnight where both are a day or two.
   if (run < 2 && quiet < 3) return null;
 
-  const headline =
-    run >= quiet
-      ? `${run} days in a row`
-      : `${fmtInt(quiet)} days without picking it up`;
+  /**
+   * Always the run, never the silence.
+   *
+   * The longest quiet spell used to take the headline whenever it was the
+   * longer of the two, which on most libraries is most of the time — so the one
+   * slide about how consistently you shoot opened by telling you how long you
+   * did not. The gap has not gone anywhere: it is the widest band of empty
+   * squares on the wall, and it is a row in the table. It is simply not the
+   * thing said out loud.
+   *
+   * A single day is still a run, and saying so beats "1 days in a row" and
+   * beats going back to the negative for the one case that would need it.
+   */
+  const headline = run >= 2 ? `${fmtInt(run)} days in a row` : "One day at a time";
 
   const months = monthsBetween(range.from, range.to);
 

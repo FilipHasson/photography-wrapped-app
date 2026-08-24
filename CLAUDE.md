@@ -156,14 +156,17 @@ therefore always says *since when* it has been watching, and never implies it
 knows about deletions from before it was first run.
 
 Everything from *before* that leaves no trace at all, which is why
-`config.deletedBefore` is a number the reader types. Three things follow from it
-having no date, and all three are load-bearing: `computeStats` is the **one**
-place that decides it may be spent, and only on an all-time deck — a deck of
-2025 that gained a decade of deletions is a worse answer than not asking; it
-sits *beside* `totals.shots` rather than inside it, so every share in the deck
-still divides by frames that were actually measured; and only the two slides
-that answer "how many photographs" — the opening and the closing, through
-`taken()` — add the pair. On culling it is a **reject**, because a frame that
+`config.deletedBefore` is a number the reader types. It has no date, and two
+things follow that are load-bearing: it sits *beside* `totals.shots` rather
+than inside it, so every share in the deck still divides by frames that were
+actually measured; and only the two slides that answer "how many photographs" —
+the opening and the closing, through `taken()` — add the pair. What does *not*
+follow is any narrowing by range. It was gated to all-time at first, on the
+argument that a deck of 2025 should not gain a decade of deletions; the reader
+overruled that, and they are right — they are the only person who knows what
+those frames were, and a figure that disappeared whenever you looked at a single
+year is a setting nobody can find the effect of. Both slides put it in the
+table, which is where the reader can see it and reason about it. On culling it is a **reject**, because a frame that
 was taken and then permanently deleted is a decision and it is not "keep", and
 because rejects is the only bucket it can honestly join: those frames have no
 rating, no flag and no file. That makes a folder-only library, which carries no
@@ -333,6 +336,38 @@ re-reading a library for it.
   with, and the comment there says so. The first thing the tests check is that
   the shipped palette raises no warning: a warning nobody can act on teaches
   people to ignore the ones that matter.
+- **A verdict card is glass, and the edge is what draws it.** `glassOf` in
+  `chart.js` hands back a function that paints one: the fill is `plane` fading
+  from 0.88 to 0.34 down the card, so a generated backdrop carries on
+  underneath, and a second inset rect strokes a `surface` ramp that is bright
+  at the top and gone by the middle — light catching the near edge of a pane.
+  `surface` works as the highlight in both modes without asking which, because
+  it is lighter than `plane` in both. Two gradients for the whole slide, not
+  two per card: `objectBoundingBox` is a gradient's default, so one vertical
+  ramp fits every card whatever its size — and the ids carry the slide's id,
+  because the contact sheet puts every slide in one document. Neither adds a
+  well to "Colours here": `url(...)` is not a hex, so `coloursIn` skips it, and
+  both roles are page roles in Style already.
+- **Where a glyph can say it, the words go.** `drawVerdictRows` drops the label
+  and the note when *every* card is a row of stars — `glyphSpeaks` — and spends
+  the freed half of the row on the stars and the count instead. A rating is a
+  symbol everybody reads; a thumb keeps its words, because up and down is a
+  gesture and "Picked"/"Rejected" is what the gesture means. The row underneath
+  keeps its words too, and therefore cannot borrow the cards' columns: with the
+  count moved to the right edge, sharing `valueRight` put "Never given a star"
+  off the side of the slide.
+- **The streaks headline is the run, never the silence.** The longest gap used
+  to take it whenever it was the longer of the two, which on most libraries is
+  most of the time — so the one slide about how consistently you shoot opened by
+  saying how long you did not. The gap is still the widest band on the wall and
+  a row in the table.
+- **A picture leaves here as a PNG or a JPEG, and it is one choice.**
+  `IMAGE_TYPES` in `export.js` carries the mime, the extension and the quality;
+  `exportSlideImage` and `exportDeckZip` both take one, and the deck bar's chip
+  renames the two buttons so the choice is never only in the chip. JPEG's lack
+  of alpha costs nothing — `rasterize` has already painted the ground — and the
+  quality is 0.92 because these slides are hard edges between flat colours,
+  which is JPEG's worst case.
 - Every slide carries a `table`, and the deck's `t` view renders it. Three of
   the light-mode series colours sit below 3:1 against the surface, so a value
   reachable only by colour is a defect.
@@ -474,7 +509,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 316 tests
+npm test          # 320 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```

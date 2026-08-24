@@ -2,7 +2,14 @@
 import { renderSlide } from "./chart.js";
 import { currentTheme } from "./theme.js";
 import { FORMATS, formatById } from "./formats.js";
-import { exportDeckPdf, exportDeckZip, exportSlidePng, fileNameFor } from "./export.js";
+import {
+  exportDeckPdf,
+  exportDeckZip,
+  exportSlideImage,
+  fileNameFor,
+  imageTypeById,
+  IMAGE_TYPES,
+} from "./export.js";
 
 /**
  * The deck itself: one slide on screen, keyboard to move, a shape to post it
@@ -17,6 +24,8 @@ import { exportDeckPdf, exportDeckZip, exportSlidePng, fileNameFor } from "./exp
 
 const $ = (id) => document.getElementById(id);
 const FORMAT_KEY = "wdis-format";
+/** PNG or JPEG. Remembered the same way the slide shape is. */
+const IMAGE_KEY = "wdis-image-type";
 
 export function createDeck({ onExit, onToast, onExclude, onSetting, onColours, palette, backdrop }) {
   /**
@@ -32,6 +41,7 @@ export function createDeck({ onExit, onToast, onExclude, onSetting, onColours, p
   let index = 0;
   let tableOpen = false;
   let format = formatById(localStorage.getItem(FORMAT_KEY) ?? "");
+  let imageType = imageTypeById(localStorage.getItem(IMAGE_KEY) ?? "");
 
   const stage = $("stage");
   const dots = $("deck-dots");
@@ -56,6 +66,7 @@ export function createDeck({ onExit, onToast, onExclude, onSetting, onColours, p
       table.hidden = true;
       $("deck-side").hidden = true;
       renderFormats();
+      renderImageTypes();
       renderSheet();
       return;
     }
@@ -82,6 +93,7 @@ export function createDeck({ onExit, onToast, onExclude, onSetting, onColours, p
     );
 
     renderFormats();
+    renderImageTypes();
     renderSettings();
     renderTable();
   }
@@ -250,6 +262,35 @@ export function createDeck({ onExit, onToast, onExclude, onSetting, onColours, p
     );
   }
 
+  /**
+   * PNG or JPEG, once for both buttons.
+   *
+   * One choice rather than four export buttons: a reader who wants JPEGs wants
+   * them for the slide and for the deck, and "Slide (PNG) · Slide (JPEG) ·
+   * Deck (PNGs) · Deck (JPEGs)" is a toolbar nobody can read. The buttons say
+   * which one is on, so the chips are never the only thing that does.
+   */
+  function renderImageTypes() {
+    $("deck-image-types").replaceChildren(
+      ...IMAGE_TYPES.map((option) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = option.id === imageType.id ? "chip is-current" : "chip";
+        button.textContent = option.label;
+        button.title =
+          option.id === "png" ? "Lossless, larger files" : "Smaller files, and what most uploads want";
+        button.addEventListener("click", () => {
+          imageType = option;
+          localStorage.setItem(IMAGE_KEY, option.id);
+          render();
+        });
+        return button;
+      }),
+    );
+    $("deck-png").textContent = `Slide (${imageType.label})`;
+    $("deck-zip").textContent = `Deck (${imageType.label}s)`;
+  }
+
   function renderFormats() {
     $("deck-formats").replaceChildren(
       ...FORMATS.map((option) => {
@@ -413,10 +454,11 @@ export function createDeck({ onExit, onToast, onExclude, onSetting, onColours, p
     const current = slide();
     if (!current) return;
     try {
-      await exportSlidePng(
+      await exportSlideImage(
         stage.firstElementChild,
-        fileNameFor(deck, "png", `${current.title} ${format.label}`),
+        fileNameFor(deck, imageType.extension, `${current.title} ${format.label}`),
         format,
+        imageType,
       );
       onToast(`Slide saved at ${format.width}×${format.height}.`);
     } catch (err) {
@@ -446,7 +488,14 @@ export function createDeck({ onExit, onToast, onExclude, onSetting, onColours, p
       if (kind === "pdf") {
         await exportDeckPdf(deck.slides, render, fileNameFor(deck, "pdf", format.label), progress, format);
       } else {
-        await exportDeckZip(deck.slides, render, fileNameFor(deck, "zip", format.label), progress, format);
+        await exportDeckZip(
+          deck.slides,
+          render,
+          fileNameFor(deck, "zip", format.label),
+          progress,
+          format,
+          imageType,
+        );
       }
       onToast(`${deck.slides.length} slides saved.`);
     } catch (err) {

@@ -265,7 +265,8 @@ export interface Totals {
    * every slide divides by frames that were actually measured, and there is
    * nothing behind this number but itself: it has no camera, no lens, no day
    * and no exposure. The two slides that report *how many photographs* — the
-   * opening and the closing — add the pair; nothing else may.
+   * opening and the closing — add the pair; nothing else may, and nothing that
+   * is measured per day, per month or per year can touch it at all.
    */
   deletedBefore: number;
 }
@@ -889,17 +890,19 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
   const { where, params: args } = scope(range, options);
 
   /**
-   * What the reader threw away before this tool existed — and the one place
-   * that decides whether this deck is allowed to know about it.
+   * What the reader threw away before this tool existed, read in one place.
    *
-   * The number carries no date, because nothing in a catalog records what used
-   * to be in it. So it can only be added to a deck that is not asking about a
-   * period: all time. A deck of 2025 that gained a decade of deletions would
-   * be a worse answer than not asking the question at all, and would put a
-   * denominator on the culling slide that no other slide could agree with.
+   * The number carries no date — nothing in a catalog records what used to be
+   * in it — and it is counted in every range regardless. That was gated to
+   * all-time at first, on the argument that a deck of 2025 should not gain a
+   * decade of deletions; the reader overruled it, and they are right. They are
+   * the only person who knows what those frames were, and a figure that
+   * disappeared whenever you looked at a single year is a setting nobody can
+   * find the effect of. What follows is that it does not narrow with the range:
+   * a deck of 2025 carries the same figure an all-time deck does, and both
+   * slides that use it put it in their table, where the reader can see it.
    */
-  const deletedBefore =
-    range.spec.kind === "all" ? Math.max(0, Math.trunc(options.deletedBefore ?? 0)) : 0;
+  const deletedBefore = Math.max(0, Math.trunc(options.deletedBefore ?? 0));
 
   const totalsRow = db.getAs<Record<string, number | null>>(
     `SELECT

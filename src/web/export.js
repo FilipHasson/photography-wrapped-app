@@ -61,6 +61,40 @@ async function rasterize(svg, format) {
   }
 }
 
+/**
+ * The two ways a slide leaves here as a picture.
+ *
+ * PNG is lossless and is what a flat-colour page wants; JPEG is what most
+ * places that take an upload want, and it is a fifth of the size. Neither is
+ * right for everybody, so it is a choice rather than a default nobody can
+ * change — and it is one choice for both the single slide and the deck of
+ * them, because a reader who wants JPEGs wants JPEGs.
+ *
+ * The quality is high enough that the ringing around type is invisible at
+ * 100%. Lower and it shows on exactly the thing these slides are made of: hard
+ * edges between flat colours, which is JPEG's worst case.
+ */
+export const IMAGE_TYPES = [
+  { id: "png", label: "PNG", mime: "image/png", extension: "png", quality: undefined },
+  { id: "jpeg", label: "JPEG", mime: "image/jpeg", extension: "jpg", quality: 0.92 },
+];
+
+export const imageTypeById = (id) => IMAGE_TYPES.find((one) => one.id === id) ?? IMAGE_TYPES[0];
+
+/**
+ * One canvas, one blob.
+ *
+ * JPEG has no alpha, which costs nothing here: `rasterize` has already painted
+ * the ground under the slide, so there is no transparency left to lose.
+ */
+async function encode(canvas, type) {
+  const blob = await new Promise((resolve) =>
+    canvas.toBlob((result) => resolve(result), type.mime, type.quality),
+  );
+  if (!blob) throw new Error(`The slide could not be turned into a ${type.label}.`);
+  return blob;
+}
+
 function download(blob, filename) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -73,11 +107,8 @@ function download(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
-export async function exportSlidePng(svg, filename, format = DEFAULT_FORMAT) {
-  const canvas = await rasterize(svg, format);
-  const blob = await new Promise((resolve) => canvas.toBlob((result) => resolve(result), "image/png"));
-  if (!blob) throw new Error("The slide could not be turned into a PNG.");
-  download(blob, filename);
+export async function exportSlideImage(svg, filename, format = DEFAULT_FORMAT, type = IMAGE_TYPES[0]) {
+  download(await encode(await rasterize(svg, format), type), filename);
 }
 
 // ----------------------------------------------------------------- PDF -----
@@ -220,7 +251,8 @@ export async function exportDeckPdf(slides, render, filename, onProgress, format
 /**
  * A ZIP of PNGs, written by hand like the PDF.
  *
- * Entries are stored rather than deflated: a PNG is already compressed, so
+ * Entries are stored rather than deflated: a PNG or a JPEG is already
+ * compressed, so
  * deflating it again buys a percent or two and would mean shipping a compressor
  * — which is the entire reason this file has no dependencies.
  */
@@ -315,18 +347,23 @@ export function buildZip(files, now = new Date()) {
   return new Blob(chunks, { type: "application/zip" });
 }
 
-/** Exports the whole deck as a folder of PNGs, one per slide, in a ZIP. */
-export async function exportDeckZip(slides, render, filename, onProgress, format = DEFAULT_FORMAT) {
+/** Exports the whole deck as a folder of images, one per slide, in a ZIP. */
+export async function exportDeckZip(
+  slides,
+  render,
+  filename,
+  onProgress,
+  format = DEFAULT_FORMAT,
+  type = IMAGE_TYPES[0],
+) {
   const files = [];
 
   for (const [index, slide] of slides.entries()) {
     onProgress?.(index, slides.length);
-    const canvas = await rasterize(render(slide, index), format);
-    const blob = await new Promise((resolve) => canvas.toBlob((result) => resolve(result), "image/png"));
-    if (!blob) throw new Error("A slide could not be turned into a PNG.");
+    const blob = await encode(await rasterize(render(slide, index), format), type);
 
     // Numbered so they sort in deck order in any file browser.
-    const name = `${String(index + 1).padStart(2, "0")}-${slugify(slide.title)}.png`;
+    const name = `${String(index + 1).padStart(2, "0")}-${slugify(slide.title)}.${type.extension}`;
     files.push({ name, bytes: new Uint8Array(await blob.arrayBuffer()) });
   }
 

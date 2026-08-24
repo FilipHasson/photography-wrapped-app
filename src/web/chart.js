@@ -1028,6 +1028,69 @@ function drawColumns(root, plot, slide, theme, L) {
  * five stars across a fifth of a slide are specks, and five stars across a
  * whole one are stars.
  */
+/**
+ * Cards you can see the slide through.
+ *
+ * A verdict card used to be a flat panel in `plane`, which is a colour barely
+ * a step off the paper — so on a flat backdrop it was a rectangle you had to
+ * look for, and over blobs or rings it was a hole punched through them. Glass
+ * fixes both: the fill fades down the card so the ground carries on underneath
+ * it, and the *edge* does the work of saying where the card is.
+ *
+ * Two gradients for the whole slide, not two per card. `objectBoundingBox` is
+ * the default for a gradient, so one vertical ramp fits every card whatever its
+ * size — and the ids carry the slide's own id because the contact sheet puts
+ * every slide in one document, where two `url(#glass)` would both find the
+ * first one.
+ *
+ * Both ramps are palette roles rather than a white wash: `plane` is the card
+ * the reader chose, and `surface` is lighter than it in both modes, which is
+ * what lets one highlight work in light and dark without asking which it is.
+ * Neither adds a well to "Colours here" — a `url(...)` is not a hex, so
+ * `coloursIn` skips it, and both roles are in Style already.
+ */
+function glassOf(root, slide, theme) {
+  const body = `wdis-glass-${slide.id}`;
+  const rim = `wdis-rim-${slide.id}`;
+
+  root.append(
+    el(
+      "defs",
+      {},
+      el(
+        "linearGradient",
+        { id: body, x1: 0, y1: 0, x2: 0, y2: 1 },
+        el("stop", { offset: "0", "stop-color": theme.plane, "stop-opacity": 0.88 }),
+        el("stop", { offset: "1", "stop-color": theme.plane, "stop-opacity": 0.34 }),
+      ),
+      el(
+        "linearGradient",
+        { id: rim, x1: 0, y1: 0, x2: 0, y2: 1 },
+        el("stop", { offset: "0", "stop-color": theme.surface, "stop-opacity": 0.95 }),
+        el("stop", { offset: "0.55", "stop-color": theme.surface, "stop-opacity": 0 }),
+      ),
+    ),
+  );
+
+  return (box, title) => {
+    const { x, y, width, height, rx = 14 } = box;
+    root.append(
+      titled(el("rect", { x, y, width, height, rx, fill: `url(#${body})`, stroke: theme.grid }), title),
+      // Inside the border rather than on it: light catches the near edge of a
+      // pane of glass, it does not outline it.
+      el("rect", {
+        x: x + 1,
+        y: y + 1,
+        width: Math.max(0, width - 2),
+        height: Math.max(0, height - 2),
+        rx: Math.max(0, rx - 1),
+        fill: "none",
+        stroke: `url(#${rim})`,
+      }),
+    );
+  };
+}
+
 function drawVerdictRows(root, plot, slide, theme, L) {
   const n = slide.cards.length;
   const gap = Math.max(8, L.value * 0.5);
@@ -1039,6 +1102,22 @@ function drawVerdictRows(root, plot, slide, theme, L) {
   const rowH = unit;
   const restH = unit * REST;
 
+  /**
+   * When every card is a row of stars, the stars *are* the label.
+   *
+   * "3 stars" beside three drawn stars is the same fact twice, and the words
+   * were there for a reason that no longer holds: four small stars and five
+   * small stars are hard to tell apart, so they were named. Drawing them large
+   * is the other fix, and it is the better one — a rating is a symbol everybody
+   * already reads, and it is the one thing on this slide that does not need
+   * translating. The words are still on the hover and in the table, which is
+   * where a detail that is not the headline belongs.
+   *
+   * A thumb keeps its words. Up and down is a gesture; "Picked" and "Rejected"
+   * is what the gesture *means*, and no amount of size supplies that.
+   */
+  const glyphSpeaks = slide.cards.every((card) => card.glyph.kind === "stars");
+
   const widest = Math.max(
     ...slide.cards.map((card) => (card.glyph.kind === "stars" ? card.glyph.count : 1)),
   );
@@ -1047,38 +1126,33 @@ function drawVerdictRows(root, plot, slide, theme, L) {
   const px = (value) => Math.round(value);
   const pad = px(L.value * 0.8);
   // A third of the width for the glyphs, or half the row's height per star —
-  // whichever runs out first.
-  const glyph = px(Math.min(rowH * 0.52, (plot.w * 0.34) / span));
-  const valueSize = px(Math.min(L.tileValue * 0.75, rowH * 0.46));
+  // whichever runs out first. With the words gone there is half a row to spend,
+  // so the stars and the number take it.
+  const glyph = px(
+    glyphSpeaks ? Math.min(rowH * 0.66, (plot.w * 0.54) / span) : Math.min(rowH * 0.52, (plot.w * 0.34) / span),
+  );
+  const valueSize = px(
+    glyphSpeaks ? Math.min(L.tileValue * 1.2, rowH * 0.62) : Math.min(L.tileValue * 0.75, rowH * 0.46),
+  );
   const labelSize = px(Math.min(L.value, rowH * 0.28));
   const noteSize = px(Math.min(L.axis, rowH * 0.24));
 
   const glyphW = glyph * span;
   const valueW = Math.max(...slide.cards.map((card) => measure(card.value, valueSize, 600)));
 
-  const valueRight = plot.x + pad + glyphW + pad + valueW;
+  // The stars start at one end of the row and the count ends at the other, so
+  // the two things worth reading are the two things you land on.
+  const valueRight = glyphSpeaks ? plot.x + plot.w - pad : plot.x + pad + glyphW + pad + valueW;
   const textX = valueRight + pad;
   const textW = Math.max(40, plot.x + plot.w - pad - textX);
+  const pane = glassOf(root, slide, theme);
 
   slide.cards.forEach((card, i) => {
     const y = plot.y + i * (rowH + gap);
     const mid = y + rowH / 2;
     const colour = card.glyph.kind === "thumb" && !card.glyph.up ? theme.series[7] : theme.series[0];
 
-    root.append(
-      titled(
-        el("rect", {
-          x: plot.x,
-          y,
-          width: plot.w,
-          height: rowH,
-          rx: 14,
-          fill: theme.plane,
-          stroke: theme.grid,
-        }),
-        `${card.label}: ${card.value} — ${card.note}`,
-      ),
-    );
+    pane({ x: plot.x, y, width: plot.w, height: rowH }, `${card.label}: ${card.value} — ${card.note}`);
 
     // Left-aligned, not centred in the column: the row of stars is then a bar
     // whose length is the rating, and one star no longer floats in the middle
@@ -1099,19 +1173,21 @@ function drawVerdictRows(root, plot, slide, theme, L) {
         anchor: "end",
       }),
     );
-    root.append(
-      text(ellipsize(card.label, textW, labelSize, 600), textX, mid - noteSize * 0.55, {
-        size: labelSize,
-        weight: 600,
-        fill: theme.ink,
-      }),
-    );
-    root.append(
-      text(ellipsize(card.note, textW, noteSize), textX, mid - noteSize * 0.55 + noteSize * 1.5, {
-        size: noteSize,
-        fill: theme.muted,
-      }),
-    );
+    if (!glyphSpeaks) {
+      root.append(
+        text(ellipsize(card.label, textW, labelSize, 600), textX, mid - noteSize * 0.55, {
+          size: labelSize,
+          weight: 600,
+          fill: theme.ink,
+        }),
+      );
+      root.append(
+        text(ellipsize(card.note, textW, noteSize), textX, mid - noteSize * 0.55 + noteSize * 1.5, {
+          size: noteSize,
+          fill: theme.muted,
+        }),
+      );
+    }
   });
 
   // The undecided, underneath, in neutral ink: no judgement was ever made.
@@ -1121,22 +1197,28 @@ function drawVerdictRows(root, plot, slide, theme, L) {
   const restLabel = px(Math.min(labelSize, restH * 0.3));
   const restNote = px(Math.min(noteSize, restH * 0.26));
 
-  root.append(
-    titled(
-      el("rect", {
-        x: plot.x,
-        y: restY,
-        width: plot.w,
-        height: restH,
-        rx: 14,
-        fill: theme.plane,
-        stroke: theme.grid,
-      }),
-      `${slide.rest.label}: ${slide.rest.value} — ${slide.rest.note}`,
-    ),
+  /**
+   * The row underneath keeps its words — it has no glyph to speak for it — and
+   * therefore cannot borrow the cards' columns.
+   *
+   * When the glyph is doing the talking above, the number goes to the *right*
+   * edge of a card and there is nothing after it. This row still has two lines
+   * of text to place, so it puts its number back on the left and reads across,
+   * exactly as the two-card layout does. Sharing `valueRight` here is what put
+   * "Never given a star" off the side of the slide.
+   */
+  const restRight = glyphSpeaks
+    ? plot.x + pad + measure(slide.rest.value, restValue, 600)
+    : valueRight;
+  const restTextX = restRight + pad;
+  const restTextW = Math.max(40, plot.x + plot.w - pad - restTextX);
+
+  pane(
+    { x: plot.x, y: restY, width: plot.w, height: restH },
+    `${slide.rest.label}: ${slide.rest.value} — ${slide.rest.note}`,
   );
   root.append(
-    text(slide.rest.value, valueRight, restMid + restValue * 0.36, {
+    text(slide.rest.value, restRight, restMid + restValue * 0.36, {
       size: restValue,
       weight: 600,
       fill: theme.ink,
@@ -1144,14 +1226,14 @@ function drawVerdictRows(root, plot, slide, theme, L) {
     }),
   );
   root.append(
-    text(ellipsize(slide.rest.label, textW, restLabel, 600), textX, restMid - restNote * 0.55, {
+    text(ellipsize(slide.rest.label, restTextW, restLabel, 600), restTextX, restMid - restNote * 0.55, {
       size: restLabel,
       weight: 600,
       fill: theme.ink2,
     }),
   );
   root.append(
-    text(ellipsize(slide.rest.note, textW, restNote), textX, restMid - restNote * 0.55 + restNote * 1.5, {
+    text(ellipsize(slide.rest.note, restTextW, restNote), restTextX, restMid - restNote * 0.55 + restNote * 1.5, {
       size: restNote,
       fill: theme.muted,
     }),
@@ -1337,25 +1419,14 @@ function drawVerdict(root, plot, slide, theme, L) {
   const paint = (glyph) =>
     glyph.kind === "thumb" && !glyph.up ? theme.series[7] : theme.series[0];
 
+  const pane = glassOf(root, slide, theme);
+
   slide.cards.forEach((card, i) => {
     const x = plot.x + i * (cardW + gap);
     const cx = x + cardW / 2;
     const colour = paint(card.glyph);
 
-    root.append(
-      titled(
-        el("rect", {
-          x,
-          y: top,
-          width: cardW,
-          height: cardH,
-          rx: 14,
-          fill: theme.plane,
-          stroke: theme.grid,
-        }),
-        `${card.label}: ${card.value} — ${card.note}`,
-      ),
-    );
+    pane({ x, y: top, width: cardW, height: cardH }, `${card.label}: ${card.value} — ${card.note}`);
 
     if (card.glyph.kind === "thumb") {
       thumb(root, cx - glyph / 2, top + padY, glyph, card.glyph.up, colour, `${card.label}: ${card.value}`);
@@ -1393,19 +1464,9 @@ function drawVerdict(root, plot, slide, theme, L) {
   const textX = plot.x + L.value * 1.6 + numberW;
   const textW = Math.max(40, plot.x + plot.w - L.value - textX);
 
-  root.append(
-    titled(
-      el("rect", {
-        x: plot.x,
-        y: restY,
-        width: plot.w,
-        height: restH,
-        rx: 14,
-        fill: theme.plane,
-        stroke: theme.grid,
-      }),
-      `${slide.rest.label}: ${slide.rest.value} — ${slide.rest.note}`,
-    ),
+  pane(
+    { x: plot.x, y: restY, width: plot.w, height: restH },
+    `${slide.rest.label}: ${slide.rest.value} — ${slide.rest.note}`,
   );
 
   root.append(

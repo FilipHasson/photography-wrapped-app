@@ -129,10 +129,12 @@ export interface AppConfig {
    * "roughly how many?", and all it claims is that those frames were shot and
    * then thrown out.
    *
-   * It carries no date, and that decides where it may be spent: an all-time
-   * deck is not asking about a period either, so the number is added there and
-   * nowhere else. Putting it in a deck of 2025 would date a decade of deletions
-   * to 2025. `computeStats` is the one place that decides.
+   * It carries no date, so it does not narrow with the range: a deck of 2025
+   * carries the same figure an all-time deck does. That is the reader's call —
+   * they are the only person who knows what those frames were, and a number
+   * that vanished whenever you looked at a single year is a setting nobody can
+   * find the effect of. `computeStats` reads it in exactly one place, and the
+   * table on both slides that use it says which rows it is in.
    */
   deletedBefore: number;
   /** Optional, and only ever used to title the deck ("Filip's 2025"). */
@@ -289,14 +291,20 @@ export function coerceBackdrop(value: unknown): Backdrop {
 }
 
 /**
- * A count somebody typed.
+ * A count somebody typed, in whatever way people type counts.
  *
- * Floored at zero and rounded down, because a negative photograph is not one
- * and neither is two thirds of one. The ceiling exists only so a slipped
+ * The separators go first. "10,218" and "10 218" are the same answer as 10218,
+ * and `Number` reads all three as `NaN` — which would land here as nought and
+ * look exactly like the setting refusing to save. That is not hypothetical:
+ * this field started as an `<input type="number">`, which reports an empty
+ * string for anything it dislikes and throws the typing away without a word.
+ *
+ * Then floored at zero and rounded down, because a negative photograph is not
+ * one and neither is two thirds of one. The ceiling exists only so a slipped
  * keypress cannot put a nine-digit number on the opening slide.
  */
 export function coerceCount(value: unknown): number {
-  const n = Number(value);
+  const n = typeof value === "string" ? Number(value.replace(/[\s,_']/g, "")) : Number(value);
   return Number.isFinite(n) && n > 0 ? Math.min(Math.trunc(n), 100_000_000) : 0;
 }
 

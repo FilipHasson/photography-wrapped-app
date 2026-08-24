@@ -193,7 +193,9 @@ A few things the slides do rather than say:
   abroad should not decide what "after dark" means for a year shot at home.
 - **Streaks is a wall of days**, one square each: blue where you shot, blank
   where you did not, a lighter blue through your longest run and red through the
-  longest silence. Days either side of the range are drawn as empty outlines, so
+  longest silence — though the headline is always the run, never the silence:
+  the gap is the widest band of empty squares on the wall and a row in the
+  table, which is quite enough said. Days either side of the range are drawn as empty outlines, so
   a part-week at each end reads as "not asked about" rather than as a gap. It
   packs itself into as many rows as make the squares biggest and labels where
   each year starts; a setting gives every year a row of its own instead, and
@@ -204,9 +206,9 @@ A few things the slides do rather than say:
   time it sweeps, and the slide says how long it has been watching. Everything
   deleted *before* the first sweep is gone without trace, so **Settings →
   Photographs deleted before indexing** is a number you supply: it joins the
-  all-time total and counts as rejects, since a frame you took and then threw
-  out is a decision and it is not "keep". It carries no date, so an all-time
-  deck is the only one that can use it.
+  total and counts as rejects, since a frame you took and then threw out is a
+  decision and it is not "keep". It carries no date, so it is the same figure
+  whatever range you build — the table on both slides says which rows it is in.
 - **Day of the week starts where you do** — Monday, Sunday or Saturday — and the
   weekend can be given a colour of its own.
 - **A lens used with a teleconverter is one row, not three.** The bar splits
@@ -214,8 +216,15 @@ A few things the slides do rather than say:
   pairings, and inside each month of the gear-over-time chart.
 - **Two or three cameras stand up as columns** instead of lying down as short
   bars in an empty frame.
-- **Keepers carries a figure for everything never rated**, which is usually most
-  of a library and would flatten the five star columns if it were a sixth.
+- **Keepers is stars and counts, and no words at all.** A row of three stars
+  says "3 stars" better than the phrase does once it is drawn large, and large
+  is what the room freed by dropping the words pays for. The words are still on
+  the hover and in the table. It also carries a figure for everything never
+  rated, which is usually most of a library and would flatten the five star
+  columns if it were a sixth.
+- **Culling and keepers are drawn on glass** — the card fades down its own
+  height so a generated backdrop carries on underneath it, and the lit top edge
+  is what says where the card is.
 
 | Key | Does |
 |---|---|
@@ -291,11 +300,16 @@ monthly report becomes one big month, a year becomes twelve small ones. The map
 frames itself on your photographs rather than on the world, so a year spent
 within fifty miles of home is not four dots in an empty rectangle.
 
-- **Slide (PNG)** — the slide you are on, at twice the format size
-  (9:16 comes out 2160×3840).
+- **Slide** — the slide you are on, at twice the format size (9:16 comes out
+  2160×3840).
 - **Deck (PDF)** — every slide, one page each, at the format's aspect ratio.
-- **Deck (PNGs)** — a ZIP with one numbered PNG per slide, ready to post one at
-  a time.
+- **Deck** — a ZIP with one numbered picture per slide, ready to post one at a
+  time.
+
+**PNG or JPEG** is a chip beside the shape, and it is one choice for both — the
+buttons rename themselves so it is never in doubt which you are about to get.
+PNG is lossless and is what a page of flat colour wants; JPEG is what most
+places that take an upload want, and it is under half the size.
 
 Both are rendered from the slides themselves rather than from the screen, so
 what you save is what you saw, at full resolution, in the theme you are using.

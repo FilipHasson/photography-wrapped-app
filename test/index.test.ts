@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Db } from "../src/core/db.ts";
-import { defaultConfig, defaultSource, type AppConfig } from "../src/core/config.ts";
+import { coerceCount, defaultConfig, defaultSource, type AppConfig } from "../src/core/config.ts";
 import { indexSource, indexOverview } from "../src/index/source.ts";
 import { rebuildPrimaries } from "../src/index/dedupe.ts";
 import { computeStats, gearCatalog } from "../src/stats/aggregate.ts";
@@ -463,12 +463,13 @@ describe("what leaves the library", () => {
  * The other half of the same question, and the half nothing on disk can answer.
  *
  * What left the library *since* the first sweep is counted at the sweep. What
- * left before it is gone without trace, so it is a number the reader supplies —
- * and an undated one, which is the whole reason `computeStats` guards it: it
- * may only be added to a deck that is not asking about a period.
+ * left before it is gone without trace, so it is a number the reader supplies.
+ * It has no date, and it is counted in every range regardless — which is the
+ * reader's call, and means a deck of one year carries the same figure an
+ * all-time deck does.
  */
 describe("what left before anyone was watching", () => {
-  test("an all-time deck counts it, in the total and as rejects", () => {
+  test("is in the total and counted as rejects", () => {
     const stats = computeStats(db, allTime(db), { includeVideo: true, deletedBefore: 500 });
 
     assert.equal(stats.totals.deletedBefore, 500);
@@ -478,16 +479,41 @@ describe("what left before anyone was watching", () => {
     assert.equal(stats.totals.shots, EXPECTED.shots);
   });
 
-  test("a deck of one year does not, because the number has no year", () => {
+  test("does not narrow with the range, because the number has no date", () => {
     const range = resolveRange({ kind: "year", year: 2025 }, { firstDay: null, lastDay: null }, fixtureNow());
     const stats = computeStats(db, range, { includeVideo: true, deletedBefore: 500 });
 
-    assert.equal(stats.totals.deletedBefore, 0);
-    assert.equal(stats.culling.deletedBefore, 0);
+    assert.equal(stats.totals.deletedBefore, 500);
+    assert.equal(stats.culling.deletedBefore, 500);
+    // The frames that *are* dated still narrow, which is the whole point of
+    // asking for a year.
+    assert.equal(stats.totals.shots, EXPECTED.shots2025);
   });
 
   test("nonsense is nought rather than a negative photograph", () => {
     const stats = computeStats(db, allTime(db), { includeVideo: true, deletedBefore: -20 });
     assert.equal(stats.totals.deletedBefore, 0);
+  });
+
+  /**
+   * The field is a text box on purpose. A number input reports an empty string
+   * for anything it dislikes — a typed thousands separator included — so the
+   * count came back as nought and looked exactly like the setting refusing to
+   * save. Reading it is this function's job instead.
+   */
+  test("a count is read the way people write one", () => {
+    assert.equal(coerceCount("10,218"), 10218);
+    assert.equal(coerceCount("10 218"), 10218);
+    assert.equal(coerceCount("10218"), 10218);
+    assert.equal(coerceCount(10218), 10218);
+
+    // And nothing typed still means nothing.
+    assert.equal(coerceCount(""), 0);
+    assert.equal(coerceCount("  "), 0);
+    assert.equal(coerceCount("lots"), 0);
+    assert.equal(coerceCount(null), 0);
+    assert.equal(coerceCount(undefined), 0);
+    assert.equal(coerceCount("-4"), 0);
+    assert.equal(coerceCount("12.7"), 12);
   });
 });

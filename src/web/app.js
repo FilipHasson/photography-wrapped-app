@@ -291,8 +291,9 @@ function renderSettings() {
   $("setting-merge").checked = config.mergeRawJpegPairs;
   $("setting-video").checked = config.includeVideo;
   // Empty rather than "0", so the field reads as a question nobody has answered
-  // rather than as an answer of none.
-  $("setting-deleted").value = config.deletedBefore > 0 ? String(config.deletedBefore) : "";
+  // rather than as an answer of none — and written back with its separators, so
+  // what the reader sees after saving is what they would have typed.
+  $("setting-deleted").value = config.deletedBefore > 0 ? num(config.deletedBefore) : "";
 
   const place = config.location;
   $("location-label").value = place?.label ?? "";
@@ -804,7 +805,18 @@ async function removeSource(source) {
   }
 }
 
+/**
+ * The library settings, saved the moment one of them moves.
+ *
+ * `saved` is the count of deleted photographs as it stood before the request,
+ * because the one setting here whose effect is not visible on this page is that
+ * one — a checkbox shows its own state and a name appears on the title slide,
+ * but a number that changes the deck two screens away needs saying back. The
+ * same argument as `saveLocation`: seeing it repeated is how you know it took.
+ */
 async function saveSettings() {
+  const before = store.state.config.deletedBefore ?? 0;
+
   try {
     await api("/api/config", {
       method: "POST",
@@ -816,6 +828,15 @@ async function saveSettings() {
       },
     });
     await refreshState();
+
+    const after = store.state.config.deletedBefore ?? 0;
+    if (after !== before) {
+      toast(
+        after === 0
+          ? "Deleted photographs cleared."
+          : `${num(after)} deleted photographs saved — in the total, and rejects on culling.`,
+      );
+    }
   } catch (err) {
     toast(err.message, true);
   }

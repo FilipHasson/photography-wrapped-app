@@ -1077,25 +1077,33 @@ describe("which kinds of milestone get drawn", () => {
  * exposure behind them.
  */
 describe("photographs deleted before indexing", () => {
-  const withDeleted = (deletedBefore: number, culling: Partial<DeckStats["culling"]> = {}) => {
+  const withDeleted = (
+    deletedBefore: number,
+    culling: Partial<DeckStats["culling"]> = {},
+    rest: Partial<DeckStats> = {},
+  ) => {
     const base = statsWith({});
     return statsWith({
       totals: { ...base.totals, deletedBefore },
       culling: { ...base.culling, deletedBefore, ...culling },
+      ...rest,
     });
   };
 
   test("the opening total counts them, and nothing else does", () => {
-    const slide = findSlide(buildDeck(withDeleted(40)).slides, "opening");
+    const stats = withDeleted(40, {}, { busiestDay: { day: 20250612, shots: 31 } });
+    const slide = findSlide(buildDeck(stats).slides, "opening");
     assert.ok(slide && slide.kind === "hero");
 
     assert.equal(slide.value, "140");
     assert.equal(slide.headline, "140 photographs");
 
-    // The rate is per *day*, and these frames have no day. 100 in the library
-    // over 20 days out is still five a day — folding the deleted ones in would
+    // Every tile beside it is still counted. These frames have no day, so they
+    // are in neither the days out nor the busiest one — folding them in would
     // date them all to days the reader happened to be shooting.
-    assert.equal(slide.tiles.find((tile) => tile.label === "Busiest average")?.value, "5/day");
+    const tile = (label: string) => slide.tiles.find((one) => one.label === label);
+    assert.equal(tile("Days out shooting")?.value, "20");
+    assert.equal(tile("Busiest day")?.value, "31");
   });
 
   test("the table says how that total is made up", () => {
@@ -1165,5 +1173,46 @@ describe("photographs deleted before indexing", () => {
 
   test("without them, a library with no flags has no culling slide", () => {
     assert.equal(findSlide(buildDeck(statsWith({})).slides, "culling"), undefined);
+  });
+});
+
+/**
+ * The tile beside the total.
+ *
+ * It used to be the mean over the days the reader was out, which is the shape
+ * of a habit rather than a fact anybody recognises. The day you came home with
+ * three thousand frames is a day you remember, and it dates itself.
+ */
+describe("the busiest day on the opening slide", () => {
+  const openingOf = (overrides: Partial<DeckStats>) =>
+    findSlide(buildDeck(statsWith(overrides)).slides, "opening");
+
+  test("is the count and the date it happened", () => {
+    const slide = openingOf({ busiestDay: { day: 20250612, shots: 3214 } });
+    assert.ok(slide && slide.kind === "hero");
+
+    const tile = slide.tiles.find((one) => one.label === "Busiest day");
+    assert.equal(tile?.value, "3,214");
+    assert.equal(tile?.note, "12 Jun 2025");
+    assert.ok(!slide.tiles.some((one) => one.label === "Busiest average"), "the mean is gone");
+  });
+
+  test("the same day headlines the calendar, which is a different slide", () => {
+    const deck = buildDeck(statsWith({
+      busiestDay: { day: 20250612, shots: 3214 },
+      daily: [{ day: 20250612, shots: 3214 }],
+    }));
+    assert.ok(findSlide(deck.slides, "calendar")?.headline?.startsWith("12 Jun 2025"));
+  });
+
+  test("a range with no busiest day simply has one tile fewer", () => {
+    const slide = openingOf({ busiestDay: null });
+    assert.ok(slide && slide.kind === "hero");
+    assert.ok(!slide.tiles.some((one) => one.label === "Busiest day"));
+    // And the ones either side of it are still in the order they were.
+    assert.deepEqual(
+      slide.tiles.map((one) => one.label),
+      ["Days out shooting", "Cameras", "On disk"],
+    );
   });
 });

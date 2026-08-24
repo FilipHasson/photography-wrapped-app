@@ -395,8 +395,6 @@ export async function handleApi(
 
       const stats = computeStats(ctx.db, range, {
         includeVideo: ctx.config.includeVideo,
-        // Spent on an all-time deck and nowhere else; `computeStats` decides,
-        // because it is the only place that has the range in its hand.
         deletedBefore: ctx.config.deletedBefore,
         excluded: ctx.config.excluded,
         naming: ctx.config.naming,
