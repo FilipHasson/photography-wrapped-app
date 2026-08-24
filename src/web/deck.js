@@ -54,13 +54,13 @@ export function createDeck({ onExit, onToast, onExclude, onSetting, onColours, p
     $("deck-sheet-toggle").setAttribute("aria-pressed", String(sheetOpen));
     if (sheetOpen) {
       table.hidden = true;
-      $("deck-settings").hidden = true;
+      $("deck-side").hidden = true;
       renderFormats();
       renderSheet();
       return;
     }
 
-    $("deck-settings").hidden = false;
+    $("deck-side").hidden = false;
     stage.dataset.orientation = format.width >= format.height ? "landscape" : "portrait";
     // The window is the shape of the slide and no larger: changing the aspect
     // moves everything around it rather than leaving a letterboxed gap.
@@ -119,6 +119,10 @@ export function createDeck({ onExit, onToast, onExclude, onSetting, onColours, p
     const panel = $("slide-settings");
     const current = slide();
     const settings = current?.settings ?? [];
+
+    // The card goes away when the slide offers nothing; Style stays, because it
+    // is about the deck rather than about whichever slide is on screen.
+    $("deck-settings").hidden = settings.length === 0;
 
     panel.replaceChildren(
       ...settings.flatMap((setting) => {

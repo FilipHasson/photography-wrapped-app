@@ -11,6 +11,7 @@
 import { createDeck } from "./deck.js";
 import { colourAt, currentMode, paletteProblems, themeFor } from "./theme.js";
 import { colourPicker } from "./picker.js";
+import { SCHEMES, schemePalette } from "./schemes.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -364,32 +365,116 @@ let everyColour = false;
  */
 function rolesOnShow(roles, theme) {
   if (everyColour || slideColours === null) return roles;
-  const used = roles.filter((role) => slideColours.has((colourAt(theme, role.id) ?? "").toLowerCase()));
-  // A slide drawn only in page tokens and generated colours has none of its own
-  // to offer, and an empty panel reads as broken rather than as an answer.
-  return used.length === 0 ? roles : used;
+  // A slide that encodes nothing — the tiles, the map — comes back empty, and
+  // the card says so rather than falling back to the whole palette, which would
+  // be the panel claiming the slide uses colours it does not.
+  return roles.filter((role) => slideColours.has((colourAt(theme, role.id) ?? "").toLowerCase()));
+}
+
+/**
+ * Building a scheme is a search, so it is built once and remembered.
+ *
+ * `renderSchemes` asks every scheme for its palette on every paint, to work out
+ * which chip is lit. Doing that search six times a frame would be six thousand
+ * OKLab distances for a row of buttons.
+ */
+const SCHEME_CACHE = new Map();
+function paletteOf(id) {
+  let palette = SCHEME_CACHE.get(id);
+  if (!palette) {
+    palette = schemePalette(id);
+    SCHEME_CACHE.set(id, palette);
+  }
+  return palette;
+}
+
+const sameSide = (a, b) => {
+  const left = Object.entries(a ?? {}).sort();
+  const right = Object.entries(b ?? {}).sort();
+  return JSON.stringify(left) === JSON.stringify(right);
+};
+
+/**
+ * Which scheme the deck is wearing, if any.
+ *
+ * Nothing is lit once a single well has been moved, and that is the honest
+ * answer: the deck is no longer that scheme, it is the reader's. Picking the
+ * chip again puts it back.
+ */
+function currentScheme() {
+  const palette = store.state.config?.palette ?? { light: {}, dark: {} };
+  for (const scheme of SCHEMES) {
+    const candidate = paletteOf(scheme.id);
+    if (sameSide(candidate.light, palette.light) && sameSide(candidate.dark, palette.dark)) {
+      return scheme.id;
+    }
+  }
+  return null;
+}
+
+function renderSchemes() {
+  const current = currentScheme();
+
+  $("scheme-chips").replaceChildren(
+    ...SCHEMES.map((scheme) =>
+      el(
+        "button",
+        {
+          type: "button",
+          class: scheme.id === current ? "chip is-current" : "chip",
+          title: scheme.note ?? scheme.name,
+          "aria-pressed": String(scheme.id === current),
+          onclick: () => void applyScheme(scheme.id),
+        },
+        el("span", { text: scheme.name }),
+      ),
+    ),
+  );
+}
+
+async function applyScheme(id) {
+  closeColourPicker(false);
+  try {
+    // Both sides at once: a scheme is a character, and half of one is a deck
+    // that changes personality when the reader turns the lights off.
+    await api("/api/config", { method: "POST", body: { palette: paletteOf(id) } });
+    await refreshState();
+    deck.repaint();
+    renderColours();
+    renderSchemes();
+  } catch (err) {
+    toast(err.message, true);
+  }
 }
 
 function renderColours() {
+  renderSchemes();
   const all = store.state.paletteRoles ?? [];
   const override = store.state.config.palette?.[colourMode] ?? {};
   const theme = themeFor(colourMode, override);
-  const roles = rolesOnShow(all, theme);
 
   for (const mode of ["light", "dark"]) {
     $(`colour-${mode}`).setAttribute("aria-pressed", String(mode === colourMode));
   }
   $("colour-all").setAttribute("aria-pressed", String(everyColour));
-  $("colour-all").className = everyColour ? "chip is-current" : "chip";
-  $("colour-all").hidden = roles.length === all.length && !everyColour;
+  $("colour-all").className = everyColour ? "chip colour-all is-current" : "chip colour-all";
   $("colour-reset").disabled = Object.keys(override).length === 0;
 
   const problems = paletteProblems(theme);
   const trouble = new Map();
   for (const problem of problems) trouble.set(problem.role, problem.severity);
 
-  $("colour-wells").replaceChildren(
-    ...roles.map((role) => {
+  /**
+   * Two lists, in two cards, because they answer two questions.
+   *
+   * The paper and the writing on it are the same on every slide, so they belong
+   * with the deck and stay put. What a chart *encodes* with follows the slide.
+   * One list held both, and on the slides with the most colours in them the
+   * background ended up scrolled off the top of a card nobody realised scrolled
+   * — which is exactly the complaint that produced this split.
+   */
+  const wells = (roles) =>
+    roles.map((role) => {
       const hex = colourAt(theme, role.id) ?? "#000000";
       const value = el("span", { class: "hint", text: role.id in override ? `${hex} · yours` : hex });
 
@@ -423,7 +508,19 @@ function renderColours() {
         return el("div", { class: "colour-slot" }, well, livePicker.picker.node);
       }
       return well;
-    }),
+    });
+
+  const page = all.filter((role) => role.group === "page");
+  const data = all.filter((role) => role.group === "data");
+  const here = rolesOnShow(data, theme);
+
+  // Page roles are few and always relevant, so they are never filtered away —
+  // the background is on every slide by definition.
+  $("page-wells").replaceChildren(...wells(page));
+  $("colour-wells").replaceChildren(
+    ...(here.length > 0
+      ? wells(here)
+      : [el("span", { class: "hint", text: "Nothing here takes a colour of its own." })]),
   );
 
   // Named, never blocked. It is the reader's deck, and a palette that trips a
@@ -433,7 +530,7 @@ function renderColours() {
   $("colour-problems").hidden = problems.length === 0;
   // Named where it happened. Four lines all reading "2.1:1 against the light
   // background" are four lines nobody can act on.
-  const named = new Map(roles.map((role) => [role.id, role.label]));
+  const named = new Map(all.map((role) => [role.id, role.label]));
   $("colour-problems").replaceChildren(
     ...problems.map((problem) =>
       el("span", {
@@ -527,6 +624,7 @@ async function saveColour(role, hex) {
 
 async function resetColours() {
   await savePalette({});
+  renderSchemes();
 }
 
 async function savePalette(side) {

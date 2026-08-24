@@ -389,6 +389,19 @@ main {
   gap: 16px;
   align-items: start;
 }
+.deck-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* The two cards scroll together: "every colour" is nineteen wells, and a
+     column taller than the slide it belongs beside is a column that pushes the
+     slide off the screen. */
+  max-block-size: 78vh;
+  overflow-y: auto;
+}
+.deck-side[hidden] {
+  display: none;
+}
 .deck-data,
 .deck-settings {
   background: var(--surface);
@@ -405,10 +418,15 @@ main {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  /* "Every colour" is nineteen wells. The column scrolls rather than growing
-     taller than the slide it belongs beside. */
-  max-block-size: 78vh;
-  overflow-y: auto;
+  flex: none;
+}
+/* The scheme chips sit tight: six of them in a 244px column need the room. */
+.scheme-chips {
+  gap: 5px;
+}
+.scheme-chips .chip {
+  padding: 4px 10px;
+  font-size: 0.82rem;
 }
 .deck-settings h3 {
   font-size: 0.82rem;
@@ -546,7 +564,7 @@ main {
 }
 .deck:fullscreen .deck-bar,
 .deck:fullscreen .deck-data,
-.deck:fullscreen .deck-settings {
+.deck:fullscreen .deck-side {
   display: none;
 }
 .deck:fullscreen .stage {

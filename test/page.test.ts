@@ -108,7 +108,7 @@ describe("the page", () => {
 
   test("the pieces of the colour picker are all there", () => {
     // Built from a template literal, so the check above cannot see them.
-    for (const id of ["colour-light", "colour-dark", "colour-reset", "colour-all", "colour-wells", "colour-problems"]) {
+    for (const id of ["colour-light", "colour-dark", "colour-reset", "colour-all", "colour-wells", "page-wells", "colour-problems", "scheme-chips"]) {
       assert.ok(html.includes(`id="${id}"`), `the colour picker has lost #${id}`);
     }
   });

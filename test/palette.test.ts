@@ -187,3 +187,71 @@ describe("lightness, chroma and hue", () => {
     }
   });
 });
+
+/**
+ * The ready-made schemes.
+ *
+ * Held to exactly the gate the shipped palette is held to, and for the same
+ * reason: a scheme that trips a warning is a scheme that teaches people to
+ * ignore warnings. They are derived rather than hand-picked precisely so this
+ * can be true of all of them at once — eight hues that survive protanopia *and*
+ * deuteranopia are hard to choose by eye, and there are twelve sets here.
+ */
+describe("the ready-made schemes", () => {
+  let SCHEMES: Array<{ id: string; name: string }>;
+  let schemePalette: (id: string) => { light: Record<string, string>; dark: Record<string, string> };
+
+  before(async () => {
+    // @ts-expect-error — untyped module, imported for its behaviour.
+    ({ SCHEMES, schemePalette } = await import("../src/web/schemes.js"));
+  });
+
+  test("every one of them raises nothing to act on, in both modes", () => {
+    for (const scheme of SCHEMES) {
+      const palette = schemePalette(scheme.id);
+      for (const mode of ["light", "dark"]) {
+        const theme = themeFor(mode, palette[mode as "light" | "dark"]);
+        const warnings = paletteProblems(theme).filter((problem) => problem.severity === "warn");
+        assert.deepEqual(
+          warnings.map((problem) => `${problem.role}: ${problem.text}`),
+          [],
+          `${scheme.name} (${mode})`,
+        );
+      }
+    }
+  });
+
+  test("they name only roles that exist", () => {
+    const known = new Set(PALETTE_ROLES.map((role) => role.id));
+    for (const scheme of SCHEMES) {
+      const palette = schemePalette(scheme.id);
+      for (const side of [palette.light, palette.dark]) {
+        for (const [id, hex] of Object.entries(side)) {
+          assert.ok(known.has(id), `${scheme.name} sets ${id}, which is not a role`);
+          assert.match(hex, /^#[0-9a-f]{6}$/, `${scheme.name}.${id} is ${hex}`);
+        }
+      }
+    }
+  });
+
+  test("as it comes is empty, not a copy of today's defaults", () => {
+    // A scheme that wrote the built-in palette into a config would freeze this
+    // version of it there, and that reader would never get an improvement to it.
+    const palette = schemePalette("default");
+    assert.deepEqual(palette, { light: {}, dark: {} });
+  });
+
+  test("every scheme sets a background and the writing that goes on it", () => {
+    // The pair is the point: a scheme that darkens the paper without lightening
+    // the ink is a slide nobody can read, and the derivation is what guarantees
+    // the two move together.
+    for (const scheme of SCHEMES.filter((entry) => entry.id !== "default")) {
+      const palette = schemePalette(scheme.id);
+      for (const mode of ["light", "dark"] as const) {
+        for (const role of ["surface", "ink", "ink2", "muted"]) {
+          assert.ok(role in palette[mode], `${scheme.name} (${mode}) leaves ${role} alone`);
+        }
+      }
+    }
+  });
+});

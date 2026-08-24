@@ -170,31 +170,51 @@ export interface Palette {
  * labelled "Series 1" that quietly repaints Picked, the working week and every
  * bar in the deck is a picker that lies.
  *
- * Not in here, and deliberately: `ink`, `muted`, `surface` and `plane`. Those
- * are the page's own tokens and the shortest path to a slide nobody can read.
+ * The surface and the text on it were held back at first, as the shortest path
+ * to a slide nobody can read. They are here now because a deck people post is a
+ * deck they want to look like theirs, and the readability is defended where it
+ * belongs instead: `paletteProblems` measures every text role against whatever
+ * background it has been given, and says so loudly. Warned, never blocked.
  */
-export const PALETTE_ROLES: ReadonlyArray<{ id: string; label: string; note?: string }> = [
-  { id: "series.0", label: "The main colour", note: "every single-series chart, Picked, the working week" },
-  { id: "series.1", label: "The weekend", note: "and the second lens on gear over time" },
-  { id: "series.2", label: "Series 3" },
-  { id: "series.3", label: "Series 4" },
-  { id: "series.4", label: "Series 5" },
-  { id: "series.5", label: "Series 6" },
-  { id: "series.6", label: "Series 7" },
-  { id: "series.7", label: "The negative", note: "the longest quiet spell, Rejected" },
+/**
+ * Two groups, and the split is what a role belongs to rather than where it is
+ * drawn. `page` roles are the same on every slide — the paper and the writing on
+ * it — so they belong with the deck. `data` roles are what a particular chart
+ * encodes with, and which of them matter changes as the reader moves through
+ * the deck. Mixing them put "Heat 3" between the background and the headline in
+ * one long list, which is how the panel came to be unusable on the slides with
+ * the most colours in them.
+ */
+export type PaletteGroup = "page" | "data";
+
+export const PALETTE_ROLES: ReadonlyArray<{ id: string; label: string; note?: string; group: PaletteGroup }> = [
+  { group: "page", id: "surface", label: "The background", note: "the slide itself, and what everything is read against" },
+  { group: "page", id: "ink", label: "Headlines", note: "the big number and the line under it" },
+  { group: "page", id: "ink2", label: "Body text", note: "labels beside a bar, names on a legend" },
+  { group: "page", id: "muted", label: "The quiet text", note: "axis numbers and the footnote" },
+  { group: "page", id: "plane", label: "Cards", note: "the blocks on keepers and culling" },
+  { group: "page", id: "track", label: "The rest of a bar", note: "behind the part that is filled" },
+  { group: "data", id: "series.0", label: "The main colour", note: "every single-series chart, Picked, the working week" },
+  { group: "data", id: "series.1", label: "The weekend", note: "and the second lens on gear over time" },
+  { group: "data", id: "series.2", label: "Series 3" },
+  { group: "data", id: "series.3", label: "Series 4" },
+  { group: "data", id: "series.4", label: "Series 5" },
+  { group: "data", id: "series.5", label: "Series 6" },
+  { group: "data", id: "series.6", label: "Series 7" },
+  { group: "data", id: "series.7", label: "The negative", note: "the longest quiet spell, Rejected" },
   // Numbered, because three wells all labelled "Heat" is three wells nobody
   // can tell apart — which is the exact complaint this panel exists to fix.
-  { id: "ramp.0", label: "Heat 1", note: "a day with barely anything on it" },
-  { id: "ramp.1", label: "Heat 2" },
-  { id: "ramp.2", label: "Heat 3" },
-  { id: "ramp.3", label: "Heat 4" },
-  { id: "ramp.4", label: "Heat 5", note: "your busiest days" },
-  { id: "rampEmpty", label: "A day off the calendar", note: "in the range, no photographs" },
-  { id: "blank", label: "Nothing happened", note: "a day on the wall you did not shoot" },
-  { id: "night", label: "The small hours", note: "one pole of the clock" },
-  { id: "day", label: "The middle of the day", note: "the other pole" },
-  { id: "grid", label: "Hairlines" },
-  { id: "axis", label: "Axes", note: "and the pooled \"Everything else\"" },
+  { group: "data", id: "ramp.0", label: "Heat 1", note: "a day with barely anything on it" },
+  { group: "data", id: "ramp.1", label: "Heat 2" },
+  { group: "data", id: "ramp.2", label: "Heat 3" },
+  { group: "data", id: "ramp.3", label: "Heat 4" },
+  { group: "data", id: "ramp.4", label: "Heat 5", note: "your busiest days" },
+  { group: "data", id: "rampEmpty", label: "A day off the calendar", note: "in the range, no photographs" },
+  { group: "data", id: "blank", label: "Nothing happened", note: "a day on the wall you did not shoot" },
+  { group: "data", id: "night", label: "The small hours", note: "one pole of the clock" },
+  { group: "data", id: "day", label: "The middle of the day", note: "the other pole" },
+  { group: "page", id: "grid", label: "Hairlines" },
+  { group: "page", id: "axis", label: "Axes", note: "and the pooled \"Everything else\"" },
 ];
 
 const ROLE_IDS = new Set(PALETTE_ROLES.map((role) => role.id));

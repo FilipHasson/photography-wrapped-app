@@ -167,29 +167,36 @@ function cacheFor(theme) {
   return cache;
 }
 
-function generate(step, theme, done) {
-  const dark = theme.mode === "dark";
-  // The dark band is narrower: a step that reads on paper disappears against a
-  // near-black surface. Both are the bands the documented slots were validated
-  // inside, so a generated colour is never lighter or darker than they are.
-  const band = dark ? { low: 0.5, high: 0.66 } : { low: 0.46, high: 0.74 };
+/**
+ * The lightness a series colour is allowed to live in.
+ *
+ * The dark band is narrower: a step that reads on paper disappears against a
+ * near-black surface. Both are the bands the documented slots were validated
+ * inside, so a generated colour is never lighter or darker than they are.
+ */
+const BAND = {
+  light: { low: 0.46, high: 0.74 },
+  dark: { low: 0.5, high: 0.66 },
+};
 
-  // Started well away from the eighth slot (a red at about 25°), then walked by
-  // the golden angle, which spreads any number of hues about as evenly as they
-  // can be spread.
-  const hue = (205 + step * 137.508) % 360;
+/** The golden angle: the one step that spreads any number of hues evenly. */
+const TURN = 137.508;
 
-  const previous = step === 0 ? theme.series[theme.series.length - 1] : done[step - 1];
+/**
+ * The best colour near a target hue, given what is already on the chart.
+ *
+ * Scored on how far it sits from the colour *before* it — in OKLab, through
+ * normal vision and through simulated protanopia, deuteranopia and tritanopia —
+ * with a small pull back towards the target hue so a run keeps walking the
+ * circle instead of clustering wherever separation happens to be easiest.
+ */
+function pick(hue, band, chroma, previous, others, shifts = [0, 12, -12, 24, -24, 36, -36]) {
   const against = oklabOf(previous);
-  // Everything already on the chart, so a new colour is not a near-repeat of
-  // one four segments away either — it matters less than the neighbour, and is
-  // weighted accordingly.
-  const others = [...theme.series, ...done].map((hex) => oklabOf(hex));
-
   let best = null;
-  for (const shift of [0, 12, -12, 24, -24, 36, -36]) {
+
+  for (const shift of shifts) {
     for (let L = band.low; L <= band.high + 0.001; L += 0.02) {
-      const hex = oklchToHex(L, 0.17, (hue + shift + 360) % 360, 0.1);
+      const hex = oklchToHex(L, chroma, (hue + shift + 360) % 360, 0.1);
       if (!hex) continue;
 
       // The worst case across normal vision and the three dichromacies: a pair
@@ -199,15 +206,54 @@ function generate(step, theme, done) {
         deltaE(lab, against),
         ...CVD.map((matrix) => deltaE(oklabOf(hex, matrix), oklabOf(previous, matrix))),
       );
-      // A small pull back towards the target hue, so the run keeps walking the
-      // circle instead of clustering wherever separation happens to be easiest.
-      const nearest = Math.min(...others.map((other) => deltaE(lab, other)));
+      const nearest = others.length === 0 ? 0 : Math.min(...others.map((other) => deltaE(lab, other)));
       const score = apart + nearest * 0.25 - Math.abs(shift) * 0.04;
       if (!best || score > best.score) best = { hex, score };
     }
   }
 
   return best?.hex ?? "#8a8a8a";
+}
+
+function generate(step, theme, done) {
+  // Started well away from the eighth slot (a red at about 25°).
+  const hue = (205 + step * TURN) % 360;
+  const previous = step === 0 ? theme.series[theme.series.length - 1] : done[step - 1];
+  // Everything already on the chart, so a new colour is not a near-repeat of
+  // one four segments away either — it matters less than the neighbour, and is
+  // weighted accordingly.
+  const others = [...theme.series, ...done].map((hex) => oklabOf(hex));
+
+  return pick(hue, BAND[theme.mode === "dark" ? "dark" : "light"], 0.17, previous, others);
+}
+
+/**
+ * A whole run of series colours from one starting hue.
+ *
+ * The same search the ninth lens gets, seeded rather than fixed, so a scheme
+ * can say where its palette begins and still be one nobody has to squint at:
+ * every adjacent pair is chosen to survive three kinds of colour blindness.
+ * Hand-picking eight hues that do that, twice per scheme, is how palettes end
+ * up shipping with a pair that reads as one.
+ */
+export function seriesRun(startHue, mode, chroma = 0.17, against = null, count = 8) {
+  const band = BAND[mode === "dark" ? "dark" : "light"];
+  // The first colour is chosen away from the *paper*, which is the one thing
+  // every slide draws it on. Picking it by formula instead put a scheme's whole
+  // run behind a grey: a hue that cannot hold the asked-for chroma at the middle
+  // of the band has no colour there at all, and everything after it was then
+  // scored against that grey.
+  const paper = against ?? (mode === "dark" ? DARK : LIGHT).surface;
+  // The seed keeps its hue exactly — no drift is allowed on the one colour that
+  // says what the scheme is. A shift of thirty degrees is nothing on the fifth
+  // series and the difference between a violet deck and a blue one here.
+  const run = [pick(startHue % 360, band, chroma, paper, [], [0])];
+
+  while (run.length < count) {
+    const hue = (startHue + run.length * TURN) % 360;
+    run.push(pick(hue, band, chroma, run[run.length - 1], run.map((hex) => oklabOf(hex))));
+  }
+  return run;
 }
 
 /**
@@ -317,6 +363,34 @@ export function paletteProblems(theme) {
     });
   }
 
+  /**
+   * Text against the background, and this one shouts.
+   *
+   * The background is the reader's to set, which is why it can be set to the
+   * colour of the writing on it. A faint *series* is recoverable — the table
+   * carries every value a chart does, which is the whole reason that view
+   * exists — but a headline nobody can read is a slide with nothing on it, and
+   * no table anywhere fixes that. So these are warnings rather than notes, and
+   * they are measured at the WCAG ratios for text rather than at the mark
+   * floor: 4.5 for the big type, 3 for what supports it.
+   */
+  for (const [role, floor, what] of [
+    ["ink", TEXT_MIN, "The headline"],
+    ["ink2", CONTRAST_MIN, "Body text"],
+    ["muted", CONTRAST_MIN, "The quiet text"],
+  ]) {
+    const hex = colourAt(theme, role);
+    if (!hex) continue;
+
+    const ratio = contrast(hex, theme.surface);
+    if (ratio >= floor) continue;
+    problems.push({
+      role,
+      severity: "warn",
+      text: `${what} is ${ratio.toFixed(1)}:1 against the background — needs ${floor}, and nothing else on the slide says it.`,
+    });
+  }
+
   return problems;
 }
 
@@ -324,6 +398,8 @@ export function paletteProblems(theme) {
 const CVD_FLOOR = 6;
 const NORMAL_FLOOR = 15;
 const CONTRAST_MIN = 3;
+/** Text carries meaning nothing else on the slide repeats, so it is held higher. */
+const TEXT_MIN = 4.5;
 const RAMP_STEP = 0.06;
 
 /** The role's current colour, whether it lives in a list or on its own. */

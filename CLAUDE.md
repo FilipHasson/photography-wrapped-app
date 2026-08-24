@@ -31,7 +31,7 @@ src/stats/     ranges, the aggregation queries, and the slide copy
 src/server/    HTTP API, job runner, static hosting
 src/web/       the UI — plain HTML/CSS/ES modules, no framework;
                formats.js is the posting shapes, chart.js draws into them,
-               picker.js is the colour picker
+               picker.js is the colour picker, schemes.js the ready-made palettes
 tools/         fixture generators: an EXIF/MP4 writer and a Lightroom catalog
 ```
 
@@ -214,15 +214,24 @@ re-reading a library for it.
   the palette that produced them, never against the mode alone — they are
   *searched for* relative to the slots already in use, so a mode-keyed cache
   hands a ninth lens a colour chosen for somebody else's palette.
-- **The palette is edited beside the slide it paints**, in `#deck-settings`
-  under the slide's own choices — not in the library settings two screens away,
-  where changing a colour meant guessing at what it would do. The panel offers
-  the roles *that slide* is drawn in, and it finds them by reading the `fill`
-  and `stroke` attributes back off the rendered SVG (`coloursIn` in `deck.js`,
-  matched against `colourAt` per role) rather than from a table of which slide
-  uses which role — a second source of truth that would be wrong within a month.
-  Nineteen wells beside a bar chart is nineteen questions about a chart that
-  answers four; the rest are behind "Every colour". Two things this rests on: the
+- **The palette is edited beside the slide it paints**, in three cards down the
+  deck's own side column — not in the library settings two screens away, where
+  changing a colour meant guessing at what it would do. The split is what a
+  thing *belongs to*: **Settings** and **Colours here** follow the slide on
+  screen, **Style** is the deck. `PALETTE_ROLES` carries a `group` for exactly
+  this — `page` roles (the paper and the writing on it) are the same everywhere
+  and live in Style; `data` roles (series, ramp, the clock's poles) are what a
+  chart encodes with and are filtered to the slide. One card held both, and on
+  the slides with the most colours in them the background scrolled off the top
+  of a card nobody realised scrolled.
+- **Which data roles a slide offers is read off the drawing.** `coloursIn` in
+  `deck.js` collects the `fill` and `stroke` attributes from the rendered SVG
+  and matches them against `colourAt` per role — never a table of which slide
+  uses which role, which would be a second source of truth and wrong within a
+  month. A slide that encodes nothing says so rather than falling back to the
+  whole palette. What it *cannot* offer is a derived shade: the teleconverter
+  tint, the longest run, the clock's blends are computed from roles, so they
+  move when their role does and have no well of their own. Two things this rests on: the
   palette is written on as attributes, which `test/render.test.ts` asserts along
   with the absence of any `class` or `style`, and the list is **not** rebuilt
   while a picker is open (`pickingColour`) — replacing the control under an
@@ -245,6 +254,26 @@ re-reading a library for it.
   palette back exactly as the picker found it rather than to the role's default:
   previewing writes an entry that was not there before, and a role marked
   "yours" for a colour nobody chose is a lie the reset button has to explain.
+- **The background is the reader's, and the writing defends itself.** `surface`,
+  `ink`, `ink2`, `muted`, `plane`, `track`, `grid` and `axis` were held back at
+  first as the shortest path to a slide nobody can read; they are roles now
+  because a deck people post is a deck they want to look like theirs. The
+  readability moved to where it belongs: `paletteProblems` measures each text
+  role against whatever background it has been given, at the WCAG text ratios
+  (4.5 for the headline, 3 for the rest) rather than the mark floor, and those
+  are **warnings** rather than notes. A faint series is recoverable — the table
+  carries every value a chart does — but a headline nobody can read is a slide
+  with nothing on it, and no table fixes that.
+- **A scheme is three numbers, and the rest is derived.** `web/schemes.js`: a
+  tint for the paper, a hue for the palette to start at, and how loud it is.
+  `seriesRun` in `theme.js` searches for the eight hues with the same scoring
+  the ninth-lens generator uses, so a new scheme cannot quietly ship a pair that
+  reads as one colour to one man in twelve — choosing sixteen such hues by eye,
+  two modes per scheme, is exactly how that happens. The seed keeps its hue
+  *exactly* (shift `[0]`) because a thirty-degree drift is nothing on the fifth
+  series and the difference between a violet deck and a blue one on the first.
+  `test/palette.test.ts` holds every scheme to the gate the shipped palette
+  passes. "As it comes" is an empty override, never a copy of today's defaults.
 - **`paletteProblems` warns, and never blocks.** Colour-blind safety is a
   property of the set, not of any colour in it, so the gates are the palette
   validator's own: adjacent pairs at ΔE ≥ 6 through `min(protan, deutan)`, a
@@ -396,7 +425,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 296 tests
+npm test          # 300 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```

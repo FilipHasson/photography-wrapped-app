@@ -205,35 +205,45 @@
           <aside id="deck-table" class="deck-data" aria-label="The numbers behind this slide" hidden></aside>
           <div id="stage" class="stage" tabindex="0" aria-live="polite"></div>
           <!--
-            Everything about the slide on screen, beside it: the choices it
-            offers, and the colours it is actually drawn in. Colours used to
-            live in the library settings two screens away, where changing one
-            meant guessing at what it would do.
+            Two cards, because they answer two different questions. Settings are
+            about the slide on screen — what this chart shows and which way its
+            bars run — and change as it changes. Style is about the whole deck
+            and stays put. Colours used to live in the library settings two
+            screens away, where changing one meant guessing at what it would do.
           -->
-          <aside id="deck-settings" class="deck-settings" aria-label="Settings for this slide">
-            <div id="slide-settings"></div>
-            <div class="deck-colours">
-              <h3 class="setting-label">Colours</h3>
+          <div id="deck-side" class="deck-side">
+            <aside id="deck-settings" class="deck-settings" aria-label="Settings for this slide">
+              <div id="slide-settings"></div>
+            </aside>
+
+            <!-- What this chart encodes with. Changes as the deck is walked. -->
+            <aside id="deck-slide-colours" class="deck-settings" aria-label="Colours on this slide">
+              <h3 class="setting-label">Colours here</h3>
+              <div id="colour-wells" class="colour-wells"></div>
+              <div id="colour-problems" class="colour-problems" aria-live="polite" hidden></div>
+              <button id="colour-all" class="chip colour-all" type="button" aria-pressed="false">
+                Every colour
+              </button>
+            </aside>
+
+            <!-- The paper and the writing on it, which are the same everywhere. -->
+            <aside id="deck-style" class="deck-settings deck-style" aria-label="How the deck looks">
+              <h3 class="setting-label">Style</h3>
+              <div id="scheme-chips" class="chips scheme-chips" role="group" aria-label="Colour scheme"></div>
               <div class="colour-modes" role="group" aria-label="Which theme these colours are for">
                 <button id="colour-light" class="chip" type="button" data-mode="light">Light</button>
                 <button id="colour-dark" class="chip" type="button" data-mode="dark">Dark</button>
               </div>
-              <div id="colour-wells" class="colour-wells"></div>
-              <div id="colour-problems" class="colour-problems" aria-live="polite" hidden></div>
-              <div class="colour-foot">
-                <button id="colour-all" class="chip" type="button" aria-pressed="false">
-                  Every colour
-                </button>
-                <button id="colour-reset" class="ghost" type="button">Defaults</button>
-              </div>
+              <div id="page-wells" class="colour-wells"></div>
+              <button id="colour-reset" class="ghost" type="button">Back to the defaults</button>
               <span class="hint">
                 Light and dark are set separately — they are not inversions of each other, and a
                 colour picked against a near-white page is not the colour to draw on a near-black
                 one. Anything you have not changed follows the built-in palette, so it keeps
                 improving.
               </span>
-            </div>
-          </aside>
+            </aside>
+          </div>
           <!-- Every slide at once, sized to fit the window in one screenshot. -->
           <div id="sheet" class="sheet" aria-label="Every slide" hidden></div>
         </div>
