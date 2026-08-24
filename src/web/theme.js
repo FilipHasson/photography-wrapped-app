@@ -68,12 +68,50 @@ export const DARK = {
   day: "#c98500",
 };
 
-/** Follows the toggle when one is set, and the OS otherwise. */
-export function currentTheme() {
+/** Which of the two columns is in front of the reader right now. */
+export function currentMode() {
   const attribute = document.documentElement.dataset.theme;
-  if (attribute === "dark") return DARK;
-  if (attribute === "light") return LIGHT;
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? DARK : LIGHT;
+  if (attribute === "dark") return "dark";
+  if (attribute === "light") return "light";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+/**
+ * The built-in palette for a mode, with the reader's own colours over the top.
+ *
+ * The override is sparse — a role nobody has touched is simply absent — so this
+ * is the only place that knows how `series.3` becomes `theme.series[3]`, and a
+ * config saved a year ago still picks up every improvement to the roles it
+ * never had an opinion about.
+ */
+export function themeFor(mode, override) {
+  const base = mode === "dark" ? DARK : LIGHT;
+  const entries = Object.entries(override ?? {});
+  if (entries.length === 0) return base;
+
+  const theme = { ...base, series: [...base.series], ramp: [...base.ramp] };
+
+  for (const [id, hex] of entries) {
+    // Split rather than matched. A role id is "series.3" or "blank", and a
+    // pattern here is one lost escape away from silently matching nothing.
+    const dot = id.indexOf(".");
+    if (dot < 0) {
+      if (id in theme) theme[id] = hex;
+      continue;
+    }
+
+    const list = theme[id.slice(0, dot)];
+    const at = Number(id.slice(dot + 1));
+    if (Array.isArray(list) && Number.isInteger(at) && at >= 0 && at < list.length) list[at] = hex;
+  }
+
+  return theme;
+}
+
+/** Follows the toggle when one is set, and the OS otherwise. */
+export function currentTheme(palette) {
+  const mode = currentMode();
+  return themeFor(mode, palette?.[mode]);
 }
 
 /**
@@ -101,16 +139,35 @@ export function seriesColour(index, theme) {
   const slots = theme.series;
   if (index < slots.length) return slots[index];
 
-  const cache = theme.mode === "dark" ? GENERATED_DARK : GENERATED_LIGHT;
+  const cache = cacheFor(theme);
   const step = index - slots.length;
-  while (cache.length <= step) cache.push(generate(cache.length, theme));
+  while (cache.length <= step) cache.push(generate(cache.length, theme, cache));
   return cache[step];
 }
 
-const GENERATED_LIGHT = [];
-const GENERATED_DARK = [];
+/**
+ * Generated colours, keyed on the palette that produced them.
+ *
+ * They are searched for rather than computed — each one is scored against the
+ * eight documented slots and against the generated colours before it — so a
+ * cache keyed on the mode alone would hand a ninth lens the colour it was given
+ * against somebody else's palette. It was keyed on nothing at all until the
+ * palette could move, at which point it became a real bug rather than a
+ * latent one.
+ */
+const GENERATED = new Map();
 
-function generate(step, theme) {
+function cacheFor(theme) {
+  const key = `${theme.mode}:${theme.series.join(",")}`;
+  let cache = GENERATED.get(key);
+  if (!cache) {
+    cache = [];
+    GENERATED.set(key, cache);
+  }
+  return cache;
+}
+
+function generate(step, theme, done) {
   const dark = theme.mode === "dark";
   // The dark band is narrower: a step that reads on paper disappears against a
   // near-black surface. Both are the bands the documented slots were validated
@@ -122,7 +179,6 @@ function generate(step, theme) {
   // can be spread.
   const hue = (205 + step * 137.508) % 360;
 
-  const done = dark ? GENERATED_DARK : GENERATED_LIGHT;
   const previous = step === 0 ? theme.series[theme.series.length - 1] : done[step - 1];
   const against = oklabOf(previous);
   // Everything already on the chart, so a new colour is not a near-repeat of
@@ -153,6 +209,164 @@ function generate(step, theme) {
 
   return best?.hex ?? "#8a8a8a";
 }
+
+/**
+ * What is wrong with a palette, in the reader's words.
+ *
+ * Colour-blind safety is a property of the *set*, never of any colour in it:
+ * two of the eight sitting within ΔE 8 of each other through simulated
+ * protanopia is a chart that lies to about one man in twelve, and no amount of
+ * staring at either swatch would tell you. So the same gates the generator
+ * scores against are run over whatever the reader has built.
+ *
+ * Warnings, not refusals. It is their deck, and a palette that fails a gate is
+ * usually a deliberate choice about a chart they know only they will read. But
+ * it says plainly which pair, so the choice is an informed one.
+ */
+export function paletteProblems(theme) {
+  const problems = [];
+  const series = theme.series;
+
+  /**
+   * Adjacent pairs only, and only protanopia and deuteranopia.
+   *
+   * Both of those are the validator's, not a simplification of it. Slot order
+   * is the safety mechanism — a chart of three series uses slots 1, 2 and 3 —
+   * so 1-against-5 matters far less than 1-against-2, and flagging every pair
+   * would bury the ones that count. Tritanopia is measured and reported by the
+   * validator rather than gated on, because it is vanishingly rare and gating
+   * on it fails palettes that are fine: the shipped one trips it at ΔE 5.6.
+   */
+  for (let i = 0; i + 1 < series.length; i++) {
+    const cvd = Math.min(
+      deltaE(oklabOf(series[i], MACHADO.protan), oklabOf(series[i + 1], MACHADO.protan)),
+      deltaE(oklabOf(series[i], MACHADO.deutan), oklabOf(series[i + 1], MACHADO.deutan)),
+    );
+    if (cvd < CVD_FLOOR) {
+      problems.push({
+        role: `series.${i}`,
+        severity: "warn",
+        text: `Series ${i + 1} and ${i + 2} look the same to a colour-blind reader (ΔE ${cvd.toFixed(1)}, needs ${CVD_FLOOR}).`,
+      });
+    }
+
+    // The other half of the same question, and a harder gate: the pair has to
+    // be separable for everyone else too, and no legend or label excuses it.
+    const normal = deltaE(oklabOf(series[i]), oklabOf(series[i + 1]));
+    if (normal < NORMAL_FLOOR) {
+      problems.push({
+        role: `series.${i}`,
+        severity: "warn",
+        text: `Series ${i + 1} and ${i + 2} are hard to tell apart at all (ΔE ${normal.toFixed(1)}, needs ${NORMAL_FLOOR}).`,
+      });
+    }
+  }
+
+  /**
+   * A heat ramp has to climb, and climb one way.
+   *
+   * Lightness rather than hue, because lightness is what "more" reads as and
+   * the only part that survives being printed. Two failures, and the second is
+   * the one nobody expects: a ramp that brightens, dips and brightens again
+   * gives two different quantities the same square, and the calendar becomes
+   * unreadable without anything looking obviously wrong.
+   */
+  const steps = theme.ramp
+    .slice(1)
+    .map((hex, i) => oklabOf(hex)[0] - oklabOf(theme.ramp[i])[0]);
+
+  steps.forEach((step, i) => {
+    if (Math.abs(step) >= RAMP_STEP) return;
+    problems.push({
+      role: `ramp.${i + 1}`,
+      severity: "warn",
+      text: `Heat ${i + 1} and ${i + 2} are the same brightness — the calendar will read as flat.`,
+    });
+  });
+
+  const up = steps.filter((step) => step > 0).length;
+  if (up > 0 && up < steps.length) {
+    problems.push({
+      role: "ramp.0",
+      severity: "warn",
+      text: "The heat ramp changes direction — two different amounts will be drawn the same shade.",
+    });
+  }
+
+  /**
+   * Contrast against the surface these are actually drawn on.
+   *
+   * A note rather than a warning, because the shipped palette does not clear it
+   * either: three of the light steps sit under 3:1, which is one of the reasons
+   * every chart here also has a table view. Worth saying, not worth shouting.
+   *
+   * `blank` and `rampEmpty` are left out on purpose — they *mean* "nothing
+   * here", so measuring them against the background is asking the wrong
+   * question, and `grid` and `axis` are hairlines that are meant to recede.
+   */
+  for (const role of [...series.map((_, i) => `series.${i}`), "night", "day"]) {
+    const hex = colourAt(theme, role);
+    if (!hex) continue;
+
+    const ratio = contrast(hex, theme.surface);
+    if (ratio >= CONTRAST_MIN) continue;
+    problems.push({
+      role,
+      severity: "note",
+      text: `${ratio.toFixed(1)}:1 against the ${theme.mode} background — faint, and reachable only in the table.`,
+    });
+  }
+
+  return problems;
+}
+
+// The validator's numbers, and its reasons. ΔE is OKLab distance ×100.
+const CVD_FLOOR = 6;
+const NORMAL_FLOOR = 15;
+const CONTRAST_MIN = 3;
+const RAMP_STEP = 0.06;
+
+/** The role's current colour, whether it lives in a list or on its own. */
+export function colourAt(theme, role) {
+  const dot = role.indexOf(".");
+  if (dot < 0) return typeof theme[role] === "string" ? theme[role] : null;
+
+  const list = theme[role.slice(0, dot)];
+  return Array.isArray(list) ? (list[Number(role.slice(dot + 1))] ?? null) : null;
+}
+
+/** WCAG relative luminance contrast, which is what a 3:1 floor is written in. */
+function contrast(a, b) {
+  const luminance = (hex) => {
+    const int = parseInt(hex.slice(1), 16);
+    const [r, g, bl] = [(int >> 16) & 255, (int >> 8) & 255, int & 255].map((v) => {
+      const s = v / 255;
+      return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+
+  const one = luminance(a);
+  const two = luminance(b);
+  return (Math.max(one, two) + 0.05) / (Math.min(one, two) + 0.05);
+}
+
+/**
+ * Machado, Oliveira & Fernandes (2009) at severity 1.0, in linear sRGB.
+ *
+ * A second set of matrices beside `CVD`, and not a duplicate of it. The
+ * thresholds above are the palette validator's, and the validator calibrated
+ * them against *these* — swapping in the Viénot approximation the generator
+ * uses moves borderline pairs and would quietly change what passes. The
+ * generator's own scoring is relative and self-consistent, so it keeps the
+ * matrices it was tuned with; a gate that has to agree with a published
+ * threshold uses the model that threshold was written for.
+ */
+const MACHADO = {
+  protan: [0.152286, 1.052583, -0.204868, 0.114503, 0.786281, 0.099216, -0.003882, -0.048116, 1.051998],
+  deutan: [0.367322, 0.860646, -0.227968, 0.280085, 0.672501, 0.047413, -0.01182, 0.04294, 0.968881],
+};
+
 
 /**
  * OKLCH to a hex string, with chroma pulled in until it is inside sRGB.

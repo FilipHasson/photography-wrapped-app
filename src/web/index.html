@@ -157,6 +157,23 @@
               </span>
             </div>
 
+            <div class="setting colours">
+              <span class="setting-label">Colours</span>
+              <div class="colour-modes" role="group" aria-label="Which theme these colours are for">
+                <button id="colour-light" class="chip" type="button" data-mode="light">Light</button>
+                <button id="colour-dark" class="chip" type="button" data-mode="dark">Dark</button>
+                <button id="colour-reset" class="ghost" type="button">Back to the defaults</button>
+              </div>
+              <div id="colour-wells" class="colour-wells"></div>
+              <div id="colour-problems" class="colour-problems" aria-live="polite" hidden></div>
+              <span class="hint">
+                Light and dark are set separately — they are not inversions of each other, and a
+                colour picked against a near-white page is not the colour to draw on a near-black
+                one. Anything you have not changed follows the built-in palette, so it keeps
+                improving.
+              </span>
+            </div>
+
             <div class="setting location">
               <span class="setting-label">Where you are</span>
               <div class="location-row">

@@ -201,6 +201,28 @@ re-reading a library for it.
   tritanopia. All 25 clear every hard gate of the validator in both modes — the
   worst adjacent pairs are still the documented ones. Never assign a generated
   colour to anything but a series, and never let one displace a documented slot.
+- **The palette is the reader's, and sparse.** `AppConfig.palette` holds only
+  the roles they have actually changed, per mode — storing the whole thing would
+  freeze today's defaults into every config and stop anyone who never opened the
+  panel from getting improvements to it. `PALETTE_ROLES` in `core/config.ts` is
+  the single list of what is offered: it names roles by their *job*, is sent to
+  the page in `appState` rather than duplicated there, and is what
+  `coercePaletteSide` validates against. `themeFor(mode, override)` in
+  `web/theme.js` is the only place that knows `series.3` means
+  `theme.series[3]`. Generated colours past the eighth slot are cached against
+  the palette that produced them, never against the mode alone — they are
+  *searched for* relative to the slots already in use, so a mode-keyed cache
+  hands a ninth lens a colour chosen for somebody else's palette.
+- **`paletteProblems` warns, and never blocks.** Colour-blind safety is a
+  property of the set, not of any colour in it, so the gates are the palette
+  validator's own: adjacent pairs at ΔE ≥ 6 through `min(protan, deutan)`, a
+  normal-vision floor of 15, a heat ramp that climbs one way in steps of ≥ 0.06
+  lightness. Tritanopia is measured but not gated — the shipped palette trips it
+  at ΔE 5.6. The gate uses the Machado (2009) matrices because the thresholds
+  were calibrated against them; the generator keeps the Viénot ones it was tuned
+  with, and the comment there says so. The first thing the tests check is that
+  the shipped palette raises no warning: a warning nobody can act on teaches
+  people to ignore the ones that matter.
 - Every slide carries a `table`, and the deck's `t` view renders it. Three of
   the light-mode series colours sit below 3:1 against the surface, so a value
   reachable only by colour is a defect.
@@ -278,7 +300,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 259 tests
+npm test          # 273 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```

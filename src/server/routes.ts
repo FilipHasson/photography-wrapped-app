@@ -2,6 +2,8 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import fs from "node:fs/promises";
 import type { Db } from "../core/db.ts";
 import {
+  coercePaletteSide,
+  PALETTE_ROLES,
   anchorRangeLabel,
   coerceAnchorGear,
   coercePlace,
@@ -108,6 +110,10 @@ function appState(ctx: AppContext) {
     // Three pieces of the reader’s own gear, as the naming settings write
     // them. The panel has no other way to show what a toggle does.
     namingExamples: namingExamples(ctx.db, ctx.config.naming),
+    // The colour picker's own list. Sent rather than duplicated in the page:
+    // the ids are what `themeFor` reads and what the config validates against,
+    // and two copies of that list would drift the first time one moved.
+    paletteRoles: PALETTE_ROLES,
     indexVersion: INDEX_VERSION,
     ready: overview.shots > 0,
     activeJob: ctx.jobs.active,
@@ -215,6 +221,26 @@ async function applyConfigPatch(ctx: AppContext, body: Record<string, unknown>):
   // how they are flicked: a toggle saves the moment it moves.
   for (const key of NAMING_KEYS) {
     if (typeof body[key] === "boolean") next.naming = { ...next.naming, [key]: body[key] };
+  }
+
+  /**
+   * Colours arrive a whole side at a time — `{ palette: { light: {…} } }` —
+   * rather than a role at a time.
+   *
+   * A side is small, and sending all of it makes "back to the defaults" the
+   * same request as any other change: an empty object. A per-role patch would
+   * need a second verb to mean "and remove that one", which is how a settings
+   * panel ends up with a colour nobody can get rid of.
+   */
+  if (body.palette !== undefined) {
+    const asked = (typeof body.palette === "object" && body.palette !== null ? body.palette : {}) as Record<
+      string,
+      unknown
+    >;
+    next.palette = {
+      light: "light" in asked ? coercePaletteSide(asked.light) : next.palette.light,
+      dark: "dark" in asked ? coercePaletteSide(asked.dark) : next.palette.dark,
+    };
   }
 
   // `location: null` clears it; anything else has to be a real position.

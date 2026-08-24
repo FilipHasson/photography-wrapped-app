@@ -115,8 +115,89 @@ export interface AppConfig {
    * gets the default rather than nothing.
    */
   location: Place | null;
+  /**
+   * Colours the reader has chosen, and only those.
+   *
+   * Deliberately sparse. Storing the whole palette would freeze today's
+   * defaults into every config, and somebody who never opened the panel would
+   * stop getting improvements to it — so a role that is not in here is drawn
+   * from the built-in palette, for ever.
+   *
+   * Light and dark are separate because they are not inversions of each other:
+   * a colour picked against a near-white surface is not the colour to draw on a
+   * near-black one, which is why the built-in palette has two columns rather
+   * than one and a filter.
+   */
+  palette: Palette;
   /** Port for the local UI. 0 picks a free one. */
   port: number;
+}
+
+/** One entry per role the reader has changed. See `PALETTE_ROLES`. */
+export type PaletteOverride = Record<string, string>;
+
+export interface Palette {
+  light: PaletteOverride;
+  dark: PaletteOverride;
+}
+
+/**
+ * The colours a chart draws with, named by what they do rather than where they
+ * live in the theme object.
+ *
+ * Three of these have a second job, and the name has to say so: a picker
+ * labelled "Series 1" that quietly repaints Picked, the working week and every
+ * bar in the deck is a picker that lies.
+ *
+ * Not in here, and deliberately: `ink`, `muted`, `surface` and `plane`. Those
+ * are the page's own tokens and the shortest path to a slide nobody can read.
+ */
+export const PALETTE_ROLES: ReadonlyArray<{ id: string; label: string; note?: string }> = [
+  { id: "series.0", label: "The main colour", note: "every single-series chart, Picked, the working week" },
+  { id: "series.1", label: "The weekend", note: "and the second lens on gear over time" },
+  { id: "series.2", label: "Series 3" },
+  { id: "series.3", label: "Series 4" },
+  { id: "series.4", label: "Series 5" },
+  { id: "series.5", label: "Series 6" },
+  { id: "series.6", label: "Series 7" },
+  { id: "series.7", label: "The negative", note: "the longest quiet spell, Rejected" },
+  // Numbered, because three wells all labelled "Heat" is three wells nobody
+  // can tell apart — which is the exact complaint this panel exists to fix.
+  { id: "ramp.0", label: "Heat 1", note: "a day with barely anything on it" },
+  { id: "ramp.1", label: "Heat 2" },
+  { id: "ramp.2", label: "Heat 3" },
+  { id: "ramp.3", label: "Heat 4" },
+  { id: "ramp.4", label: "Heat 5", note: "your busiest days" },
+  { id: "rampEmpty", label: "A day off the calendar", note: "in the range, no photographs" },
+  { id: "blank", label: "Nothing happened", note: "a day on the wall you did not shoot" },
+  { id: "night", label: "The small hours", note: "one pole of the clock" },
+  { id: "day", label: "The middle of the day", note: "the other pole" },
+  { id: "grid", label: "Hairlines" },
+  { id: "axis", label: "Axes", note: "and the pooled \"Everything else\"" },
+];
+
+const ROLE_IDS = new Set(PALETTE_ROLES.map((role) => role.id));
+const HEX = /^#[0-9a-f]{6}$/i;
+
+/**
+ * Whatever of a saved palette is still meaningful.
+ *
+ * A role this version does not have is dropped rather than kept: it would be
+ * dead weight in every config from here on, and nothing would ever draw it.
+ */
+export function coercePaletteSide(value: unknown): PaletteOverride {
+  if (typeof value !== "object" || value === null) return {};
+  const out: PaletteOverride = {};
+
+  for (const [id, hex] of Object.entries(value as Record<string, unknown>)) {
+    if (ROLE_IDS.has(id) && typeof hex === "string" && HEX.test(hex)) out[id] = hex.toLowerCase();
+  }
+  return out;
+}
+
+export function coercePalette(value: unknown): Palette {
+  const raw = (typeof value === "object" && value !== null ? value : {}) as Record<string, unknown>;
+  return { light: coercePaletteSide(raw.light), dark: coercePaletteSide(raw.dark) };
 }
 
 /** A saved position. The label is whatever the reader wants to call it. */
@@ -140,6 +221,7 @@ export function defaultConfig(): AppConfig {
     includeVideo: true,
     ownerName: "",
     location: { ...DEFAULT_CITY },
+    palette: { light: {}, dark: {} },
     port: 4112,
   };
 }
@@ -276,6 +358,7 @@ function coerce(raw: unknown): AppConfig {
     // A config from before locations existed has no key at all; that is not the
     // same as `null`, which is somebody having pressed Clear.
     location: "location" in r ? coercePlace(r.location) : { ...DEFAULT_CITY },
+    palette: coercePalette(r.palette),
     port: typeof r.port === "number" && Number.isFinite(r.port) ? r.port : base.port,
   };
 }

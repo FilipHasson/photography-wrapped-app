@@ -91,6 +91,28 @@ describe("the page", () => {
     assert.ok(setsDisplay(".job-banner"), "the stylesheet is no longer being read");
   });
 
+  test("every element the script reaches for is in the markup", () => {
+    // `$("colour-wells")` returning null throws on the next line and takes the
+    // whole page with it — there is no partial render here, so one wrong id in
+    // a panel nobody has opened yet is a blank screen. Only the literal ones
+    // can be checked from here, which is most of them.
+    const missing: string[] = [];
+
+    for (const match of scripts.matchAll(/[$]\("([a-z0-9-]+)"\)/g)) {
+      const id = match[1] as string;
+      if (!html.includes(`id="${id}"`)) missing.push(id);
+    }
+
+    assert.deepEqual([...new Set(missing)], []);
+  });
+
+  test("the pieces of the colour picker are all there", () => {
+    // Built from a template literal, so the check above cannot see them.
+    for (const id of ["colour-light", "colour-dark", "colour-reset", "colour-wells", "colour-problems"]) {
+      assert.ok(html.includes(`id="${id}"`), `the colour picker has lost #${id}`);
+    }
+  });
+
   test("everything it hides can actually be hidden", () => {
     const broken: string[] = [];
 

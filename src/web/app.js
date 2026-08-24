@@ -9,6 +9,7 @@
  */
 
 import { createDeck } from "./deck.js";
+import { colourAt, currentMode, paletteProblems, themeFor } from "./theme.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -80,6 +81,7 @@ const store = {
 };
 
 const deck = createDeck({
+  palette: () => store.state.config?.palette ?? null,
   onExit: () => show("view-home"),
   onToast: toast,
   onExclude: (dimension, key, excluded) => void setExcluded(dimension, key, excluded),
@@ -308,6 +310,8 @@ function renderSettings() {
     ),
   );
 
+  renderColours();
+
   const examples = store.state.namingExamples ?? [];
   $("naming-preview").replaceChildren(
     ...(examples.length === 0
@@ -317,6 +321,103 @@ function renderSettings() {
           ...examples.map((label) => el("span", { class: "naming-example", text: label })),
         ]),
   );
+}
+
+/**
+ * Which of the two palettes is being edited.
+ *
+ * Starts on whatever the reader is looking at, because that is the one they
+ * came here to change — but it is a separate choice from the page's own theme,
+ * so setting the dark colours while sitting in light mode is possible.
+ */
+let colourMode = currentMode();
+
+function renderColours() {
+  const roles = store.state.paletteRoles ?? [];
+  const override = store.state.config.palette?.[colourMode] ?? {};
+  const theme = themeFor(colourMode, override);
+
+  for (const mode of ["light", "dark"]) {
+    $(`colour-${mode}`).setAttribute("aria-pressed", String(mode === colourMode));
+  }
+  $("colour-reset").disabled = Object.keys(override).length === 0;
+
+  const problems = paletteProblems(theme);
+  const trouble = new Map();
+  for (const problem of problems) trouble.set(problem.role, problem.severity);
+
+  $("colour-wells").replaceChildren(
+    ...roles.map((role) => {
+      const hex = colourAt(theme, role.id) ?? "#000000";
+      const changed = role.id in override;
+
+      return el(
+        "label",
+        { class: trouble.get(role.id) === "warn" ? "colour-well is-trouble" : "colour-well" },
+        el("input", {
+          type: "color",
+          value: hex,
+          "aria-label": role.label,
+          // `input` fires while the picker is being dragged, which is what makes
+          // the deck behind this move with it; `change` is the one that saves.
+          oninput: (event) => previewColour(role.id, event.target.value),
+          onchange: (event) => void saveColour(role.id, event.target.value),
+        }),
+        el(
+          "span",
+          {},
+          el("span", { class: "setting-label", text: role.label }),
+          el("span", { class: "hint", text: changed ? `${hex} · yours` : hex }),
+          role.note ? el("span", { class: "hint", text: role.note }) : null,
+        ),
+      );
+    }),
+  );
+
+  // Named, never blocked. It is the reader's deck, and a palette that trips a
+  // gate is often a deliberate choice about a chart only they will read — but
+  // "these two are the same colour to one man in twelve" is not something
+  // anyone can see by looking, so it has to be said.
+  $("colour-problems").hidden = problems.length === 0;
+  // Named where it happened. Four lines all reading "2.1:1 against the light
+  // background" are four lines nobody can act on.
+  const named = new Map(roles.map((role) => [role.id, role.label]));
+  $("colour-problems").replaceChildren(
+    ...problems.map((problem) =>
+      el("span", {
+        class: problem.severity === "warn" ? "colour-problem" : "hint",
+        text: named.has(problem.role) ? `${named.get(problem.role)}: ${problem.text}` : problem.text,
+      }),
+    ),
+  );
+}
+
+/** The colour as it is being dragged: shown everywhere, saved nowhere. */
+function previewColour(role, hex) {
+  const palette = store.state.config.palette ?? { light: {}, dark: {} };
+  palette[colourMode] = { ...palette[colourMode], [role]: hex };
+  store.state.config.palette = palette;
+  renderColours();
+  deck.repaint();
+}
+
+async function saveColour(role, hex) {
+  previewColour(role, hex);
+  await savePalette(store.state.config.palette[colourMode]);
+}
+
+async function resetColours() {
+  await savePalette({});
+}
+
+async function savePalette(side) {
+  try {
+    await api("/api/config", { method: "POST", body: { palette: { [colourMode]: side } } });
+    await refreshState();
+    deck.repaint();
+  } catch (err) {
+    toast(err.message, true);
+  }
 }
 
 async function saveNaming(patch) {
@@ -947,6 +1048,14 @@ $("nav-home").addEventListener("click", () => show("view-home"));
 $("setting-owner").addEventListener("change", () => void saveSettings());
 $("setting-merge").addEventListener("change", () => void saveSettings());
 $("setting-video").addEventListener("change", () => void saveSettings());
+
+for (const mode of ["light", "dark"]) {
+  $(`colour-${mode}`).addEventListener("click", () => {
+    colourMode = mode;
+    renderColours();
+  });
+}
+$("colour-reset").addEventListener("click", () => void resetColours());
 
 $("location-here").addEventListener("click", useDeviceLocation);
 $("location-clear").addEventListener("click", () => void saveLocation(null));

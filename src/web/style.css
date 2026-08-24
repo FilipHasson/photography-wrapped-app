@@ -862,6 +862,85 @@ main {
   flex-direction: column;
   gap: 8px;
 }
+/* ----------------------------------------------------------- colours ---- */
+
+/* `.setting` is a row by default, which is right for a label beside a
+   checkbox and wrong for anything with a panel under it. */
+.setting.colours {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.colour-modes {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 10px 0 12px;
+}
+
+.colour-modes .ghost {
+  margin-left: auto;
+}
+
+.colour-wells {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 10px 16px;
+}
+
+.colour-well {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+
+/* A gate the palette does not clear, marked where the colour is rather than
+   only in the list underneath: a warning that names "Series 4" is no use if
+   finding series 4 means counting swatches. */
+.colour-well.is-trouble {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
+}
+
+.colour-well input[type="color"] {
+  inline-size: 34px;
+  block-size: 34px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+  flex: none;
+}
+
+.colour-well > span {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-inline-size: 0;
+}
+
+.colour-problems {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.colour-problems[hidden] {
+  display: none;
+}
+
+.colour-problem {
+  font-size: 0.85rem;
+  color: var(--danger);
+}
+
 .naming-toggles {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));

@@ -18,7 +18,16 @@ import { exportDeckPdf, exportDeckZip, exportSlidePng, fileNameFor } from "./exp
 const $ = (id) => document.getElementById(id);
 const FORMAT_KEY = "wdis-format";
 
-export function createDeck({ onExit, onToast, onExclude, onSetting }) {
+export function createDeck({ onExit, onToast, onExclude, onSetting, palette }) {
+  /**
+   * The reader's colours, asked for rather than held.
+   *
+   * A deck outlives any one config: a colour changes, the state is refreshed,
+   * and a palette captured when the deck was created would go on drawing the
+   * old one until the page was reloaded. So this is a getter, called at every
+   * paint, and `repaint()` is all a colour change has to do.
+   */
+  const themeNow = () => currentTheme(palette?.() ?? null);
   let deck = { title: "", rangeLabel: "", slides: [] };
   let index = 0;
   let tableOpen = false;
@@ -56,7 +65,7 @@ export function createDeck({ onExit, onToast, onExclude, onSetting }) {
     // moves everything around it rather than leaving a letterboxed gap.
     stage.style.setProperty("--slide-aspect", `${format.width} / ${format.height}`);
     stage.replaceChildren(
-      renderSlide(current, currentTheme(), format),
+      renderSlide(current, themeNow(), format),
     );
 
     dots.replaceChildren(
@@ -195,7 +204,7 @@ export function createDeck({ onExit, onToast, onExclude, onSetting }) {
 
   /** Every slide at once, at the shape currently chosen. */
   function renderSheet() {
-    const theme = currentTheme();
+    const theme = themeNow();
     // The body is the grid's own width; the height is what is left below the
     // bar, less a little so the sheet does not sit flush against the edge.
     const width = sheet.clientWidth || sheet.parentElement?.clientWidth || 1200;
@@ -404,7 +413,7 @@ export function createDeck({ onExit, onToast, onExclude, onSetting }) {
     button.disabled = true;
 
     try {
-      const theme = currentTheme();
+      const theme = themeNow();
       const render = (entry) => renderSlide(entry, theme, format);
       const progress = (done, total) => {
         button.textContent = done < total ? `${done + 1}/${total}…` : "Saving…";
