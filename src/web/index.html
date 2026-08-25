@@ -226,73 +226,91 @@
           </div>
         </div>
 
+        <!--
+          Three columns, and the middle one is the work. A rail of slides on the
+          left, the slide itself, and one inspector on the right — rather than
+          the three free-floating cards this grew into, which wrapped against
+          each other, each carried its own scrollbar, and left the reader
+          hunting for which of them held the setting they wanted.
+        -->
         <div class="deck-body">
+          <aside id="deck-rail" class="deck-rail" aria-label="The slides">
+            <div class="rail-head">
+              <button id="deck-prev" class="ghost" type="button" aria-label="Previous slide">←</button>
+              <span id="deck-count" class="hint"></span>
+              <button id="deck-next" class="ghost" type="button" aria-label="Next slide">→</button>
+            </div>
+            <div id="deck-dots" class="deck-slides" role="tablist" aria-label="Slides"></div>
+          </aside>
+
           <aside id="deck-table" class="deck-data" aria-label="The numbers behind this slide" hidden></aside>
           <div id="stage" class="stage" tabindex="0" aria-live="polite"></div>
+
           <!--
-            Two cards, because they answer two different questions. Settings are
-            about the slide on screen — what this chart shows and which way its
-            bars run — and change as it changes. Style is about the whole deck
-            and stays put. Colours used to live in the library settings two
-            screens away, where changing one meant guessing at what it would do.
+            One inspector, in sections, rather than three cards side by side.
+            The order is the order the questions get asked: what this slide
+            shows, what it is drawn in, and then the deck-wide look — which is
+            set once and rarely returned to, so it sits at the bottom.
           -->
-          <div id="deck-side" class="deck-side">
-            <aside id="deck-settings" class="deck-settings" aria-label="Settings for this slide">
-              <div id="slide-settings"></div>
-            </aside>
+          <aside id="deck-side" class="deck-inspect" aria-label="Inspector">
+            <details id="deck-settings" class="inspect-section" open>
+              <summary>This slide</summary>
+              <div id="slide-settings" class="inspect-body"></div>
+            </details>
 
-            <!-- What this chart encodes with. Changes as the deck is walked. -->
-            <aside id="deck-slide-colours" class="deck-settings" aria-label="Colours on this slide">
-              <h3 class="setting-label">Colours here</h3>
-              <div id="colour-wells" class="colour-wells"></div>
-              <div id="colour-problems" class="colour-problems" aria-live="polite" hidden></div>
-              <button id="colour-all" class="chip colour-all" type="button" aria-pressed="false">
-                Every colour
-              </button>
-            </aside>
-
-            <!-- The paper and the writing on it, which are the same everywhere. -->
-            <aside id="deck-style" class="deck-settings deck-style" aria-label="How the deck looks">
-              <h3 class="setting-label">Style</h3>
-              <!--
-                Three groups of chips, and each one needs its name over it: two
-                of them offer a "Flat", and in a stack of unlabelled rows there
-                is nothing to say which flat is the paper and which is the card.
-              -->
-              <span class="chips-label">Colours</span>
-              <div id="scheme-chips" class="chips scheme-chips" role="group" aria-label="Colour scheme"></div>
-
-              <span class="chips-label">Behind the slide</span>
-              <div class="backdrop-row">
-                <div id="backdrop-chips" class="chips scheme-chips" role="group" aria-label="What the slide is drawn on"></div>
-                <button id="backdrop-shuffle" class="ghost" type="button" hidden>Shuffle</button>
+            <details id="deck-slide-colours" class="inspect-section" open>
+              <summary>Colours here</summary>
+              <div class="inspect-body">
+                <div id="colour-wells" class="colour-wells"></div>
+                <button id="colour-all" class="chip colour-all" type="button" aria-pressed="false">
+                  Every colour
+                </button>
               </div>
+            </details>
 
-              <span class="chips-label">Cards</span>
-              <div id="card-chips" class="chips scheme-chips" role="group" aria-label="How a card is drawn"></div>
-              <span class="chips-label">Colours for</span>
-              <div class="colour-modes" role="group" aria-label="Which theme these colours are for">
-                <button id="colour-light" class="chip" type="button" data-mode="light">Light</button>
-                <button id="colour-dark" class="chip" type="button" data-mode="dark">Dark</button>
+            <details id="deck-problems-section" class="inspect-section" hidden>
+              <summary>Worth knowing<span id="colour-tally" class="tally"></span></summary>
+              <div class="inspect-body">
+                <div id="colour-problems" class="colour-problems" aria-live="polite"></div>
               </div>
-              <div id="page-wells" class="colour-wells"></div>
-              <button id="colour-reset" class="ghost" type="button">Back to the defaults</button>
-              <span class="hint">
-                Light and dark are set separately — they are not inversions of each other, and a
-                colour picked against a near-white page is not the colour to draw on a near-black
-                one. Anything you have not changed follows the built-in palette, so it keeps
-                improving.
-              </span>
-            </aside>
-          </div>
+            </details>
+
+            <details id="deck-style" class="inspect-section">
+              <summary>Style</summary>
+              <div class="inspect-body">
+                <span class="chips-label">Colours</span>
+                <div id="scheme-chips" class="chips scheme-chips" role="group" aria-label="Colour scheme"></div>
+
+                <span class="chips-label">Behind the slide</span>
+                <div class="backdrop-row">
+                  <div id="backdrop-chips" class="chips scheme-chips" role="group" aria-label="What the slide is drawn on"></div>
+                  <button id="backdrop-shuffle" class="ghost" type="button" hidden>Shuffle</button>
+                </div>
+
+                <span class="chips-label">Cards</span>
+                <div id="card-chips" class="chips scheme-chips" role="group" aria-label="How a card is drawn"></div>
+              </div>
+            </details>
+
+            <details id="deck-page-colours" class="inspect-section">
+              <summary>The page</summary>
+              <div class="inspect-body">
+                <div class="colour-modes" role="group" aria-label="Which theme these colours are for">
+                  <button id="colour-light" class="chip" type="button" data-mode="light">Light</button>
+                  <button id="colour-dark" class="chip" type="button" data-mode="dark">Dark</button>
+                </div>
+                <div id="page-wells" class="colour-wells"></div>
+                <button id="colour-reset" class="ghost" type="button">Back to the defaults</button>
+                <span class="hint">
+                  Light and dark are set separately — they are not inversions of each other. Anything
+                  you have not changed follows the built-in palette, so it keeps improving.
+                </span>
+              </div>
+            </details>
+          </aside>
+
           <!-- Every slide at once, sized to fit the window in one screenshot. -->
           <div id="sheet" class="sheet" aria-label="Every slide" hidden></div>
-        </div>
-
-        <div id="deck-nav" class="deck-nav">
-          <button id="deck-prev" class="ghost" type="button" aria-label="Previous slide">←</button>
-          <div id="deck-dots" class="deck-dots"></div>
-          <button id="deck-next" class="ghost" type="button" aria-label="Next slide">→</button>
         </div>
       </section>
     </main>

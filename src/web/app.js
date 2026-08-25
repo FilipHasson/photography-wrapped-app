@@ -608,14 +608,23 @@ function renderColours() {
    * background ended up scrolled off the top of a card nobody realised scrolled
    * — which is exactly the complaint that produced this split.
    */
+  /**
+   * One line per colour: swatch, what it does, the hex.
+   *
+   * It was three lines — label, value, and a sentence explaining the role —
+   * which made twenty-five of them taller than any screen and left the panel
+   * mostly whitespace. The sentence is the row's tooltip now: a reader who
+   * wants it can hover for it, and one who does not is not paying for it in
+   * height every time the panel opens.
+   */
   const wells = (roles) =>
     roles.map((role) => {
       const hex = colourAt(theme, role.id) ?? "#000000";
-      const value = el("span", { class: "hint", text: role.id in override ? `${hex} · yours` : hex });
+      const yours = role.id in override;
 
       const swatch = el("button", {
         type: "button",
-        class: "colour-chip",
+        class: yours ? "colour-chip is-yours" : "colour-chip",
         "aria-label": `${role.label} — ${hex}`,
         "aria-expanded": String(livePicker?.role === role.id),
         onclick: () => openColourPicker(role, hex),
@@ -628,15 +637,15 @@ function renderColours() {
 
       const well = el(
         "div",
-        { class: marks.join(" ") },
+        {
+          class: marks.join(" "),
+          // Everything the row cannot afford to print, in the one place a
+          // reader already looks for it.
+          title: [role.label, role.note, yours ? "yours" : null].filter(Boolean).join(" — "),
+        },
         swatch,
-        el(
-          "span",
-          {},
-          el("span", { class: "setting-label", text: role.label }),
-          value,
-          role.note ? el("span", { class: "hint", text: role.note }) : null,
-        ),
+        el("span", { class: "colour-well-name", text: role.label }),
+        el("span", { class: "colour-well-hex", text: hex }),
       );
 
       // The picker is not rebuilt with the list around it — it is the thing
@@ -666,7 +675,21 @@ function renderColours() {
   // gate is often a deliberate choice about a chart only they will read — but
   // "these two are the same colour to one man in twelve" is not something
   // anyone can see by looking, so it has to be said.
-  $("colour-problems").hidden = problems.length === 0;
+  /**
+   * Folded unless something is actually wrong.
+   *
+   * Five lines of "2.9:1 against the dark background" is most of a panel spent
+   * on notes nobody has to act on — but a *warning* is one somebody does, so
+   * the section opens itself for those and stays shut for the rest. Either way
+   * the count is on the heading, which is what makes folding it honest.
+   */
+  const section = $("deck-problems-section");
+  const warnings = problems.filter((one) => one.severity === "warn").length;
+  section.hidden = problems.length === 0;
+  section.open = warnings > 0;
+  const tally = $("colour-tally");
+  tally.textContent = warnings > 0 ? `${warnings}` : `${problems.length}`;
+  tally.className = warnings > 0 ? "tally is-warn" : "tally";
   // Named where it happened. Four lines all reading "2.1:1 against the light
   // background" are four lines nobody can act on.
   const named = new Map(all.map((role) => [role.id, role.label]));

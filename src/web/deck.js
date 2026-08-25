@@ -70,7 +70,7 @@ export function createDeck({
     // belong in a screenshot of the deck.
     stage.hidden = sheetOpen;
     sheet.hidden = !sheetOpen;
-    $("deck-nav").hidden = sheetOpen;
+    $("deck-rail").hidden = sheetOpen;
     $("deck-sheet-toggle").setAttribute("aria-pressed", String(sheetOpen));
     if (sheetOpen) {
       table.hidden = true;
@@ -82,6 +82,9 @@ export function createDeck({
     }
 
     $("deck-side").hidden = false;
+    // One column, two things that want it: the rail steps aside for the table
+    // rather than the table landing on top of the slide.
+    $("deck-rail").hidden = tableOpen;
     stage.dataset.orientation = format.width >= format.height ? "landscape" : "portrait";
     // The window is the shape of the slide and no larger: changing the aspect
     // moves everything around it rather than leaving a letterboxed gap.
@@ -90,17 +93,32 @@ export function createDeck({
     stage.replaceChildren(drawn);
     onColours?.(coloursIn(drawn));
 
+    /**
+     * The slides, by name, down the left.
+     *
+     * They were twenty-one unlabelled dots under the frame, which said where
+     * you were and never what was there — so finding the culling slide meant
+     * walking the deck. A list is also what the panel on the other side is
+     * inspecting, and a tool with an inspector on the right and nothing on the
+     * left is a tool with its work floating in space.
+     */
     dots.replaceChildren(
       ...deck.slides.map((entry, i) => {
-        const dot = document.createElement("button");
-        dot.type = "button";
-        dot.className = i === index ? "dot is-current" : "dot";
-        dot.title = entry.title;
-        dot.setAttribute("aria-label", `Slide ${i + 1}: ${entry.title}`);
-        dot.addEventListener("click", () => go(i));
-        return dot;
+        const row = document.createElement("button");
+        row.type = "button";
+        row.role = "tab";
+        row.className = i === index ? "slide-row is-current" : "slide-row";
+        row.title = entry.title;
+        row.setAttribute("aria-selected", String(i === index));
+        row.append(
+          Object.assign(document.createElement("span"), { className: "slide-row-n", textContent: String(i + 1) }),
+          Object.assign(document.createElement("span"), { className: "slide-row-name", textContent: entry.title }),
+        );
+        row.addEventListener("click", () => go(i));
+        return row;
       }),
     );
+    $("deck-count").textContent = `${index + 1} / ${deck.slides.length}`;
 
     renderFormats();
     renderImageTypes();
@@ -152,8 +170,8 @@ export function createDeck({
 
     panel.replaceChildren(
       ...settings.flatMap((setting) => {
-        const heading = document.createElement("h3");
-        heading.className = "setting-label";
+        const heading = document.createElement("span");
+        heading.className = "chips-label";
         heading.textContent = setting.label;
 
         const list = document.createElement("div");

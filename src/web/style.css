@@ -25,6 +25,11 @@
   --danger: #d33b36;
 
   --radius: 10px;
+  /* The inspector's width and how tall a side panel may get. Both are here
+     rather than repeated: the rail, the table and the inspector have to agree
+     or the row of them steps. */
+  --inspect-w: 296px;
+  --panel-h: 78vh;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
 }
@@ -396,62 +401,183 @@ main:has(> .deck:not([hidden])) {
  * the stage hugs its content and the columns either side collapse when they
  * have nothing to show.
  */
+/* Three columns: a rail of slides, the slide, and one inspector. Placed rather
+   than flowed, because a `display: none` grid item leaves the grid entirely —
+   hiding the rail used to shuffle the slide into the track meant for it. */
 .deck-body {
   display: grid;
-  /* The stage keeps a floor so the cards beside it cannot squeeze the slide
-     into a strip; past that they wrap instead. */
-  grid-template-columns: auto minmax(300px, 1fr) auto;
-  gap: 16px;
+  grid-template-columns: auto minmax(320px, 1fr) var(--inspect-w);
+  gap: 14px;
   align-items: start;
 }
-/* Side by side while there is room, and only stacked when there is not: three
-   cards in one narrow column is a scrollpane, and a scrollpane is where a
-   setting goes to be missed. The cards wrap one at a time as the window
-   narrows, so a wide screen shows all three and a laptop shows two. */
-/* Placed rather than flowed. A `display: none` grid item is removed from the
-   grid entirely, so hiding the data column used to shuffle the slide into the
-   track meant for it — which only ever showed as everything being slightly the
-   wrong width. */
+.deck-rail,
 .deck-data {
   grid-column: 1;
 }
 .stage {
   grid-column: 2;
 }
-.deck-side {
+.deck-inspect {
   grid-column: 3;
-  display: flex;
-  flex-flow: row wrap;
-  align-items: flex-start;
-  gap: 12px;
-  max-inline-size: 780px;
 }
-.deck-side[hidden] {
-  display: none;
-}
+
+.deck-rail,
 .deck-data,
-.deck-settings {
+.deck-inspect {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
+.deck-rail[hidden],
 .deck-data[hidden],
-.deck-settings[hidden] {
+.deck-inspect[hidden] {
   display: none;
 }
-.deck-settings {
-  width: 244px;
-  padding: 14px 16px;
+
+/* ------------------------------------------------------------- the rail --- */
+
+.deck-rail {
+  width: 208px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  flex: none;
-  /* Each card carries its own cap rather than the column carrying one for all
-     three: only "every colour" is ever tall enough to need it, and making the
-     other two scroll to pay for that is what put the background out of reach. */
-  max-block-size: 76vh;
+  max-block-size: var(--panel-h);
+  overflow: hidden;
+}
+.rail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 8px 8px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.rail-head .ghost {
+  padding: 2px 9px;
+}
+.deck-slides {
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+/* One line each, and the number stays put so the names line up. A row is 26px
+   because the point of a list of twenty-one is seeing twenty-one of them. */
+.slide-row {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 8px;
+  align-items: center;
+  min-height: 26px;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink2);
+  font: inherit;
+  font-size: 0.86rem;
+  text-align: left;
+  cursor: pointer;
+}
+.slide-row:hover {
+  background: var(--plane);
+}
+.slide-row.is-current {
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+  color: var(--ink);
+  font-weight: 600;
+}
+.slide-row-n {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.78rem;
+  text-align: right;
+}
+.slide-row-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* -------------------------------------------------------- the inspector --- */
+
+.deck-inspect {
+  display: flex;
+  flex-direction: column;
+  max-block-size: var(--panel-h);
   overflow-y: auto;
 }
+/* Sections rather than cards. Three panels floating beside each other wrapped
+   against one another, each carried its own scrollbar, and left the reader
+   hunting for which one held the setting they wanted. */
+.inspect-section {
+  border-bottom: 1px solid var(--border);
+}
+.inspect-section[hidden] {
+  display: none;
+}
+.inspect-section:last-child {
+  border-bottom: 0;
+}
+.inspect-section > summary {
+  padding: 9px 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  user-select: none;
+}
+.inspect-section > summary::-webkit-details-marker {
+  display: none;
+}
+/* A disclosure arrow drawn rather than borrowed, so it points the same way in
+   every browser and turns with the section. */
+.inspect-section > summary::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 4px solid currentColor;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  transition: transform 120ms ease;
+}
+.inspect-section[open] > summary::before {
+  transform: rotate(90deg);
+}
+.inspect-section > summary:hover {
+  color: var(--ink);
+}
+.inspect-section > .inspect-body {
+  padding: 2px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* A column stretches its children, which turned every button in here into a
+   full-width bar that read as a text field. They are buttons: they take the
+   room the word needs. */
+.inspect-section > .inspect-body > .ghost,
+.inspect-section > .inspect-body > .chip {
+  align-self: flex-start;
+}
+/* A count on the heading, so a folded section still says how much is behind
+   it — the whole reason it is safe to fold. */
+.inspect-section > summary .tally {
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+.inspect-section > summary .tally.is-warn {
+  color: var(--danger);
+}
+
 .backdrop-row {
   display: flex;
   align-items: center;
@@ -471,24 +597,26 @@ main:has(> .deck:not([hidden])) {
   padding: 4px 10px;
   font-size: 0.82rem;
 }
-.deck-settings h3 {
-  font-size: 0.82rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
-}
+/* An option is a row, not a card. In a 296px inspector three of these at card
+   size was most of the panel, and the panel has four other things to say. */
 .setting-options {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 3px;
 }
 .setting-options .chip {
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
-  border-radius: var(--radius);
-  padding: 8px 12px;
+  gap: 0;
+  border-radius: 6px;
+  padding: 4px 9px;
   text-align: left;
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+.setting-options .chip .chip-count {
+  font-size: 0.72rem;
+  opacity: 0.75;
 }
 
 .stage {
@@ -496,7 +624,9 @@ main:has(> .deck:not([hidden])) {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
-  cursor: pointer;
+  /* Everything on a slide is clickable, and clicking selects the colour under
+     the pointer rather than advancing — so the cursor says "pick", not "go". */
+  cursor: crosshair;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -504,9 +634,8 @@ main:has(> .deck:not([hidden])) {
   width: fit-content;
   margin-inline: auto;
 }
-.stage[hidden],
-.deck-nav[hidden] {
-  /* Both set a display of their own, which would otherwise beat [hidden]. */
+.stage[hidden] {
+  /* Sets a display of its own, which would otherwise beat [hidden]. */
   display: none;
 }
 .stage:focus-visible {
@@ -518,34 +647,9 @@ main:has(> .deck:not([hidden])) {
   width: auto;
   height: auto;
   max-width: 100%;
-  /* Tall enough that a 9:16 slide is previewed at a useful size, capped so it
-     never grows past the viewport on a laptop. */
-  max-height: min(76vh, 1120px);
-}
-
-.deck-nav {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-}
-.deck-dots {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  justify-content: center;
-}
-.dot {
-  width: 10px;
-  height: 10px;
-  padding: 0;
-  border-radius: 50%;
-  border: 1px solid var(--border-strong);
-  background: transparent;
-}
-.dot.is-current {
-  background: var(--accent);
-  border-color: var(--accent);
+  /* Tall enough that a 9:16 slide is previewed at a useful size, and the same
+     ceiling the panels either side take, so the three do not step. */
+  max-height: min(var(--panel-h), 1120px);
 }
 
 .deck-data {
@@ -553,7 +657,7 @@ main:has(> .deck:not([hidden])) {
   padding: 4px 16px 16px;
   /* A wide table scrolls inside its own box; the page never scrolls sideways. */
   overflow-x: auto;
-  max-height: min(76vh, 1120px);
+  max-height: var(--panel-h);
   overflow-y: auto;
 }
 .deck-data table {
@@ -607,7 +711,8 @@ main:has(> .deck:not([hidden])) {
 }
 .deck:fullscreen .deck-bar,
 .deck:fullscreen .deck-data,
-.deck:fullscreen .deck-side {
+.deck:fullscreen .deck-rail,
+.deck:fullscreen .deck-inspect {
   display: none;
 }
 .deck:fullscreen .stage {
@@ -991,24 +1096,55 @@ main:has(> .deck:not([hidden])) {
 .colour-wells {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
+/* One line per colour: swatch, what it does, and the hex.
+   It used to be three — label, value and a sentence of explanation, stacked —
+   which made a list of twenty-five roles taller than any screen and left the
+   panel mostly whitespace. The sentence is on the row's tooltip now, where a
+   reader who wants it can find it and one who does not is not paying for it in
+   height every time they open the panel. */
 .colour-well {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  padding: 5px 6px;
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 26px;
+  padding: 2px 6px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 6px;
+}
+.colour-well:hover {
+  background: var(--plane);
+}
+.colour-well-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.86rem;
+}
+.colour-well-hex {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* A colour the reader has set, marked without a word — the row has no room for
+   one. On the swatch rather than after the hex: it is a fact about the colour,
+   and trailing the number it wrapped under it the moment a label ran long. */
+.colour-chip.is-yours {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
-/* The well for a colour just clicked on the slide. Loud on purpose and for a
-   moment only: the whole point is to answer "which one of these is that?"
-   without the reader having to compare twenty swatches by eye. */
+/* The well for a colour just clicked on the slide. Loud on purpose: the whole
+   point is to answer "which one of these is that?" without the reader having to
+   compare twenty swatches by eye. */
 .colour-well.is-found {
   border-color: var(--accent);
-  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
 }
 
 /* A gate the palette does not clear, marked where the colour is rather than
@@ -1016,17 +1152,17 @@ main:has(> .deck:not([hidden])) {
    finding series 4 means counting swatches. */
 .colour-well.is-trouble {
   border-color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 6%, transparent);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
 }
 
 /* A button, not `<input type="color">`: that opens an operating-system dialog
    which covers the slide being edited, and on Windows will not let go of it. */
 .colour-chip {
-  inline-size: 34px;
-  block-size: 34px;
+  inline-size: 18px;
+  block-size: 18px;
   padding: 0;
   border: 1px solid var(--border-strong);
-  border-radius: 6px;
+  border-radius: 4px;
   cursor: pointer;
   flex: none;
 }
@@ -1308,4 +1444,13 @@ main:has(> .deck:not([hidden])) {
   border: 1px solid var(--border-strong);
   border-radius: 8px;
   padding: 6px 8px;
+}
+
+/* Below this the three columns stop fitting, and the rail is the one to lose:
+   the inspector is what the reader is using, and changing slide still has the
+   arrows, ← →, space and the deck's own order. */
+@media (max-width: 1180px) {
+  .deck-rail {
+    display: none;
+  }
 }

@@ -200,6 +200,10 @@ A few things the slides do rather than say:
   packs itself into as many rows as make the squares biggest and labels where
   each year starts; a setting gives every year a row of its own instead, and
   another decides whether a year runs from January or from your start date.
+- **The deck edits like a tool.** A named list of slides down the left, the
+  slide in the middle, and one inspector on the right — this slide's settings,
+  the colours it is drawn in, the deck's style — instead of cards floating
+  beside the frame.
 - **Click a colour on the slide to find it in the palette.** The well lights up
   and is named, so changing the one you are looking at is not a guessing game.
   Clicking no longer advances the deck — the arrows, ← →, space and the dots

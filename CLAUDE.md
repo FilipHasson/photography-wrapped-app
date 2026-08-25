@@ -259,25 +259,28 @@ re-reading a library for it.
   the palette that produced them, never against the mode alone — they are
   *searched for* relative to the slots already in use, so a mode-keyed cache
   hands a ninth lens a colour chosen for somebody else's palette.
-- **The palette is edited beside the slide it paints**, in three cards down the
-  deck's own side column — not in the library settings two screens away, where
-  changing a colour meant guessing at what it would do. The split is what a
-  thing *belongs to*: **Settings** and **Colours here** follow the slide on
-  screen, **Style** is the deck. `PALETTE_ROLES` carries a `group` for exactly
-  this — `page` roles (the paper and the writing on it) are the same everywhere
-  and live in Style; `data` roles (series, ramp, the clock's poles) are what a
-  chart encodes with and are filtered to the slide. One card held both, and on
-  the slides with the most colours in them the background scrolled off the top
-  of a card nobody realised scrolled. They sit **side by side** and wrap one at
-  a time as the window narrows — a column of three is a scrollpane, and a
-  scrollpane is where a setting goes to be missed. Each card carries its own
-  height cap rather than the column carrying one for all three, because only
-  "Every colour" is ever tall enough to need it. The deck view is also allowed
-  more page width than the library pages (`main:has(> .deck…)`): three cards is
-  the better part of 800px of chrome, and the slide has to survive it. The three
-  `.deck-body` columns are **placed** rather than flowed, because a
-  `display: none` grid item is removed from the grid entirely — hiding the data
-  column used to shuffle the slide into the track meant for it.
+- **The deck is a rail, a slide and one inspector.** It was three free-floating
+  cards beside the frame, which wrapped against each other, each carried its own
+  scrollbar, and left the reader hunting for which of them held the setting they
+  wanted. Now: a named list of slides on the left (they were twenty-one
+  unlabelled dots, which said where you were and never what was there), the
+  slide, and a single `<details>`-per-section inspector on the right —
+  **This slide**, **Colours here**, **Worth knowing**, **Style**, **The page**,
+  in the order the questions get asked, with the deck-wide look at the bottom
+  because it is set once. Columns are **placed** rather than flowed: a
+  `display: none` grid item leaves the grid entirely, so hiding the rail used to
+  shuffle the slide into the track meant for it. The table takes the rail's
+  column rather than a fourth, so only one of them is ever there; below 1180px
+  the rail is what goes, since the inspector is what is being *used* and
+  changing slide still has ← → space and the arrows.
+- **A colour well is one line.** Swatch, what it does, the hex. It was three —
+  label, value and a sentence — which made twenty-five roles taller than any
+  screen and left the panel mostly whitespace; the sentence is the row's
+  tooltip now. "Yours" is a ring on the swatch rather than a mark after the
+  hex, which wrapped under it the moment a label ran long. The notes section
+  folds with its count on the heading and opens itself only for a **warning**:
+  five lines of "2.9:1 against the dark background" is most of a panel spent on
+  things nobody has to act on.
 - **Clicking a mark selects its colour; it no longer advances the deck.** Both
   gestures are reasonable and only one can have the click, so it goes to the one
   this screen is for — a slide with a palette beside it, where "which of these
