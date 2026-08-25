@@ -104,6 +104,7 @@ const deck = createDeck({
   onPickColour: (hex) => showWellFor(hex),
   onColours: (colours) => {
     slideColours = colours;
+    renderWords();
     if (!pickingColour) renderColours();
   },
 });
@@ -625,6 +626,85 @@ function showWellFor(hex) {
   renderColours();
   document.querySelector(".colour-well.is-found")?.scrollIntoView({ block: "nearest" });
   toast(`${role.label} — ${hex}`);
+}
+
+/**
+ * The writing on the slide, editable.
+ *
+ * Four fields, and the line they stay on the right side of: a number is
+ * measured and a sentence is written. Every figure is still counted and the
+ * table behind the slide still lists every value — what is editable is the
+ * prose around them, which was the tool's only because nobody had been given a
+ * way to change it.
+ *
+ * The box shows the computed words as a placeholder rather than as its value
+ * until the reader types. That is what makes "Reset" mean something: the
+ * original is still underneath, being recomputed every time the deck is built,
+ * so an edit taken back does not leave a slide with yesterday's phrasing on it.
+ */
+const WORDS = [
+  { field: "title", label: "Eyebrow" },
+  { field: "headline", label: "Headline" },
+  { field: "subtitle", label: "Subtitle" },
+  { field: "note", label: "Footnote" },
+];
+
+function renderWords() {
+  const slide = deck.current();
+  const panel = $("slide-words");
+  const section = $("deck-words");
+
+  if (!slide) {
+    section.hidden = true;
+    panel.replaceChildren();
+    return;
+  }
+
+  section.hidden = false;
+  const saved = store.state.config?.text?.[slide.id] ?? {};
+  const count = Object.keys(saved).length;
+  $("words-tally").textContent = count > 0 ? `${count}` : "";
+
+  panel.replaceChildren(
+    ...WORDS.map((one) => {
+      const mine = saved[one.field];
+      const box = el("textarea", {
+        rows: one.field === "headline" ? 2 : 1,
+        spellcheck: "true",
+        maxlength: 240,
+        "aria-label": `${one.label} — ${slide.title}`,
+        placeholder: slide[one.field] ?? "—",
+      });
+      box.value = mine ?? "";
+      box.addEventListener("change", () => void saveWords(slide.id, one.field, box.value));
+
+      const reset = el("button", {
+        type: "button",
+        class: "word-reset",
+        hidden: mine === undefined,
+        text: "Reset",
+        onclick: () => void saveWords(slide.id, one.field, null),
+      });
+
+      return el(
+        "div",
+        { class: "word-field" },
+        el("div", { class: "word-head" }, el("span", { class: "chips-label", text: one.label }), reset),
+        box,
+      );
+    }),
+  );
+}
+
+/** `null` takes an edit back; anything else is what the slide now says. */
+async function saveWords(id, field, value) {
+  try {
+    await api("/api/config", { method: "POST", body: { text: { [id]: { [field]: value } } } });
+    await refreshState();
+    await buildDeck(true);
+  } catch (err) {
+    toast(err.message, true);
+  }
 }
 
 function renderColours() {

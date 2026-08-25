@@ -200,6 +200,11 @@ A few things the slides do rather than say:
   packs itself into as many rows as make the squares biggest and labels where
   each year starts; a setting gives every year a row of its own instead, and
   another decides whether a year runs from January or from your start date.
+- **Write your own words on a slide.** The eyebrow, headline, subtitle and
+  footnote of any slide can be replaced — the box shows what the deck worked out
+  as its placeholder, so **Reset** puts the real one back rather than a copy of
+  it. The numbers are not editable and the table behind every slide still lists
+  every value: what you are writing is the sentence around them.
 - **Set the deck in another face.** System, Serif, Condensed or Mono, at four
   sizes, with the headline's weight and slant your own. No webfonts — nothing
   here makes a request — so every face offered is one your machine already has,

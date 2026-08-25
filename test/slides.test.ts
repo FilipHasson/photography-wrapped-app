@@ -1216,3 +1216,52 @@ describe("the busiest day on the opening slide", () => {
     );
   });
 });
+
+/**
+ * Words the reader has written over the ones this module worked out.
+ *
+ * The line being held: a number is measured and a sentence is written. Every
+ * figure is still counted and the table still lists every value — what is
+ * editable is the prose around them, which was the tool's only because nobody
+ * had been given a way to change it.
+ */
+describe("the words on a slide", () => {
+  const deckWith = (words: Record<string, Record<string, string>>) =>
+    buildDeck(statsWith({ years: YEARS }), "Filip", words);
+
+  const opening = (words: Record<string, Record<string, string>> = {}) =>
+    findSlide(deckWith(words).slides, "opening");
+
+  test("a written headline replaces the worked-out one", () => {
+    assert.equal(opening({ opening: { headline: "The year I finally shot film" } })?.headline,
+      "The year I finally shot film");
+    // And nothing else on the slide moved.
+    assert.equal(opening({ opening: { headline: "x" } })?.table?.rows.length, opening()?.table?.rows.length);
+  });
+
+  test("only the slide named, and only the fields named", () => {
+    const deck = deckWith({ culling: { headline: "mine" } });
+    assert.equal(findSlide(deck.slides, "opening")?.headline, opening()?.headline);
+    assert.equal(findSlide(deck.slides, "opening")?.subtitle, opening()?.subtitle);
+  });
+
+  test("an empty subtitle or footnote is a deliberate blank", () => {
+    assert.ok(opening()?.subtitle, "the fixture has nothing to clear");
+    assert.equal(opening({ opening: { subtitle: "", note: "" } })?.subtitle, undefined);
+    assert.equal(opening({ opening: { subtitle: "", note: "" } })?.note, undefined);
+  });
+
+  /**
+   * A slide with no headline is not a slide. The two fields that cannot be
+   * absent fall back rather than leaving the frame with nothing on it — which
+   * is also what makes clearing the box mean "take my edit back".
+   */
+  test("an empty headline or eyebrow falls back rather than emptying the frame", () => {
+    assert.equal(opening({ opening: { headline: "", title: "" } })?.headline, opening()?.headline);
+    assert.equal(opening({ opening: { headline: "", title: "" } })?.title, opening()?.title);
+  });
+
+  test("nothing written is the deck exactly as it was", () => {
+    assert.deepEqual(deckWith({}).slides.map((s) => s.headline), buildDeck(statsWith({ years: YEARS }), "Filip").slides.map((s) => s.headline));
+  });
+});

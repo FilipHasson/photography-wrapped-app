@@ -259,6 +259,19 @@ re-reading a library for it.
   the palette that produced them, never against the mode alone — they are
   *searched for* relative to the slots already in use, so a mode-keyed cache
   hands a ninth lens a colour chosen for somebody else's palette.
+- **A number is measured; a sentence is written.** `config.text` holds words the
+  reader has put over the ones `stats/slides.ts` worked out — eyebrow, headline,
+  subtitle, footnote — and `withText` applies them **last**, in `buildDeck`, so
+  the export, the contact sheet, the PDF and the table all carry them without
+  knowing the feature exists, and so the computed phrasing is still underneath
+  being recomputed every build. That is what makes "Reset" mean something rather
+  than restoring last year's wording. The box shows the computed words as a
+  *placeholder*, never as its value, for the same reason. Empty means a
+  deliberate blank on `subtitle` and `note`; on `headline` and `title` it falls
+  back, because a slide with no headline is not a slide. The figures are
+  untouched and the table still lists every value: what is editable is the prose
+  around the numbers, which was the tool's only because nobody had been given a
+  way to change it.
 - **The lettering is the reader's, within limits that are the point.** `type.js`
   holds four faces, and every named face in every stack ships with Windows *and*
   macOS: nothing here makes a request, so a stack naming a face nobody has falls
@@ -579,7 +592,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 327 tests
+npm test          # 335 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```

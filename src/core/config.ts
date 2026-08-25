@@ -187,6 +187,8 @@ export interface AppConfig {
   cardStyle: CardStyle;
   /** The face, the size and how the headline is set. */
   type: Typography;
+  /** Words written over the ones the deck worked out, by slide. */
+  text: SlideText;
   /** Port for the local UI. 0 picks a free one. */
   port: number;
 }
@@ -351,6 +353,45 @@ export function coerceTypography(value: unknown): Typography {
   };
 }
 
+/**
+ * Words the reader has written over the ones this tool worked out.
+ *
+ * Sparse, by slide id and then by field, and only the fields somebody has
+ * actually touched — a slide with no entry says whatever `buildDeck` says, for
+ * ever, and keeps picking up improvements to the phrasing.
+ *
+ * The line this stays on the right side of: **a number is measured and a
+ * sentence is written**. Every figure on a slide is still counted, and the
+ * table behind it still lists every value; what is editable is the prose around
+ * them — the headline that names what the numbers mean, the eyebrow, the
+ * subtitle, the footnote. That is the reader's voice, and it was the tool's only
+ * because nobody had been given a way to change it. An empty string is a
+ * deliberate blank, which is why it is kept rather than treated as "unset".
+ */
+export type SlideText = Record<string, Record<string, string>>;
+
+export const TEXT_FIELDS: readonly string[] = ["title", "headline", "subtitle", "note"];
+
+const SLIDE_ID = /^[a-z0-9-]{1,40}$/;
+
+export function coerceSlideText(value: unknown): SlideText {
+  if (typeof value !== "object" || value === null) return {};
+  const out: SlideText = {};
+
+  for (const [id, fields] of Object.entries(value as Record<string, unknown>)) {
+    if (!SLIDE_ID.test(id) || typeof fields !== "object" || fields === null) continue;
+    const kept: Record<string, string> = {};
+
+    for (const [field, text] of Object.entries(fields as Record<string, unknown>)) {
+      // Capped at a length a slide can actually hold. Longer is not refused —
+      // it is cut, because losing the whole edit over one long paste is worse.
+      if (TEXT_FIELDS.includes(field) && typeof text === "string") kept[field] = text.slice(0, 240);
+    }
+    if (Object.keys(kept).length > 0) out[id] = kept;
+  }
+  return out;
+}
+
 export function coerceBackdrop(value: unknown): Backdrop {
   const raw = (typeof value === "object" && value !== null ? value : {}) as Record<string, unknown>;
   const kind = BACKDROP_KINDS.find((entry) => entry === raw.kind) ?? "flat";
@@ -407,6 +448,7 @@ export function defaultConfig(): AppConfig {
     backdrop: { kind: "flat", seed: 1 },
     cardStyle: "glass",
     type: { family: "system", scale: 1, weight: 600, italic: false },
+    text: {},
     port: 4112,
   };
 }
@@ -548,6 +590,7 @@ function coerce(raw: unknown): AppConfig {
     backdrop: coerceBackdrop(r.backdrop),
     cardStyle: coerceCardStyle(r.cardStyle),
     type: coerceTypography(r.type),
+    text: coerceSlideText(r.text),
     port: typeof r.port === "number" && Number.isFinite(r.port) ? r.port : base.port,
   };
 }

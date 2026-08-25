@@ -7,6 +7,7 @@ import {
   coerceBackdrop,
   coerceCardStyle,
   coerceCount,
+  coerceSlideText,
   coerceTypography,
   PALETTE_ROLES,
   anchorRangeLabel,
@@ -262,6 +263,35 @@ async function applyConfigPatch(ctx: AppContext, body: Record<string, unknown>):
   // headline's weight are one decision about how a deck is lettered.
   if (body.type !== undefined) next.type = coerceTypography(body.type);
 
+  /**
+   * Words arrive one slide at a time — `{ text: { culling: { headline: "…" } } }`
+   * — and merge into whatever is already saved, because the panel edits one
+   * field of one slide at a time and sending the whole map back would make every
+   * keystroke a chance to clobber another slide.
+   *
+   * `null` on a field is how an edit is taken back: the slide returns to what
+   * `buildDeck` says, which is the point of keeping the computed phrasing
+   * underneath rather than copying it in when the field is first opened.
+   */
+  if (body.text !== undefined) {
+    const asked = (typeof body.text === "object" && body.text !== null ? body.text : {}) as Record<
+      string,
+      Record<string, unknown>
+    >;
+    const merged: Record<string, Record<string, string>> = { ...next.text };
+
+    for (const [id, fields] of Object.entries(asked)) {
+      const slide = { ...(merged[id] ?? {}) };
+      for (const [field, value] of Object.entries(fields ?? {})) {
+        if (value === null) delete slide[field];
+        else if (typeof value === "string") slide[field] = value;
+      }
+      if (Object.keys(slide).length > 0) merged[id] = slide;
+      else delete merged[id];
+    }
+    next.text = coerceSlideText(merged);
+  }
+
   // `location: null` clears it; anything else has to be a real position.
   if (body.location === null) next.location = null;
   else if (body.location !== undefined) {
@@ -425,7 +455,7 @@ export async function handleApi(
         kit,
         layout,
       });
-      json(res, 200, { range, deck: buildDeck(stats, ctx.config.ownerName) });
+      json(res, 200, { range, deck: buildDeck(stats, ctx.config.ownerName, ctx.config.text) });
       return true;
     }
 

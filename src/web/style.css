@@ -568,6 +568,48 @@ main:has(> .deck:not([hidden])) {
 .inspect-section > .inspect-body > .setting {
   align-self: flex-start;
 }
+/* A field per line of writing on the slide, and the reset only appears once
+   there is something to reset — a row of dead buttons reads as broken. */
+.word-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.word-field textarea {
+  font: inherit;
+  font-size: 0.86rem;
+  line-height: 1.35;
+  padding: 5px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--plane);
+  color: var(--ink);
+  resize: vertical;
+  min-height: 30px;
+  field-sizing: content;
+}
+.word-field textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.word-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.word-reset {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+.word-reset[hidden] {
+  display: none;
+}
 .type-italic {
   gap: 8px;
   align-items: center;

@@ -619,6 +619,10 @@ export function createDeck({
       if (deck.slides.length > 0) render();
     },
     onKey,
+    /** The slide on screen, for the panel that edits its words. */
+    current() {
+      return slide() ?? null;
+    },
     get length() {
       return deck.slides.length;
     },

@@ -359,7 +359,36 @@ function tableOf(columns: string[], rows: Array<Array<string | number>>): SlideT
 
 // ---------------------------------------------------------------- deck -----
 
-export function buildDeck(stats: DeckStats, ownerName = ""): Deck {
+/**
+ * The reader's words over the ones this module worked out.
+ *
+ * Applied here, at the end, rather than in the browser — so the export, the
+ * contact sheet, the PDF and the table all carry them without any of them
+ * having to know the feature exists. Applied *last* for the same reason a
+ * palette override is: everything above still computes the honest phrasing, so
+ * clearing an entry brings it straight back rather than leaving a slide with a
+ * blank where a sentence used to be.
+ *
+ * An empty string is a deliberate blank on the two fields that can be absent,
+ * and a slide with no headline is not a slide, so an empty headline or title
+ * falls back rather than leaving the frame with nothing on it.
+ */
+function withText(slide: Slide, words: Record<string, string> | undefined): Slide {
+  if (!words) return slide;
+  const next: Slide = { ...slide };
+
+  if (typeof words.title === "string" && words.title !== "") next.title = words.title;
+  if (typeof words.headline === "string" && words.headline !== "") next.headline = words.headline;
+  for (const field of ["subtitle", "note"] as const) {
+    const value = words[field];
+    if (typeof value !== "string") continue;
+    if (value === "") delete next[field];
+    else next[field] = value;
+  }
+  return next;
+}
+
+export function buildDeck(stats: DeckStats, ownerName = "", words: Record<string, Record<string, string>> = {}): Deck {
   const slides: Slide[] = [];
   const { totals, range } = stats;
 
@@ -442,7 +471,13 @@ export function buildDeck(stats: DeckStats, ownerName = ""): Deck {
 
   slides.push(closing(stats));
 
-  return { title, subtitle: range.label, rangeLabel: range.label, slides, empty: false };
+  return {
+    title,
+    subtitle: range.label,
+    rangeLabel: range.label,
+    slides: slides.map((slide) => withText(slide, words[slide.id])),
+    empty: false,
+  };
 }
 
 // -------------------------------------------------------------- slides -----

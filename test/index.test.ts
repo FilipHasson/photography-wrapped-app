@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Db } from "../src/core/db.ts";
-import { coerceCount, defaultConfig, defaultSource, type AppConfig } from "../src/core/config.ts";
+import { coerceCount, coerceSlideText, defaultConfig, defaultSource, type AppConfig } from "../src/core/config.ts";
 import { indexSource, indexOverview } from "../src/index/source.ts";
 import { rebuildPrimaries } from "../src/index/dedupe.ts";
 import { computeStats, gearCatalog } from "../src/stats/aggregate.ts";
@@ -515,5 +515,34 @@ describe("what left before anyone was watching", () => {
     assert.equal(coerceCount(undefined), 0);
     assert.equal(coerceCount("-4"), 0);
     assert.equal(coerceCount("12.7"), 12);
+  });
+});
+
+/**
+ * What a saved set of written words is allowed to contain.
+ *
+ * The config is hand-editable and arrives over HTTP, so this is the one place
+ * that decides what reaches `buildDeck` — a field nobody drew, a slide id that
+ * is really a path, or a paste of a whole essay.
+ */
+describe("words saved over a slide", () => {
+  test("keeps the four fields a slide actually draws", () => {
+    const kept = coerceSlideText({
+      culling: { headline: "mine", subtitle: "", nonsense: "no", note: 7 },
+    });
+    assert.deepEqual(kept, { culling: { headline: "mine", subtitle: "" } });
+  });
+
+  test("drops a slide id that is not one, and one with nothing left in it", () => {
+    assert.deepEqual(coerceSlideText({ "../etc": { headline: "x" } }), {});
+    assert.deepEqual(coerceSlideText({ "a b": { headline: "x" } }), {});
+    assert.deepEqual(coerceSlideText({ culling: { nonsense: "x" } }), {});
+    assert.deepEqual(coerceSlideText({ culling: "not an object" }), {});
+    assert.deepEqual(coerceSlideText(null), {});
+  });
+
+  test("cuts a paste rather than losing the edit over it", () => {
+    const long = coerceSlideText({ culling: { headline: "x".repeat(500) } });
+    assert.equal(long.culling?.headline?.length, 240);
   });
 });
