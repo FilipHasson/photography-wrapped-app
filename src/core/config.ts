@@ -229,14 +229,21 @@ export const PALETTE_ROLES: ReadonlyArray<{ id: string; label: string; note?: st
   { group: "page", id: "muted", label: "The quiet text", note: "axis numbers and the footnote" },
   { group: "page", id: "plane", label: "Cards", note: "the blocks on keepers and culling" },
   { group: "page", id: "track", label: "The rest of a bar", note: "behind the part that is filled" },
-  { group: "data", id: "series.0", label: "The main colour", note: "every single-series chart, Picked, the working week" },
-  { group: "data", id: "series.1", label: "The weekend", note: "and the second lens on gear over time" },
+  { group: "data", id: "series.0", label: "The main colour", note: "every single-series chart" },
+  { group: "data", id: "series.1", label: "Series 2" },
   { group: "data", id: "series.2", label: "Series 3" },
   { group: "data", id: "series.3", label: "Series 4" },
   { group: "data", id: "series.4", label: "Series 5" },
   { group: "data", id: "series.5", label: "Series 6" },
   { group: "data", id: "series.6", label: "Series 7" },
-  { group: "data", id: "series.7", label: "The negative", note: "the longest quiet spell, Rejected" },
+  { group: "data", id: "series.7", label: "Series 8" },
+  // One job, one role. These four used to borrow a series slot, which meant
+  // moving the eighth series repainted a verdict on one slide and a wall of
+  // days on another — and left no way to change either on its own.
+  { group: "data", id: "pick", label: "Picked", note: "and the stars on keepers" },
+  { group: "data", id: "reject", label: "Rejected", note: "the frames you said no to" },
+  { group: "data", id: "quiet", label: "The longest silence", note: "on the wall of days" },
+  { group: "data", id: "weekend", label: "The weekend", note: "Saturday and Sunday, when they are marked" },
   // Numbered, because three wells all labelled "Heat" is three wells nobody
   // can tell apart — which is the exact complaint this panel exists to fix.
   { group: "data", id: "ramp.0", label: "Heat 1", note: "a day with barely anything on it" },

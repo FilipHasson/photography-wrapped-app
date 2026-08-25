@@ -213,6 +213,31 @@ re-reading a library for it.
   asserts `stats.read === 0`. Metadata is cached against `(size, mtime)`, and
   the sweep that nulls the derived columns for `pending` rows is what keeps a
   changed file from being counted with its old numbers.
+- **A slot is a series, and nothing else.** Four jobs used to borrow one:
+  Picked and the working week rode on `series.0`, the weekend on `series.1`,
+  and *both* Rejected and the longest silence on `series.7` — so moving the
+  eighth series repainted a verdict on one slide and a wall of days on another,
+  and there was no way to touch either alone. `pick`, `reject`, `quiet` and
+  `weekend` are roles now, which also freed the two negatives from whatever hue
+  slot seven happened to hold: a rejected frame is red because rejection is red.
+- **Picked and Rejected are gated as a pair.** They are the one pair in the
+  palette a reader is guaranteed to see together — two cards on one slide, same
+  size, opposite meanings — and neither is a series slot, so the gates that walk
+  adjacent slots never looked at them. `separation`/`separated` in `theme.js`
+  answer the question in one place, and `schemes.js` **searches** for a
+  negative that passes rather than assuming red does: with a green primary, red
+  is the single most common pair a colour-blind reader cannot separate, and the
+  shipped primary is a green. Darkening comes before changing hue — a dark red
+  still reads as a red, and lightness is the channel colour blindness leaves
+  alone.
+- **A named seed is used, not searched for.** `fitToPaper` moves a colour along
+  lightness only as far as the contrast floor forces, keeping hue and chroma, so
+  what comes back is the same colour on a different sheet. `pick` was the wrong
+  tool the moment somebody said which colour they wanted: it looks for whatever
+  sits furthest from the paper, and turned a mint asked for at L 0.75 into a
+  forest green at L 0.47. Every scheme's whole run is fitted too — `seriesRun`
+  scores a candidate against its *neighbour*, which says nothing about whether
+  it can be seen against the sheet.
 - The colours in `web/theme.js` are the validated categorical palette; slot
   order is the colour-blind-safety mechanism, not decoration. Assign by slot,
   never cycle, and run the palette validator before changing a hex. Past the
@@ -524,7 +549,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 326 tests
+npm test          # 327 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```

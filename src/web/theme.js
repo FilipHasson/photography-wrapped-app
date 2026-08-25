@@ -12,6 +12,26 @@
  * the colour-blind-safety mechanism, so they are assigned by slot and never
  * cycled or re-ordered.
  *
+ * The run starts from a colour somebody chose — `#0fce92` — and is *derived*
+ * from it rather than picked alongside it: `seriesRun` walks the hue circle by
+ * the golden angle from there, scoring each candidate on how far it sits from
+ * its neighbour through normal vision and three kinds of colour blindness, and
+ * every result is then `fitToPaper`'d so nothing lands too faint to see. Dark
+ * carries the chosen colour exactly. Light cannot — at L 0.75 against near-white
+ * paper it is 2.0:1, under the 3:1 a mark has to clear — so light takes the same
+ * hue and chroma stepped down until it does, which is the whole reason this
+ * object has two columns rather than one and a filter.
+ *
+ * A slot is a *series*, and nothing else. Four jobs used to borrow one — Picked
+ * and the working week rode on `series.0`, the weekend on `series.1`, and both
+ * Rejected and the longest silence on `series.7` — which meant a reader who
+ * moved the eighth series repainted a verdict on one slide and a wall of days on
+ * another, and could not touch either without the other. They are roles of their
+ * own now (`pick`, `reject`, `quiet`, `weekend`), which also let the two
+ * negatives stop being whatever hue slot seven happened to hold: a rejected
+ * frame is red because that is what a rejection looks like, not because it was
+ * eighth in a list.
+ *
  * Eight is the whole palette, and therefore the ceiling on how many series a
  * chart may show: a ninth is never an invented hue, it is "Everything else".
  * Both columns pass the validator as a set — worst adjacent CVD ΔE 9.1 light /
@@ -34,12 +54,16 @@ export const LIGHT = {
   grid: "#e1e0d9",
   axis: "#c3c2b7",
   track: "#f0efec",
-  series: ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"],
-  /** Sequential blue, near-zero to most. One hue, light to dark. */
-  ramp: ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf"],
+  series: ["#12a676", "#763496", "#e46e3b", "#0359a0", "#bf75d9", "#086b0b", "#0f9bd1", "#8e3c07"],
+  /** Sequential, near-zero to most. The accent's own hue, light to dark. */
+  ramp: ["#7df2bf", "#5cd3a1", "#38b484", "#0f9569", "#0a7552"],
   rampEmpty: "#f0efec",
-  /** A day nothing happened on: present, and plainly not the blue. */
+  /** A day nothing happened on: present, and plainly not the accent. */
   blank: "#dfddd4",
+  pick: "#12a676",
+  reject: "#d33b36",
+  quiet: "#c06f0a",
+  weekend: "#763496",
   // Two poles for the clock: cool for the small hours, warm for the middle of
   // the day. Semantic heat rather than categories — the thing being encoded
   // really is how much light there was — so it ships with a scale legend.
@@ -58,12 +82,16 @@ export const DARK = {
   grid: "#2c2c2a",
   axis: "#383835",
   track: "#262624",
-  series: ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"],
+  series: ["#0fce92", "#7d50b9", "#e16b38", "#3b95f0", "#b63c2f", "#9d9704", "#425fc4", "#d7750c"],
   // Stepped for the dark surface: the darkest step still reads as "a little",
   // not as the background.
-  ramp: ["#184f95", "#256abf", "#3987e5", "#6da7ec", "#9ec5f4"],
+  ramp: ["#015c3f", "#087c57", "#129e70", "#44be8d", "#68deac"],
   rampEmpty: "#232322",
   blank: "#2e2e2b",
+  pick: "#0fce92",
+  reject: "#e95048",
+  quiet: "#d4822b",
+  weekend: "#7d50b9",
   night: "#3987e5",
   day: "#c98500",
 };
@@ -250,7 +278,39 @@ function generate(step, theme, done) {
  * Hand-picking eight hues that do that, twice per scheme, is how palettes end
  * up shipping with a pair that reads as one.
  */
-export function seriesRun(startHue, mode, chroma = 0.17, against = null, count = 8) {
+/**
+ * A colour the reader chose, moved only as far as the paper forces.
+ *
+ * Their hex first, unchanged, whenever it already clears the floor — which on
+ * a dark deck is usually the answer, and is the whole point: a colour somebody
+ * picked should come back as the colour they picked. Where it does not clear,
+ * lightness walks *away* from the paper a step at a time and stops at the first
+ * position that does. Hue and chroma never move, so what comes back is the same
+ * colour seen against a different sheet rather than a different colour.
+ *
+ * This exists because `pick` is the wrong tool for a named seed. It searches for
+ * whatever sits furthest from the paper, which is right when nobody has said
+ * what they want and wrong the moment somebody has: a mint green asked for at
+ * L 0.75 came back a forest green at L 0.47, which is not a step of the same
+ * colour, it is another one.
+ */
+export function fitToPaper(hex, paper, floor = CONTRAST_MIN) {
+  if (contrast(hex, paper) >= floor) return hex;
+
+  const { l, c, h } = oklchOf(hex);
+  // Away from the paper: down on a light sheet, up on a dark one.
+  const away = oklchOf(paper).l > 0.5 ? -1 : 1;
+
+  for (let step = 1; step <= 60; step++) {
+    const moved = hexOf(Math.min(1, Math.max(0, l + away * step * 0.01)), c, h);
+    if (contrast(moved, paper) >= floor) return moved;
+  }
+  // Nothing on this hue clears it. The reader's own colour is a better answer
+  // than a grey, and `paletteProblems` will say so out loud.
+  return hex;
+}
+
+export function seriesRun(startHue, mode, chroma = 0.17, against = null, count = 8, seed = null) {
   const band = BAND[mode === "dark" ? "dark" : "light"];
   // The first colour is chosen away from the *paper*, which is the one thing
   // every slide draws it on. Picking it by formula instead put a scheme's whole
@@ -261,7 +321,9 @@ export function seriesRun(startHue, mode, chroma = 0.17, against = null, count =
   // The seed keeps its hue exactly — no drift is allowed on the one colour that
   // says what the scheme is. A shift of thirty degrees is nothing on the fifth
   // series and the difference between a violet deck and a blue one here.
-  const run = [pick(startHue % 360, band, chroma, paper, [], [0])];
+  // A named seed is used as given, fitted to the paper and no further. Only a
+  // run with nothing but a hue behind it goes looking.
+  const run = [seed ? fitToPaper(seed, paper) : pick(startHue % 360, band, chroma, paper, [], [0])];
 
   while (run.length < count) {
     const hue = (startHue + run.length * TURN) % 360;
@@ -323,6 +385,36 @@ export function paletteProblems(theme) {
   }
 
   /**
+   * The two verdicts, which are drawn side by side on one slide.
+   *
+   * The series gates walk *adjacent* slots, and these two are not slots at all
+   * any more — so nothing was checking the one pair in the whole palette a
+   * reader is guaranteed to see together, at the same size, meaning opposite
+   * things. A scheme whose primary is already red is how that happens: Picked
+   * follows the run, Rejected is red because rejection is red, and on a warm
+   * scheme they quietly became the same card twice.
+   */
+  const picked = colourAt(theme, "pick");
+  const rejected = colourAt(theme, "reject");
+  if (picked && rejected) {
+    const { cvd, normal } = separation(picked, rejected);
+    if (cvd < CVD_FLOOR) {
+      problems.push({
+        role: "reject",
+        severity: "warn",
+        text: `Picked and Rejected look the same to a colour-blind reader (ΔE ${cvd.toFixed(1)}, needs ${CVD_FLOOR}).`,
+      });
+    }
+    if (normal < NORMAL_FLOOR) {
+      problems.push({
+        role: "reject",
+        severity: "warn",
+        text: `Picked and Rejected are hard to tell apart at all (ΔE ${normal.toFixed(1)}, needs ${NORMAL_FLOOR}).`,
+      });
+    }
+  }
+
+  /**
    * A heat ramp has to climb, and climb one way.
    *
    * Lightness rather than hue, because lightness is what "more" reads as and
@@ -364,7 +456,19 @@ export function paletteProblems(theme) {
    * here", so measuring them against the background is asking the wrong
    * question, and `grid` and `axis` are hairlines that are meant to recede.
    */
-  for (const role of [...series.map((_, i) => `series.${i}`), "night", "day"]) {
+  // The four that carry a job of their own are measured too. They are marks on
+  // a slide like any series is, and being named after what they mean rather
+  // than after a slot number is no reason to stop checking whether they can be
+  // seen.
+  for (const role of [
+    ...series.map((_, i) => `series.${i}`),
+    "pick",
+    "reject",
+    "quiet",
+    "weekend",
+    "night",
+    "day",
+  ]) {
     const hex = colourAt(theme, role);
     if (!hex) continue;
 
@@ -411,6 +515,31 @@ export function paletteProblems(theme) {
 // The validator's numbers, and its reasons. ΔE is OKLab distance ×100.
 const CVD_FLOOR = 6;
 const NORMAL_FLOOR = 15;
+/**
+ * How far apart two colours are, in the two ways that matter.
+ *
+ * `cvd` is the worst of protanopia and deuteranopia, which is the number a
+ * chart's readability for about one man in twelve rests on; `normal` is the
+ * plain OKLab distance, which no legend excuses. Exported because three
+ * different places need to ask it — the gates here, and `schemes.js`, which has
+ * to *search* for a colour that passes rather than assume one does.
+ */
+export function separation(a, b) {
+  return {
+    cvd: Math.min(
+      deltaE(oklabOf(a, MACHADO.protan), oklabOf(b, MACHADO.protan)),
+      deltaE(oklabOf(a, MACHADO.deutan), oklabOf(b, MACHADO.deutan)),
+    ),
+    normal: deltaE(oklabOf(a), oklabOf(b)),
+  };
+}
+
+/** True when a pair clears both floors — the question `separation` is asked for. */
+export function separated(a, b) {
+  const { cvd, normal } = separation(a, b);
+  return cvd >= CVD_FLOOR && normal >= NORMAL_FLOOR;
+}
+
 const CONTRAST_MIN = 3;
 /** Text carries meaning nothing else on the slide repeats, so it is held higher. */
 const TEXT_MIN = 4.5;

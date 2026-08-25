@@ -1,5 +1,5 @@
 // @ts-check
-import { hexOf, seriesRun } from "./theme.js";
+import { fitToPaper, hexOf, separated, seriesRun } from "./theme.js";
 
 /**
  * Whole palettes, ready-made.
@@ -74,7 +74,14 @@ function side(scheme, mode) {
   const text = TEXT[mode];
 
   const background = hexOf(paper, tone, scheme.tint);
-  const series = seriesRun(scheme.hue, mode, scheme.chroma, background);
+  // Fitted to the paper, every one of them. `seriesRun` scores a candidate on
+  // how far it sits from its *neighbour*, which is what keeps a chart readable
+  // through colour blindness and says nothing at all about whether the colour
+  // can be seen against the sheet it is drawn on. Both matter, and only one of
+  // them was being checked.
+  const series = seriesRun(scheme.hue, mode, scheme.chroma, background, 8, scheme.seed ?? null).map(
+    (hex) => fitToPaper(hex, background),
+  );
   const roles = {
     surface: background,
     ink: hexOf(text.ink, tone * 0.5, scheme.tint),
@@ -92,6 +99,23 @@ function side(scheme, mode) {
     // warm for the middle of the day, whatever hue the scheme starts at.
     night: hexOf(dark ? 0.6 : 0.52, scheme.chroma, 250),
     day: hexOf(dark ? 0.72 : 0.68, scheme.chroma, 75),
+
+    /**
+     * The four that carry a job rather than a slot.
+     *
+     * A scheme has to answer for these or it half-applies: leave them out and
+     * Terracotta repaints seven slides and leaves a mint "Picked" sitting on
+     * culling. Two follow the run, because a keeper and a weekend are identity
+     * — they are *this* palette's first and second colours. The other two do
+     * not: a rejected frame is red and a silence is amber because that is what
+     * those things look like, not because of where a hue landed in the search.
+     * Both are fitted to the scheme's own paper, so a dark scheme gets a red
+     * that can be seen on it.
+     */
+    pick: series[0],
+    weekend: series[1],
+    reject: negativeFor(series[0], background, dark),
+    quiet: fitToPaper(hexOf(dark ? 0.68 : 0.62, 0.14, 62), background),
   };
 
   series.forEach((hex, i) => (roles[`series.${i}`] = hex));
@@ -100,6 +124,48 @@ function side(scheme, mode) {
   ramp(scheme.hue, dark).forEach((hex, i) => (roles[`ramp.${i}`] = hex));
 
   return roles;
+}
+
+/**
+ * The colour a rejection is drawn in: red, unless red will not do.
+ *
+ * Rejection is red — not a preference, it is what the colour means. But Picked
+ * and Rejected sit side by side on one slide, at the same size, meaning
+ * opposite things, and two of the ways a scheme can go wrong are not obvious
+ * until you look for them. A warm scheme's primary *is* red, so the pair
+ * becomes the same card twice; and a **green** primary against a red negative
+ * is the single most common pair a colour-blind reader cannot separate at all —
+ * which is not hypothetical here, since the shipped primary is a green.
+ *
+ * So it is searched rather than assumed, in order of how much each candidate
+ * still reads as a rejection, and the first one that clears both floors against
+ * the primary wins. Darkening comes before changing hue, because a dark red is
+ * still plainly a red and lightness is the channel colour blindness leaves
+ * alone. `paletteProblems` gates the pair afterwards regardless, so a scheme
+ * that somehow gets past all of this still says so out loud.
+ */
+const NEGATIVES = [
+  { hue: 27, chroma: 0.19, by: 0 },
+  { hue: 27, chroma: 0.16, by: -0.13 },
+  { hue: 12, chroma: 0.19, by: -0.06 },
+  { hue: 355, chroma: 0.19, by: 0 },
+  { hue: 340, chroma: 0.2, by: 0 },
+  { hue: 320, chroma: 0.2, by: 0 },
+];
+
+function negativeFor(pick, background, dark) {
+  const base = dark ? 0.64 : 0.58;
+  let fallback = null;
+
+  for (const one of NEGATIVES) {
+    const hex = fitToPaper(hexOf(base + one.by, one.chroma, one.hue), background);
+    fallback ??= hex;
+    if (separated(pick, hex)) return hex;
+  }
+  // Nothing red-ish worked, which means the primary is itself a red or a
+  // near-red: take the far side of the circle, the other honest reading of
+  // "opposite".
+  return fallback;
 }
 
 /** Five steps of one hue, far enough apart that the calendar is not flat. */

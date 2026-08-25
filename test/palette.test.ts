@@ -96,12 +96,34 @@ describe("the gates", () => {
   });
 
   test("two neighbours a colour-blind reader cannot separate", () => {
-    const theme = themeFor("light", { "series.1": "#2f7fd8" });
+    // Derived from the palette rather than written down. A hard-coded near-miss
+    // is a near-miss of *this* palette, and it stopped being one the day the
+    // primary moved from blue to green — the gate was fine, the fixture had
+    // quietly become two colours nobody would confuse.
+    const first = oklchOf(themeFor("light", {}).series[0] as string);
+    const theme = themeFor("light", { "series.1": hexOf(first.l + 0.02, first.c, first.h + 3) });
     const warnings = paletteProblems(theme).filter((one) => one.severity === "warn");
 
     assert.ok(warnings.some((one) => one.text.includes("colour-blind")), JSON.stringify(warnings));
     // Named, so the reader knows which two of eight swatches to go and change.
     assert.ok(warnings.every((one) => one.role === "series.0"));
+  });
+
+  /**
+   * The one pair in the palette a reader is guaranteed to see together.
+   *
+   * Picked and Rejected are two cards on one slide, at the same size, meaning
+   * opposite things — and neither is a series slot any more, so the gates that
+   * walk adjacent slots never looked at them. The case that matters is not
+   * hypothetical: the shipped primary is a green, and a green beside a red is
+   * the single most common pair a colour-blind reader cannot separate.
+   */
+  test("two verdicts nobody could tell apart", () => {
+    const green = themeFor("light", { reject: "#0f9a6e" });
+    const warnings = paletteProblems(green).filter((one) => one.severity === "warn");
+
+    assert.ok(warnings.some((one) => one.text.includes("Picked and Rejected")), JSON.stringify(warnings));
+    assert.ok(warnings.every((one) => one.role === "reject"), "named the wrong well");
   });
 
   test("a heat ramp that stops climbing, and one that doubles back", () => {

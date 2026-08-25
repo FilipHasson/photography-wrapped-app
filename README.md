@@ -200,6 +200,12 @@ A few things the slides do rather than say:
   packs itself into as many rows as make the squares biggest and labels where
   each year starts; a setting gives every year a row of its own instead, and
   another decides whether a year runs from January or from your start date.
+- **Every job has its own colour.** Picked, Rejected, the longest silence and
+  the weekend used to borrow a series slot, so changing the eighth series
+  repainted a verdict on one slide and a wall of days on another. They are
+  separate wells now, and Picked/Rejected are checked as a pair — a green
+  primary beside a red negative is the commonest pair a colour-blind reader
+  cannot separate, so the ready-made schemes search for a negative that works.
 - **Culling counts flags, not stars** — picked, rejected, and the ones you never
   went back to. It also counts what has actually *left*: a photograph deleted
   from a catalog leaves no trace in it, so the index counts what disappears each

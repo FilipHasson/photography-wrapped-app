@@ -1088,7 +1088,7 @@ function drawVerdictRows(root, plot, slide, theme, L) {
   slide.cards.forEach((card, i) => {
     const y = plot.y + i * (rowH + gap);
     const mid = y + rowH / 2;
-    const colour = card.glyph.kind === "thumb" && !card.glyph.up ? theme.series[7] : theme.series[0];
+    const colour = card.glyph.kind === "thumb" && !card.glyph.up ? theme.reject : theme.pick;
 
     pane({ x: plot.x, y, width: plot.w, height: rowH }, `${card.label}: ${card.value} — ${card.note}`, colour);
 
@@ -1358,7 +1358,7 @@ function drawVerdict(root, plot, slide, theme, L) {
    * more than one — so the colour has nothing left to say.
    */
   const paint = (glyph) =>
-    glyph.kind === "thumb" && !glyph.up ? theme.series[7] : theme.series[0];
+    glyph.kind === "thumb" && !glyph.up ? theme.reject : theme.pick;
 
   const pane = cardsOf(root, slide, theme);
 
@@ -1561,7 +1561,7 @@ function drawMonthBlocks(root, plot, slide, theme, L) {
       let fill = theme.blank;
       let what = "nothing";
       if (value === 0 && inside(slide.gap, key)) {
-        fill = theme.series[7];
+        fill = theme.quiet;
         what = "the longest quiet spell";
       } else if (value > 0 && within(slide.streak, key)) {
         fill = mix(theme.series[0], theme.surface, 0.45);
@@ -1705,7 +1705,7 @@ function drawStrip(root, plot, slide, theme, L) {
     let fill = theme.blank;
     let what = "nothing";
     if (value === 0 && inside(slide.gap, key)) {
-      fill = theme.series[7];
+      fill = theme.quiet;
       what = "the longest quiet spell";
     } else if (value > 0 && within(slide.streak, key)) {
       fill = mix(theme.series[0], theme.surface, 0.45);
@@ -1873,7 +1873,7 @@ function stripKey(slide, theme) {
     },
     {
       label: slide.gap ? `Longest quiet spell · ${fmt(slide.gap.days)} days` : "Longest quiet spell",
-      colour: theme.series[7],
+      colour: theme.quiet,
     },
     { label: "Nothing", colour: theme.blank },
   ];
@@ -2024,7 +2024,7 @@ function drawWeekAsRows(root, plot, slide, theme, L) {
   slide.days.forEach((value, day) => {
     const y = plot.y + day * rowH;
     const barW = value > 0 ? Math.max(2, (value / max) * width) : 0;
-    const colour = weekend.has(day) ? theme.series[1] : theme.series[0];
+    const colour = weekend.has(day) ? theme.weekend : theme.series[0];
 
     if (barW > 0) {
       bar(
@@ -2064,7 +2064,7 @@ function drawWeekAsRows(root, plot, slide, theme, L) {
       { x: plot.x, y: plot.y + plot.h - L.axis },
       [
         { label: "The working week", colour: theme.series[0] },
-        { label: "The weekend", colour: theme.series[1] },
+        { label: "The weekend", colour: theme.weekend },
       ],
       theme,
       L,
@@ -2092,7 +2092,7 @@ function drawWeek(root, plot, slide, theme, L) {
   slide.days.forEach((value, day) => {
     const cx = plot.x + band * (day + 0.5);
     const barHeight = value > 0 ? Math.max(2, (value / max) * height) : 0;
-    const colour = weekend.has(day) ? theme.series[1] : theme.series[0];
+    const colour = weekend.has(day) ? theme.weekend : theme.series[0];
 
     if (barHeight > 0) {
       column(
@@ -2134,7 +2134,7 @@ function drawWeek(root, plot, slide, theme, L) {
       { x: plot.x, y: plot.y + plot.h - L.axis },
       [
         { label: "The working week", colour: theme.series[0] },
-        { label: "The weekend", colour: theme.series[1] },
+        { label: "The weekend", colour: theme.weekend },
       ],
       theme,
       L,
