@@ -1,5 +1,6 @@
 // @ts-check
 import { drawBackdrop } from "./backdrop.js";
+import { unwatched, watchRoles } from "./roles.js";
 import { cardsOf } from "./cards.js";
 import { fontById } from "./type.js";
 import { DEFAULT_FORMAT, metrics } from "./formats.js";
@@ -184,7 +185,9 @@ function frame(slide, theme, L) {
   });
 
   root.append(el("rect", { x: 0, y: 0, width: L.width, height: L.height, fill: theme.surface }));
-  drawBackdrop(root, slide, theme, L);
+  // Unwatched on purpose: see `unwatched` in roles.js — the backdrop is
+  // decoration drawn from the palette, not something the chart encodes with.
+  drawBackdrop(root, slide, unwatched(theme), L);
 
   const inner = L.width - L.pad * 2;
   const eyebrowY = L.pad + L.eyebrow * 0.5;
@@ -3204,9 +3207,15 @@ export function renderSlide(slide, theme, format = DEFAULT_FORMAT) {
   // carrying no lettering draws exactly what it drew before there was a setting.
   font = fontById(theme.type?.family).stack;
   const L = metrics(format, theme.type?.scale ?? 1);
-  const { root, plot } = frame(slide, theme, L);
+  // Everything below draws from a theme that notes which roles it was asked
+  // for, so the drawing comes back knowing what it is made of. Two roles can
+  // hold one colour — Picked is the main colour by default — and a hex read
+  // back off the finished slide cannot tell them apart. See roles.js.
+  const watched = watchRoles(theme);
+  const { root, plot } = frame(slide, watched.theme, L);
   const draw = RENDERERS[slide.kind];
-  if (draw) draw(root, plot, slide, theme, L);
+  if (draw) draw(root, plot, slide, watched.theme, L);
   font = FONT;
+  root.setAttribute("data-roles", [...watched.used].join(" "));
   return root;
 }

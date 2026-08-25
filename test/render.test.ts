@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Db } from "../src/core/db.ts";
-import { defaultConfig, defaultSource, makeAnchor } from "../src/core/config.ts";
+import { defaultConfig, defaultSource, makeAnchor, PALETTE_ROLES } from "../src/core/config.ts";
 import { indexSource, indexOverview } from "../src/index/source.ts";
 import { computeStats, gearCatalog } from "../src/stats/aggregate.ts";
 import { buildDeck, type Slide } from "../src/stats/slides.ts";
@@ -91,6 +91,7 @@ let slides: Slide[] = [];
 let renderSlide: (slide: unknown, theme: unknown, format?: unknown) => ShimNode;
 let LIGHT: unknown;
 let DARK: unknown;
+let colourAt: (theme: unknown, role: string) => string | null;
 let FORMATS: Array<{ id: string; width: number; height: number }>;
 
 before(async () => {
@@ -160,7 +161,11 @@ before(async () => {
     FORMATS: Array<{ id: string; width: number; height: number }>;
   });
   // @ts-expect-error — untyped module, imported for its values.
-  ({ LIGHT, DARK } = (await import("../src/web/theme.js")) as { LIGHT: unknown; DARK: unknown });
+  ({ LIGHT, DARK, colourAt } = (await import("../src/web/theme.js")) as {
+    LIGHT: unknown;
+    DARK: unknown;
+    colourAt: (theme: unknown, role: string) => string | null;
+  });
 });
 
 after(async () => {
@@ -1147,8 +1152,8 @@ describe("what the slide is drawn on", () => {
   });
 
   test("it is never mistaken for data", () => {
-    // `coloursIn` in deck.js skips this group, which is what keeps a backdrop
-    // from putting a well in "Colours here" for a colour no chart uses.
+    // The one group "Colours here" must never walk into, which is what keeps a
+    // backdrop from putting a well up for a colour no chart uses.
     for (const kind of KINDS) {
       const root = renderSlide(slides[0]!, on(kind), FORMATS[0]!);
       const layers = [...root.walk()].filter((node) => node.attrs.has("data-backdrop"));
@@ -1265,5 +1270,94 @@ describe("how a card is drawn", () => {
 
     assert.equal(shape(styled("nonsense")), shape(styled("glass")));
     assert.equal(shape({ ...(LIGHT as object) }), shape(styled("glass")));
+  });
+});
+
+
+
+/**
+ * What a slide reports being drawn with.
+ *
+ * The panel beside a slide offers that slide's own colours, and it takes the
+ * list from the drawing itself — `renderSlide` notes which roles were asked for
+ * as it draws, because two roles can hold one colour and a hex read back off
+ * the finished slide cannot tell Picked from the main colour. See roles.js.
+ *
+ * Two things have to hold for that list to be worth anything: nothing a chart
+ * draws with may be missing from it, or a reader loses the well they came for;
+ * and nothing may be in it that the palette has no well for.
+ */
+describe("what a slide says it is drawn with", () => {
+  const ROLES = new Set(PALETTE_ROLES.map((role) => role.id));
+  const said = (svg: ShimNode) =>
+    new Set((svg.attrs.get("data-roles") ?? "").split(" ").filter(Boolean));
+
+  /** Every hex on the drawing, which is the thing the list is a claim about. */
+  const drawn = (node: ShimNode, found = new Set<string>()): Set<string> => {
+    if (node.attrs.has("data-backdrop")) return found;
+    for (const name of ["fill", "stroke"]) {
+      const value = node.attrs.get(name);
+      if (value && value.startsWith("#")) found.add(value.toLowerCase());
+    }
+    for (const child of node.children) drawn(child, found);
+    return found;
+  };
+
+  test("names roles the palette has a well for, and nothing else", () => {
+    for (const theme of [LIGHT, DARK]) {
+      for (const slide of slides) {
+        for (const role of said(renderSlide(slide, theme, FORMATS[0]!))) {
+          assert.ok(ROLES.has(role), `${slide.id}: no well is called ${role}`);
+          assert.ok(colourAt(theme, role), `${slide.id}: ${role} resolves to no colour`);
+        }
+      }
+    }
+  });
+
+  test("leaves out nothing it is drawn with, in any shape", () => {
+    for (const format of FORMATS) {
+      for (const slide of slides) {
+        const svg = renderSlide(slide, LIGHT, format);
+        const roles = said(svg);
+        const hexes = drawn(svg);
+        // A colour two roles share counts as reported when either of them is:
+        // the mint on culling is Picked and the mint on the opening slide is
+        // the main colour, and both are the same hex.
+        const reported = new Set([...roles].map((role) => colourAt(LIGHT, role)));
+
+        for (const role of PALETTE_ROLES) {
+          const hex = (colourAt(LIGHT, role.id) ?? "").toLowerCase();
+          if (!hexes.has(hex) || roles.has(role.id) || reported.has(hex)) continue;
+          assert.fail(`${slide.id}/${format.id}: ${hex} is drawn but ${role.id} is not reported`);
+        }
+      }
+    }
+  });
+
+  test("the opening slide is not about a verdict", () => {
+    // The bug this whole record exists for: Picked and the main colour are one
+    // green, so matching hexes put a "Picked" well beside a slide that counts
+    // photographs and judges none of them.
+    const opening = said(renderSlide(slides[0]!, LIGHT, FORMATS[0]!));
+    assert.ok(opening.has("series.0"), "the opening slide is drawn in the main colour");
+    assert.ok(!opening.has("pick"), "the opening slide claims a verdict");
+    assert.ok(!opening.has("reject"), "the opening slide claims a verdict");
+
+    const culling = slides.find((slide) => slide.id === "culling");
+    assert.ok(culling, "the fixtures build a culling slide");
+    const verdicts = said(renderSlide(culling, LIGHT, FORMATS[0]!));
+    assert.ok(verdicts.has("pick") && verdicts.has("reject"), "culling is about both verdicts");
+  });
+
+  test("a backdrop is decoration, and never changes the answer", () => {
+    // Those shapes are drawn from the same palette, and a well for them would
+    // have the panel claiming the chart encodes with a colour behind it.
+    for (const slide of slides) {
+      const plain = [...said(renderSlide(slide, LIGHT, FORMATS[0]!))].join(" ");
+      for (const kind of ["blobs", "rings", "grain"]) {
+        const over = [...said(renderSlide(slide, { ...(LIGHT as object), backdrop: { kind, seed: 3 } }, FORMATS[0]!))].join(" ");
+        assert.equal(over, plain, `${slide.id}: ${kind} changed what the slide says it uses`);
+      }
+    }
   });
 });

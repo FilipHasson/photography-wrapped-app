@@ -102,8 +102,8 @@ const deck = createDeck({
   // twenty swatches is that?" — which is a question the reader should not have
   // been asked in the first place.
   onPickColour: (hex) => showWellFor(hex),
-  onColours: (colours) => {
-    slideColours = colours;
+  onRoles: (roles) => {
+    slideRoles = roles;
     renderWords();
     if (!pickingColour) renderColours();
   },
@@ -355,12 +355,13 @@ function renderSettings() {
 let colourMode = currentMode();
 
 /**
- * The colours the slide on screen is drawn in, as the deck last reported them.
+ * The palette roles the slide on screen is drawn with, as the deck last
+ * reported them.
  *
  * Null until a slide has been drawn — before that there is nothing to filter
  * by, so everything is offered.
  */
-let slideColours = null;
+let slideRoles = null;
 
 /** True while a picker is open, so the list it lives in is left alone. */
 let pickingColour = false;
@@ -373,16 +374,19 @@ let everyColour = false;
  *
  * Nineteen swatches in a column beside a bar chart is nineteen questions about
  * a chart that answers four of them, so the panel offers the colours the slide
- * is actually drawn in and keeps the rest behind a chip. Matching is by the hex
- * the theme resolves each role to, which is why it survives the reader changing
- * one: the slide is repainted with the new colour before this runs again.
+ * is actually drawn in and keeps the rest behind a chip.
+ *
+ * By role, not by colour. Matching the hexes back was exact until two roles
+ * held the same one — Picked *is* the main colour by default — and then the
+ * opening slide, which encodes no verdict at all, listed a well for Picked. The
+ * drawing says which roles it asked for now; see roles.js.
  */
-function rolesOnShow(roles, theme) {
-  if (everyColour || slideColours === null) return roles;
+function rolesOnShow(roles) {
+  if (everyColour || slideRoles === null) return roles;
   // A slide that encodes nothing — the tiles, the map — comes back empty, and
   // the card says so rather than falling back to the whole palette, which would
   // be the panel claiming the slide uses colours it does not.
-  return roles.filter((role) => slideColours.has((colourAt(theme, role.id) ?? "").toLowerCase()));
+  return roles.filter((role) => slideRoles.has(role.id));
 }
 
 /**
@@ -599,18 +603,22 @@ let foundRole = null;
 /**
  * Which well a colour clicked on the slide belongs to.
  *
- * Data roles are searched before page ones. A colour can be both — a scheme is
- * free to put the same value on a series and on a hairline — and a click landed
- * on a chart far more likely means the thing the chart encodes with than the
- * paper behind it.
+ * Several roles can resolve to one hex, so the search is ordered by how likely
+ * each is to be the one meant. What this slide reported drawing with comes
+ * first — the mint on culling is Picked, the same mint on the opening slide is
+ * the main colour, and only the slide can settle that. Then data roles before
+ * page ones: a click that landed on a chart far more likely means the thing the
+ * chart encodes with than the paper behind it.
  */
 function showWellFor(hex) {
   const all = store.state.paletteRoles ?? [];
   const theme = themeFor(colourMode, store.state.config.palette?.[colourMode] ?? {});
-  const order = [
-    ...all.filter((role) => role.group === "data"),
-    ...all.filter((role) => role.group === "page"),
+  const here = (role) => slideRoles?.has(role.id) ?? false;
+  const ranked = (group) => [
+    ...all.filter((role) => role.group === group && here(role)),
+    ...all.filter((role) => role.group === group && !here(role)),
   ];
+  const order = [...ranked("data"), ...ranked("page")];
   const role = order.find((one) => (colourAt(theme, one.id) ?? "").toLowerCase() === hex);
 
   if (!role) {
@@ -788,7 +796,7 @@ function renderColours() {
 
   const page = all.filter((role) => role.group === "page");
   const data = all.filter((role) => role.group === "data");
-  const here = rolesOnShow(data, theme);
+  const here = rolesOnShow(data);
 
   // Page roles are few and always relevant, so they are never filtered away —
   // the background is on every slide by definition.
@@ -901,7 +909,7 @@ function previewColour(role, hex) {
   const palette = store.state.config.palette ?? { light: {}, dark: {} };
   palette[colourMode] = { ...palette[colourMode], [role]: hex };
   store.state.config.palette = palette;
-  // The repaint comes back through `onColours`, which is what rebuilds the
+  // The repaint comes back through `onRoles`, which is what rebuilds the
   // list — so there is no second call to make here, and while a picker is open
   // that rebuild is the one thing that must not happen.
   queueRepaint();

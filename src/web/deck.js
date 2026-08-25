@@ -1,5 +1,6 @@
 // @ts-check
 import { renderSlide } from "./chart.js";
+import { rolesOf } from "./roles.js";
 import { currentTheme } from "./theme.js";
 import { FORMATS, formatById } from "./formats.js";
 import {
@@ -32,7 +33,7 @@ export function createDeck({
   onToast,
   onExclude,
   onSetting,
-  onColours,
+  onRoles,
   onPickColour,
   palette,
   backdrop,
@@ -93,7 +94,7 @@ export function createDeck({
     stage.style.setProperty("--slide-aspect", `${format.width} / ${format.height}`);
     const drawn = renderSlide(current, themeNow(), format);
     stage.replaceChildren(drawn);
-    onColours?.(coloursIn(drawn));
+    onRoles?.(rolesOf(drawn));
 
     /**
      * The slides, by name, down the left.
@@ -126,31 +127,6 @@ export function createDeck({
     renderImageTypes();
     renderSettings();
     renderTable();
-  }
-
-  /**
-   * Every colour the slide on screen is actually drawn in.
-   *
-   * The picker beside a slide offers that slide's own colours, and this is how
-   * it knows which they are. The palette is written onto the elements as
-   * attributes — export rasterises the serialised SVG through an `<img>`, so it
-   * has to be — which makes the drawing its own record of what it used. Reading
-   * it back beats a table of which slide uses which role: that would be a
-   * second source of truth, and wrong within a month of the next slide.
-   */
-  function coloursIn(root, found = new Set()) {
-    // The backdrop is decoration drawn from the same palette, and walking into
-    // it would put a well in "Colours here" for a colour the *chart* does not
-    // use — that card answers what this slide encodes with, and the answer must
-    // not change because somebody turned some shapes on.
-    if (root.hasAttribute?.("data-backdrop")) return found;
-
-    for (const name of ["fill", "stroke"]) {
-      const value = root.getAttribute(name);
-      if (value && value.startsWith("#")) found.add(value.toLowerCase());
-    }
-    for (const child of root.children ?? []) coloursIn(child, found);
-    return found;
   }
 
   /**
@@ -539,11 +515,15 @@ export function createDeck({
   /**
    * The colour under a click, so the panel can say which well it is.
    *
-   * Reading it off the drawing rather than from a table of what each slide uses
-   * — the same rule `coloursIn` follows, and for the same reason: the palette
-   * is written on as attributes, so the drawing is the only source of truth
-   * that cannot go stale. Walking *up* from the target is what makes a click on
-   * a star, a bar or a word all land on something with a colour.
+   * Read off the drawing rather than from a table of what each slide uses: the
+   * palette is written onto the elements as attributes — export rasterises the
+   * serialised SVG through an `<img>`, so it has to be — which makes the
+   * drawing the one source of truth that cannot go stale. Walking *up* from the
+   * target is what makes a click on a star, a bar or a word all land on
+   * something with a colour.
+   *
+   * A hex can belong to two roles, so this answers *which colour* and the panel
+   * answers *which well*, narrowing it with the roles this slide reported.
    */
   function colourUnder(node) {
     for (let at = node; at && at !== stage; at = at.parentNode) {

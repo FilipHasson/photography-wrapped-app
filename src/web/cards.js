@@ -84,9 +84,10 @@ export const cardStyleById = (id) => CARD_STYLES.find((one) => one.id === id) ??
  * Opens a `<defs>` for one slide and hands back the function that paints a card.
  *
  * The painter takes `(box, title, accent)`. `accent` is the colour that card is
- * *about* — the verdict's own blue or red, the series colour on a year — and
+ * *about* — the verdict's own red or mint, the series colour on a year — and
  * only the tinted style spends it; the others take it and ignore it, so no
- * caller has to know which style is on.
+ * caller has to know which style is on, and a card drawn without one is free to
+ * pass nothing.
  *
  * Definitions are made once per slide where the style allows it and cached per
  * accent where it does not, because `objectBoundingBox` is a gradient's default:
@@ -109,8 +110,7 @@ export function cardsOf(root, slide, theme) {
   };
 
   const paint = PAINTERS[style] ?? PAINTERS.glass;
-  return (box, title, accent) =>
-    paint(root, { rx: 14, ...box }, theme, define, accent ?? theme.series[0], title);
+  return (box, title, accent) => paint(root, { rx: 14, ...box }, theme, define, accent, title);
 }
 
 /**
@@ -223,7 +223,12 @@ function outline(root, box, theme, _define, _accent, title) {
  * Cached per accent, since two cards on one slide are usually about different
  * things.
  */
-function tinted(root, box, theme, define, accent, title) {
+function tinted(root, box, theme, define, carried, title) {
+  // The fallback lives here rather than in `cardsOf` because this is the only
+  // style that spends it. Resolving it for every style had the map's ground
+  // reaching for the main colour whatever it was drawn in — and a slide that
+  // reaches for a colour is a slide that lists it in "Colours here".
+  const accent = carried ?? theme.series[0];
   const key = `tint-${accent.replace("#", "")}`;
   const wash = define(key, (name) =>
     el(

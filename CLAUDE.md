@@ -33,7 +33,8 @@ src/web/       the UI — plain HTML/CSS/ES modules, no framework;
                formats.js is the posting shapes, chart.js draws into them,
                picker.js is the colour picker, schemes.js the ready-made
                palettes, backdrop.js what a slide is drawn on, cards.js the
-               panel a number is set on, type.js the lettering
+               panel a number is set on, type.js the lettering, roles.js which
+               colours a slide turned out to be drawn with
 tools/         fixture generators: an EXIF/MP4 writer and a Lightroom catalog
 ```
 
@@ -316,17 +317,32 @@ re-reading a library for it.
   twenty swatches is *that*?" was answered by guessing. `colourUnder` in
   `deck.js` walks *up* from the target for the first `fill` or `stroke` that is
   a hex, which is what makes a click on a star, a bar or a word all land on
-  something; `showWellFor` in `app.js` matches it against `colourAt` per role,
-  data roles before page ones, and marks the well. A derived shade — the
+  something; `showWellFor` in `app.js` matches it against `colourAt` per role
+  and marks the well. The search is ordered by how likely each role is to be the
+  one meant: what this slide reported drawing with first, then data roles before
+  page ones. That ordering is the whole answer to one hex belonging to two
+  roles — the mint on culling is Picked, the same mint on the opening slide is
+  the main colour, and only the slide can settle it. A derived shade — the
   teleconverter tint, the longest run, the clock's blends — matches nothing and
   says so, rather than shrugging. Advancing keeps ← → space, the arrows either
   side and the dots underneath; selecting had nothing at all.
-- **Which data roles a slide offers is read off the drawing.** `coloursIn` in
-  `deck.js` collects the `fill` and `stroke` attributes from the rendered SVG
-  and matches them against `colourAt` per role — never a table of which slide
-  uses which role, which would be a second source of truth and wrong within a
-  month. A slide that encodes nothing says so rather than falling back to the
-  whole palette. What it *cannot* offer is a derived shade: the teleconverter
+- **Which data roles a slide offers is recorded as it is drawn.**
+  `renderSlide` hands the renderers a theme through a proxy (`web/roles.js`)
+  that notes every hex read out of it, and writes the names onto the `<svg>` as
+  `data-roles`; `deck.js` reports that and `rolesOnShow` in `app.js` filters the
+  wells by it. It used to match the hexes on the finished drawing back to roles,
+  which is exact until two roles hold one colour — and two do by design, Picked
+  being the main colour and the weekend being series 2 — so the opening slide,
+  which judges nothing, grew a well labelled "Picked". Noting the role that was
+  asked for instead of the colour that came out keeps what was right about
+  reading it off the drawing: nothing is declared anywhere, so a chart that
+  starts using a new colour reports it the day it does, and there is still no
+  table of which slide uses which role to go stale a month after the next slide.
+  The backdrop is handed the theme back `unwatched`, which is where decoration
+  is kept out of the answer. `test/render.test.ts` holds the list to both
+  halves: nothing a slide is drawn with may be missing from it, and nothing may
+  be in it that the palette has no well for. A slide that encodes nothing says
+  so rather than falling back to the whole palette. What it *cannot* offer is a derived shade: the teleconverter
   tint, the longest run, the clock's blends are computed from roles, so they
   move when their role does and have no well of their own. Two things this rests on: the
   palette is written on as attributes, which `test/render.test.ts` asserts along
@@ -387,7 +403,8 @@ re-reading a library for it.
   everything a drawing needs that is not the slide already travels there, and
   the page, the sheet and the export all build their theme through that one call.
 - **The backdrop is decoration, and says so.** It lives in a `<g data-backdrop>`
-  that `coloursIn` skips, so it never adds a well to "Colours here" — that card
+  and is drawn from a theme that is not being watched, so it never adds a well
+  to "Colours here" — that card
   answers what the *chart* encodes with, and the answer must not change because
   someone turned some shapes on. It also stays out of the middle of the frame by
   construction: blob centres ride the border so only the soft outside of a
@@ -420,10 +437,13 @@ re-reading a library for it.
   `objectBoundingBox` is a gradient's default, so one vertical ramp fits every
   card whatever its size — and their ids carry the slide's id, because the
   contact sheet puts every slide in one document where two `url(#card)` would
-  both find the first. **None of it adds a well to "Colours here"**: a
-  `url(...)` is not a hex, so `coloursIn` cannot see the gradient styles at
-  all, and the one style that writes hexes writes `plane` and `grid`, which are
-  page roles in Style already.
+  both find the first. **None of it adds a data well to "Colours here"**: the
+  styles ask the theme for `plane`, `grid`, `surface` and `ink2` and nothing
+  else, which are page roles, on every slide anyway and in Style already. The
+  one thing a card could have asked for is the accent a caller did not pass, so
+  that fallback lives inside `tinted` — the only style that spends it — rather
+  than in `cardsOf`, where it had the ground under the map reaching for the main
+  colour whatever it was drawn in.
   `soft` sets no filter region on purpose. The default reaches ten per cent
   beyond each edge, which holds the blur — and a region written the usual way is
   `x="-25%"`, which `Number` reads as NaN, quietly turning off every frame check
