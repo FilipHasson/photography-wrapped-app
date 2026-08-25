@@ -37,6 +37,7 @@ export function createDeck({
   palette,
   backdrop,
   cardStyle,
+  type,
 }) {
   /**
    * The reader's colours, asked for rather than held.
@@ -46,7 +47,8 @@ export function createDeck({
    * old one until the page was reloaded. So this is a getter, called at every
    * paint, and `repaint()` is all a colour change has to do.
    */
-  const themeNow = () => currentTheme(palette?.() ?? null, backdrop?.() ?? null, cardStyle?.() ?? null);
+  const themeNow = () =>
+    currentTheme(palette?.() ?? null, backdrop?.() ?? null, cardStyle?.() ?? null, type?.() ?? null);
   let deck = { title: "", rangeLabel: "", slides: [] };
   let index = 0;
   let tableOpen = false;

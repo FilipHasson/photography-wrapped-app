@@ -185,6 +185,8 @@ export interface AppConfig {
    * made the flat one look like a hole punched through the slide.
    */
   cardStyle: CardStyle;
+  /** The face, the size and how the headline is set. */
+  type: Typography;
   /** Port for the local UI. 0 picks a free one. */
   port: number;
 }
@@ -314,6 +316,41 @@ export function coerceCardStyle(value: unknown): CardStyle {
   return CARD_STYLES.find((entry) => entry === value) ?? "glass";
 }
 
+/**
+ * How a deck is lettered.
+ *
+ * Ids and numbers only — the stacks, the labels and the reasoning live in
+ * `web/type.js`, the layer that draws. `scale` multiplies every size a format
+ * derives rather than setting any one of them: the layouts are tuned in
+ * proportion to each other, and a headline set to 90px beside an axis at 40px
+ * is a slide the renderer has no way to fit. `weight` and `italic` are the
+ * headline's alone — it is the one piece of text on a slide that is a design
+ * choice rather than a measurement.
+ */
+export interface Typography {
+  family: string;
+  scale: number;
+  weight: number;
+  italic: boolean;
+}
+
+const FONT_IDS: readonly string[] = ["system", "serif", "condensed", "mono"];
+const WEIGHTS: readonly number[] = [400, 600, 800];
+
+export function coerceTypography(value: unknown): Typography {
+  const raw = (typeof value === "object" && value !== null ? value : {}) as Record<string, unknown>;
+  const scale = Number(raw.scale);
+
+  return {
+    family: FONT_IDS.find((id) => id === raw.family) ?? "system",
+    // Clamped rather than listed: a scale is a number, and a config carrying
+    // 1.12 from a version that offered it should keep it.
+    scale: Number.isFinite(scale) ? Math.min(1.6, Math.max(0.6, scale)) : 1,
+    weight: WEIGHTS.find((one) => one === Number(raw.weight)) ?? 600,
+    italic: raw.italic === true,
+  };
+}
+
 export function coerceBackdrop(value: unknown): Backdrop {
   const raw = (typeof value === "object" && value !== null ? value : {}) as Record<string, unknown>;
   const kind = BACKDROP_KINDS.find((entry) => entry === raw.kind) ?? "flat";
@@ -369,6 +406,7 @@ export function defaultConfig(): AppConfig {
     palette: { light: {}, dark: {} },
     backdrop: { kind: "flat", seed: 1 },
     cardStyle: "glass",
+    type: { family: "system", scale: 1, weight: 600, italic: false },
     port: 4112,
   };
 }
@@ -509,6 +547,7 @@ function coerce(raw: unknown): AppConfig {
     palette: coercePalette(r.palette),
     backdrop: coerceBackdrop(r.backdrop),
     cardStyle: coerceCardStyle(r.cardStyle),
+    type: coerceTypography(r.type),
     port: typeof r.port === "number" && Number.isFinite(r.port) ? r.port : base.port,
   };
 }

@@ -13,6 +13,7 @@ import { colourAt, currentMode, paletteProblems, themeFor } from "./theme.js";
 import { colourPicker } from "./picker.js";
 import { SCHEMES, schemePalette } from "./schemes.js";
 import { CARD_STYLES, cardStyleById } from "./cards.js";
+import { FONTS, SCALES, WEIGHTS } from "./type.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -87,6 +88,7 @@ const deck = createDeck({
   palette: () => store.state.config?.palette ?? null,
   backdrop: () => store.state.config?.backdrop ?? null,
   cardStyle: () => store.state.config?.cardStyle ?? null,
+  type: () => store.state.config?.type ?? null,
   onExit: () => show("view-home"),
   onToast: toast,
   onExclude: (dimension, key, excluded) => void setExcluded(dimension, key, excluded),
@@ -471,6 +473,51 @@ async function saveCardStyle(cardStyle) {
   }
 }
 
+/**
+ * How the deck is lettered: the face, the size, and the headline's weight.
+ *
+ * One saver for all four, because they are one decision — and because the
+ * config carries them as one object, so a patch that sent only `italic` would
+ * have to be merged against whatever else was there.
+ */
+function renderType() {
+  const type = store.state.config?.type ?? { family: "system", scale: 1, weight: 600, italic: false };
+
+  const row = (target, options, current, patch) =>
+    $(target).replaceChildren(
+      ...options.map((entry) =>
+        el(
+          "button",
+          {
+            type: "button",
+            class: entry.id === current ? "chip is-current" : "chip",
+            "aria-pressed": String(entry.id === current),
+            title: entry.note ?? entry.label,
+            onclick: () => void saveType(patch(entry.id)),
+          },
+          el("span", { text: entry.label }),
+        ),
+      ),
+    );
+
+  row("font-chips", FONTS, type.family, (id) => ({ family: id }));
+  row("scale-chips", SCALES, type.scale, (id) => ({ scale: id }));
+  row("weight-chips", WEIGHTS, type.weight, (id) => ({ weight: id }));
+  $("type-italic").checked = type.italic === true;
+}
+
+async function saveType(patch) {
+  const type = { ...(store.state.config?.type ?? {}), ...patch };
+  try {
+    await api("/api/config", { method: "POST", body: { type } });
+    await refreshState();
+    deck.repaint();
+    renderType();
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
 function renderBackdrops() {
   const current = store.state.config?.backdrop?.kind ?? "flat";
 
@@ -584,6 +631,7 @@ function renderColours() {
   renderSchemes();
   renderBackdrops();
   renderCardStyles();
+  renderType();
   const all = store.state.paletteRoles ?? [];
   const override = store.state.config.palette?.[colourMode] ?? {};
   const theme = themeFor(colourMode, override);
@@ -1470,6 +1518,7 @@ $("setting-owner").addEventListener("change", () => void saveSettings());
 $("setting-merge").addEventListener("change", () => void saveSettings());
 $("setting-video").addEventListener("change", () => void saveSettings());
 $("setting-deleted").addEventListener("change", () => void saveSettings());
+$("type-italic").addEventListener("change", () => void saveType({ italic: $("type-italic").checked }));
 // Half the fix, and the half nobody thinks of: the server is restarted at a
 // terminal, the page is reloaded here.
 $("stale-reload").addEventListener("click", () => location.reload());

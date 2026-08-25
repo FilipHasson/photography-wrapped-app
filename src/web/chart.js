@@ -1,6 +1,7 @@
 // @ts-check
 import { drawBackdrop } from "./backdrop.js";
 import { cardsOf } from "./cards.js";
+import { fontById } from "./type.js";
 import { DEFAULT_FORMAT, metrics } from "./formats.js";
 import { seriesColour } from "./theme.js";
 
@@ -32,6 +33,20 @@ import { seriesColour } from "./theme.js";
 const NS = "http://www.w3.org/2000/svg";
 const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 
+/**
+ * The face this slide is being drawn in, for the length of one `renderSlide`.
+ *
+ * Module state, which is worth a word. `text()` is called from about a hundred
+ * places and takes no theme; threading one through all of them to change a font
+ * would be a hundred edits for one setting, and every future call site a chance
+ * to forget. Drawing is synchronous and single-threaded — `renderSlide` sets
+ * this on the way in and nothing yields before it returns — so there is no
+ * window in which two slides could be drawn in each other's lettering. Also
+ * measuring: `measure` has to ask about the same face the text will be set in,
+ * or every fitted label is fitted to the wrong width.
+ */
+let font = FONT;
+
 // ------------------------------------------------------------- elements ----
 
 export function el(tag, attrs = {}, ...children) {
@@ -58,7 +73,7 @@ function text(value, x, y, options = {}) {
     "font-weight": weight,
     fill,
     "text-anchor": anchor,
-    "font-family": FONT,
+    "font-family": font,
     ...rest,
   });
   node.textContent = value;
@@ -83,10 +98,14 @@ const measurer = document.createElement("canvas").getContext("2d");
  * Labels here are camera and lens names of wildly different lengths, and a
  * label that overflows its bar or collides with the next one is worse than no
  * label at all — so nothing is placed until it has been measured.
+ *
+ * Against the face the text will actually be set in, not the default one. A
+ * condensed deck measured as if it were the system stack fits eight characters
+ * where twelve would have gone, and a serif one runs off the end of its bar.
  */
 export function measure(value, size = 24, weight = 400) {
   if (!measurer) return value.length * size * 0.5;
-  measurer.font = `${weight} ${size}px ${FONT}`;
+  measurer.font = `${weight} ${size}px ${font}`;
   return measurer.measureText(value).width;
 }
 
@@ -159,7 +178,7 @@ function frame(slide, theme, L) {
     viewBox: `0 0 ${L.width} ${L.height}`,
     width: L.width,
     height: L.height,
-    "font-family": FONT,
+    "font-family": font,
     role: "img",
     "aria-label": `${slide.title}. ${slide.headline}`,
   });
@@ -178,9 +197,21 @@ function frame(slide, theme, L) {
     }),
   );
 
+  /**
+   * The headline, set the way the reader asked.
+   *
+   * Weight and slant reach here and nowhere else on purpose: an eyebrow in
+   * italics is a mistake and an axis label at weight 800 is noise, while the
+   * headline is the line somebody actually wants to style. The weight is passed
+   * to `wrap` as well as drawn with — a bold line is wider, and wrapping it as
+   * if it were semibold puts a word over the edge.
+   */
+  const weight = theme.type?.weight ?? 600;
+  const slant = theme.type?.italic ? { "font-style": "italic" } : {};
+
   // One step down for a long headline, and only one: past that it wraps.
   const headlineSize = slide.headline.length > 44 ? L.headlineSmall : L.headline;
-  const lines = wrap(slide.headline, inner, headlineSize, L.headlineLines, 600);
+  const lines = wrap(slide.headline, inner, headlineSize, L.headlineLines, weight);
   const lineHeight = headlineSize * 1.16;
   const headlineTop = eyebrowY + L.eyebrow * 1.9 + headlineSize * 0.82;
 
@@ -188,8 +219,9 @@ function frame(slide, theme, L) {
     root.append(
       text(line, L.pad, headlineTop + i * lineHeight, {
         size: headlineSize,
-        weight: 600,
+        weight,
         fill: theme.ink,
+        ...slant,
       }),
     );
   });
@@ -3168,9 +3200,13 @@ const RENDERERS = {
  * number refers to a deck nobody else has seen.
  */
 export function renderSlide(slide, theme, format = DEFAULT_FORMAT) {
-  const L = metrics(format);
+  // Set before anything is measured or drawn, and reset after, so a theme
+  // carrying no lettering draws exactly what it drew before there was a setting.
+  font = fontById(theme.type?.family).stack;
+  const L = metrics(format, theme.type?.scale ?? 1);
   const { root, plot } = frame(slide, theme, L);
   const draw = RENDERERS[slide.kind];
   if (draw) draw(root, plot, slide, theme, L);
+  font = FONT;
   return root;
 }

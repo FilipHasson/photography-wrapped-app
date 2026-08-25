@@ -200,6 +200,11 @@ A few things the slides do rather than say:
   packs itself into as many rows as make the squares biggest and labels where
   each year starts; a setting gives every year a row of its own instead, and
   another decides whether a year runs from January or from your start date.
+- **Set the deck in another face.** System, Serif, Condensed or Mono, at four
+  sizes, with the headline's weight and slant your own. No webfonts — nothing
+  here makes a request — so every face offered is one your machine already has,
+  and the export carries it because the font is written onto the SVG rather
+  than borrowed from the page.
 - **The deck edits like a tool.** A named list of slides down the left, the
   slide in the middle, and one inspector on the right — this slide's settings,
   the colours it is drawn in, the deck's style — instead of cards floating

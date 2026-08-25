@@ -7,6 +7,7 @@ import {
   coerceBackdrop,
   coerceCardStyle,
   coerceCount,
+  coerceTypography,
   PALETTE_ROLES,
   anchorRangeLabel,
   coerceAnchorGear,
@@ -257,6 +258,9 @@ async function applyConfigPatch(ctx: AppContext, body: Record<string, unknown>):
   // without the other would leave the shapes from the shape before.
   if (body.backdrop !== undefined) next.backdrop = coerceBackdrop(body.backdrop);
   if (body.cardStyle !== undefined) next.cardStyle = coerceCardStyle(body.cardStyle);
+  // A whole object at a time, like the backdrop: the face, the size and the
+  // headline's weight are one decision about how a deck is lettered.
+  if (body.type !== undefined) next.type = coerceTypography(body.type);
 
   // `location: null` clears it; anything else has to be a real position.
   if (body.location === null) next.location = null;

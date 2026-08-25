@@ -89,8 +89,8 @@ export function formatById(id) {
  * line, so those slides stack instead. `tall` decides which way a calendar
  * runs and how much a chart is allowed to grow into the space it is given.
  */
-export function metrics(format) {
-  const s = format.typeScale;
+export function metrics(format, scale = 1) {
+  const s = format.typeScale * scale;
   const size = (base) => Math.round(base * s);
 
   return {

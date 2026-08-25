@@ -33,7 +33,7 @@ src/web/       the UI — plain HTML/CSS/ES modules, no framework;
                formats.js is the posting shapes, chart.js draws into them,
                picker.js is the colour picker, schemes.js the ready-made
                palettes, backdrop.js what a slide is drawn on, cards.js the
-               panel a number is set on
+               panel a number is set on, type.js the lettering
 tools/         fixture generators: an EXIF/MP4 writer and a Lightroom catalog
 ```
 
@@ -259,6 +259,22 @@ re-reading a library for it.
   the palette that produced them, never against the mode alone — they are
   *searched for* relative to the slots already in use, so a mode-keyed cache
   hands a ninth lens a colour chosen for somebody else's palette.
+- **The lettering is the reader's, within limits that are the point.** `type.js`
+  holds four faces, and every named face in every stack ships with Windows *and*
+  macOS: nothing here makes a request, so a stack naming a face nobody has falls
+  back silently and the deck looks like the default while claiming otherwise.
+  Size is **one multiplier** over the format's own scale rather than a number
+  per piece of text — every size on a slide is derived, so one factor keeps the
+  proportions the layouts were tuned for, and a headline at 90px beside an axis
+  at 40px is a slide the renderer cannot fit. Weight and slant reach the
+  **headline only**: an eyebrow in italics is a mistake and an axis label at
+  weight 800 is noise. The face is module state in `chart.js` (`font`), set on
+  the way into `renderSlide` and reset on the way out, because `text()` is
+  called from a hundred places and takes no theme — and `measure` reads the same
+  variable, which is the part that matters: a condensed deck measured as the
+  system stack fits eight characters where twelve would go. Checked in a real
+  browser rather than the DOM shim, whose `measureText` is a length estimate
+  that cannot tell one face from another.
 - **The deck is a rail, a slide and one inspector.** It was three free-floating
   cards beside the frame, which wrapped against each other, each carried its own
   scrollbar, and left the reader hunting for which of them held the setting they

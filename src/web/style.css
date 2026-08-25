@@ -564,8 +564,14 @@ main:has(> .deck:not([hidden])) {
    full-width bar that read as a text field. They are buttons: they take the
    room the word needs. */
 .inspect-section > .inspect-body > .ghost,
-.inspect-section > .inspect-body > .chip {
+.inspect-section > .inspect-body > .chip,
+.inspect-section > .inspect-body > .setting {
   align-self: flex-start;
+}
+.type-italic {
+  gap: 8px;
+  align-items: center;
+  font-style: italic;
 }
 /* A count on the heading, so a folded section still says how much is behind
    it — the whole reason it is safe to fold. */
