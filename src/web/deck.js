@@ -27,7 +27,17 @@ const FORMAT_KEY = "wdis-format";
 /** PNG or JPEG. Remembered the same way the slide shape is. */
 const IMAGE_KEY = "wdis-image-type";
 
-export function createDeck({ onExit, onToast, onExclude, onSetting, onColours, palette, backdrop, cardStyle }) {
+export function createDeck({
+  onExit,
+  onToast,
+  onExclude,
+  onSetting,
+  onColours,
+  onPickColour,
+  palette,
+  backdrop,
+  cardStyle,
+}) {
   /**
    * The reader's colours, asked for rather than held.
    *
@@ -506,6 +516,44 @@ export function createDeck({ onExit, onToast, onExclude, onSetting, onColours, p
     }
   }
 
+  /**
+   * The colour under a click, so the panel can say which well it is.
+   *
+   * Reading it off the drawing rather than from a table of what each slide uses
+   * — the same rule `coloursIn` follows, and for the same reason: the palette
+   * is written on as attributes, so the drawing is the only source of truth
+   * that cannot go stale. Walking *up* from the target is what makes a click on
+   * a star, a bar or a word all land on something with a colour.
+   */
+  function colourUnder(node) {
+    for (let at = node; at && at !== stage; at = at.parentNode) {
+      // Decoration is not data. The shapes under a slide answer no question,
+      // and a well for them would claim the chart encodes with them.
+      if (at.hasAttribute?.("data-backdrop")) return null;
+      for (const name of ["fill", "stroke"]) {
+        const value = at.getAttribute?.(name);
+        if (value && value.startsWith("#")) return value.toLowerCase();
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Clicking a mark selects its colour. It used to advance the deck.
+   *
+   * Both are reasonable and they cannot both have the click, so it goes to the
+   * one this screen is for: the slide has a palette beside it, and the question
+   * "which of these twenty swatches is *that*?" was being answered by guessing.
+   * Advancing keeps four affordances — the arrows either side, ← and →, space,
+   * and the dots underneath — while selecting had none, and a viewer that is
+   * also an editor should behave like the editor when they disagree.
+   */
+  stage.addEventListener("click", (event) => {
+    if (event.target instanceof Element && event.target.closest("a")) return;
+    const hex = colourUnder(event.target);
+    if (hex) onPickColour?.(hex);
+  });
+
   $("deck-prev").addEventListener("click", () => go(index - 1));
   $("deck-next").addEventListener("click", () => go(index + 1));
   $("deck-png").addEventListener("click", () => void savePng());
@@ -526,12 +574,6 @@ export function createDeck({ onExit, onToast, onExclude, onSetting, onColours, p
   // out again when the window changes.
   window.addEventListener("resize", () => {
     if (sheetOpen && deck.slides.length > 0) renderSheet();
-  });
-
-  // Clicking the slide advances, which is what everyone expects of a deck.
-  stage.addEventListener("click", (event) => {
-    if (event.target instanceof Element && event.target.closest("a")) return;
-    go(index + 1);
   });
 
   return {

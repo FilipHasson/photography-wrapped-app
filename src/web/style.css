@@ -1,6 +1,9 @@
 /*
  * The page uses the same tokens the slides are drawn with, so the chrome round
- * a slide never fights the slide. Dark mode is a separate set of steps chosen
+ * a slide never fights the slide. The accent is the palette's own primary,
+ * stepped per mode the same way it is there — which is why the light one is a
+ * shade darker than the colour it stands for: at L 0.75 mint cannot carry text
+ * or clear a mark floor on near-white. Dark mode is a separate set of steps chosen
  * for a dark surface, not an inversion of the light one — see web/theme.js,
  * which holds the same values for the SVG side.
  */
@@ -15,9 +18,11 @@
   --ink2: #52514e;
   --muted: #898781;
 
-  --accent: #2a78d6;
-  --accent-ink: #ffffff;
-  --danger: #d03b3b;
+  --accent: #12a676;
+  /* Near-black on the accent rather than white: mint at 3.1:1 under white is
+     under the floor for text, and at 6.3:1 under ink it is comfortably over. */
+  --accent-ink: #0b0b0b;
+  --danger: #d33b36;
 
   --radius: 10px;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -35,9 +40,9 @@
     --ink2: #c3c2b7;
     --muted: #898781;
 
-    --accent: #3987e5;
+    --accent: #0fce92;
     --accent-ink: #0d0d0d;
-    --danger: #e66767;
+    --danger: #e95048;
   }
 }
 
@@ -51,9 +56,9 @@
   --ink2: #c3c2b7;
   --muted: #898781;
 
-  --accent: #3987e5;
+  --accent: #0fce92;
   --accent-ink: #0d0d0d;
-  --danger: #e66767;
+  --danger: #e95048;
 }
 
 * {
@@ -996,6 +1001,14 @@ main:has(> .deck:not([hidden])) {
   padding: 5px 6px;
   border: 1px solid transparent;
   border-radius: 8px;
+}
+
+/* The well for a colour just clicked on the slide. Loud on purpose and for a
+   moment only: the whole point is to answer "which one of these is that?"
+   without the reader having to compare twenty swatches by eye. */
+.colour-well.is-found {
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
 }
 
 /* A gate the palette does not clear, marked where the colour is rather than

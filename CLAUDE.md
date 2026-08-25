@@ -278,6 +278,17 @@ re-reading a library for it.
   `.deck-body` columns are **placed** rather than flowed, because a
   `display: none` grid item is removed from the grid entirely — hiding the data
   column used to shuffle the slide into the track meant for it.
+- **Clicking a mark selects its colour; it no longer advances the deck.** Both
+  gestures are reasonable and only one can have the click, so it goes to the one
+  this screen is for — a slide with a palette beside it, where "which of these
+  twenty swatches is *that*?" was answered by guessing. `colourUnder` in
+  `deck.js` walks *up* from the target for the first `fill` or `stroke` that is
+  a hex, which is what makes a click on a star, a bar or a word all land on
+  something; `showWellFor` in `app.js` matches it against `colourAt` per role,
+  data roles before page ones, and marks the well. A derived shade — the
+  teleconverter tint, the longest run, the clock's blends — matches nothing and
+  says so, rather than shrugging. Advancing keeps ← → space, the arrows either
+  side and the dots underneath; selecting had nothing at all.
 - **Which data roles a slide offers is read off the drawing.** `coloursIn` in
   `deck.js` collects the `fill` and `stroke` attributes from the rendered SVG
   and matches them against `colourAt` per role — never a table of which slide

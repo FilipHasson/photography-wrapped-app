@@ -200,6 +200,10 @@ A few things the slides do rather than say:
   packs itself into as many rows as make the squares biggest and labels where
   each year starts; a setting gives every year a row of its own instead, and
   another decides whether a year runs from January or from your start date.
+- **Click a colour on the slide to find it in the palette.** The well lights up
+  and is named, so changing the one you are looking at is not a guessing game.
+  Clicking no longer advances the deck — the arrows, ← →, space and the dots
+  underneath all still do.
 - **Every job has its own colour.** Picked, Rejected, the longest silence and
   the weekend used to borrow a series slot, so changing the eighth series
   repainted a verdict on one slide and a wall of days on another. They are

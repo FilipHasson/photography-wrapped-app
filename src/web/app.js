@@ -96,6 +96,10 @@ const deck = createDeck({
   },
   // Reported by the deck after every paint, because the colours a slide uses
   // are a property of the slide and change as it does.
+  // Clicking a colour on the slide is the fastest way to answer "which of these
+  // twenty swatches is that?" — which is a question the reader should not have
+  // been asked in the first place.
+  onPickColour: (hex) => showWellFor(hex),
   onColours: (colours) => {
     slideColours = colours;
     if (!pickingColour) renderColours();
@@ -536,6 +540,46 @@ async function applyScheme(id) {
   }
 }
 
+/**
+ * The well the reader last pointed at on the slide, until they point at another.
+ *
+ * Held rather than flashed: finding the swatch is the beginning of changing it,
+ * so it stays marked while they reach for it.
+ */
+let foundRole = null;
+
+/**
+ * Which well a colour clicked on the slide belongs to.
+ *
+ * Data roles are searched before page ones. A colour can be both — a scheme is
+ * free to put the same value on a series and on a hairline — and a click landed
+ * on a chart far more likely means the thing the chart encodes with than the
+ * paper behind it.
+ */
+function showWellFor(hex) {
+  const all = store.state.paletteRoles ?? [];
+  const theme = themeFor(colourMode, store.state.config.palette?.[colourMode] ?? {});
+  const order = [
+    ...all.filter((role) => role.group === "data"),
+    ...all.filter((role) => role.group === "page"),
+  ];
+  const role = order.find((one) => (colourAt(theme, one.id) ?? "").toLowerCase() === hex);
+
+  if (!role) {
+    // A derived shade: the teleconverter tint, the longest run, the clock's
+    // blends. They move when the role they are computed from moves, and have no
+    // well of their own to point at — which is worth saying rather than
+    // shrugging at, because the reader can see the colour perfectly well.
+    toast(`${hex} is worked out from another colour, so it has no well of its own.`);
+    return;
+  }
+
+  foundRole = role.id;
+  renderColours();
+  document.querySelector(".colour-well.is-found")?.scrollIntoView({ block: "nearest" });
+  toast(`${role.label} — ${hex}`);
+}
+
 function renderColours() {
   renderSchemes();
   renderBackdrops();
@@ -578,9 +622,13 @@ function renderColours() {
       });
       swatch.style.background = hex;
 
+      const marks = ["colour-well"];
+      if (trouble.get(role.id) === "warn") marks.push("is-trouble");
+      if (role.id === foundRole) marks.push("is-found");
+
       const well = el(
         "div",
-        { class: trouble.get(role.id) === "warn" ? "colour-well is-trouble" : "colour-well" },
+        { class: marks.join(" ") },
         swatch,
         el(
           "span",
