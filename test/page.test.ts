@@ -147,3 +147,152 @@ describe("the page", () => {
     }
   });
 });
+
+/**
+ * The drawings beside a milestone.
+ *
+ * Hand-drawn on a 24×24 grid, because nothing here makes a request and emoji
+ * are a different picture on every machine. Two things can go wrong with a
+ * drawing written as numbers, and neither of them looks like an error: a
+ * coordinate outside the box is **clipped silently** — a wingtip simply is not
+ * there — and an icon nobody named is a picture a screen reader cannot read
+ * out. Both are checked here rather than in `render.test.ts`, which is about
+ * the slides; these are the page's.
+ */
+// @ts-expect-error — untyped module, imported for its behaviour, the same
+// arrangement `render.test.ts` uses for the drawing code.
+const { ICON_NAMES, iconSpec, iconFor, drawIcon } = (await import("../src/web/icons.js")) as {
+  ICON_NAMES: string[];
+  iconSpec: (name: string) => {
+    label: string;
+    d: string;
+    box: Array<Record<string, number>>;
+    round: Array<Record<string, number>>;
+  };
+  iconFor: (anchor: unknown) => string;
+  drawIcon: (name: string, className?: string) => unknown;
+};
+
+describe("the milestone icons", () => {
+  /**
+   * Every number in the drawing, whatever shape it came from.
+   *
+   * Straight out of `d` for the paths, which is only safe because none of them
+   * draws an arc — an arc carries two radii and three flags among its numbers,
+   * and a zero flag read as a position fails a drawing that is perfectly fine.
+   * Boxes and round things are elements for that reason, and become their own
+   * edges here.
+   */
+  const coordsOf = (name: string) => {
+    const spec = iconSpec(name);
+    const out = [...spec.d.matchAll(/-?\d+(?:\.\d+)?/g)].map((m) => Number(m[0]));
+    for (const box of spec.box) {
+      out.push(box.x!, box.x! + box.w!, box.y!, box.y! + box.h!);
+    }
+    for (const shape of spec.round) {
+      out.push(
+        shape.cx! - (shape.r ?? 0),
+        shape.cx! + (shape.r ?? 0),
+        shape.cy! - (shape.ry ?? shape.r ?? 0),
+        shape.cy! + (shape.ry ?? shape.r ?? 0),
+      );
+    }
+    return out;
+  };
+
+  test("every one of them stays inside its box, stroke and all", () => {
+    // The stroke is 1.7 and straddles the line it is on, so the drawing itself
+    // has to stop short of the edge by rather more than nothing.
+    for (const name of ICON_NAMES) {
+      for (const value of coordsOf(name)) {
+        assert.ok(
+          Number.isFinite(value) && value >= 0.85 && value <= 23.15,
+          `${name}: ${value} is outside the 24×24 grid, and would be clipped`,
+        );
+      }
+    }
+  });
+
+  test("every one of them fills enough of it to be seen", () => {
+    // The other half: an icon drawn in a corner of the grid is a speck beside
+    // the ones that are not, and nothing about it looks wrong in the source.
+    for (const name of ICON_NAMES) {
+      const all = coordsOf(name);
+      const size = Math.max(...all) - Math.min(...all);
+      assert.ok(size > 14, `${name} spans only ${size} of 24`);
+    }
+  });
+
+  test("every one of them is named", () => {
+    for (const name of ICON_NAMES) {
+      assert.ok((iconSpec(name).label ?? "").length > 0, `${name} has no name`);
+    }
+  });
+
+  test("a milestone gets the icon for what it points at", () => {
+    // What it is about, not what was done to it: buying a lens and selling one
+    // are the same lens, and a teleconverter is bought the way a lens is.
+    assert.equal(iconFor({ kind: "bought", gear: { dimension: "camera" } }), "camera");
+    assert.equal(iconFor({ kind: "sold", gear: { dimension: "camera" } }), "camera");
+    assert.equal(iconFor({ kind: "bought", gear: { dimension: "lens" } }), "lens");
+    assert.equal(iconFor({ kind: "bought", gear: { dimension: "teleconverter" } }), "teleconverter");
+    assert.equal(iconFor({ kind: "trip" }), "trip");
+    assert.equal(iconFor({ kind: "shoot" }), "shoot");
+    assert.equal(iconFor({ kind: "custom" }), "custom");
+
+    // An old milestone from before there were categories, and anything that
+    // arrives claiming a kind this does not have: a picture, never a gap.
+    assert.equal(iconFor({}), "custom");
+    assert.equal(iconFor({ kind: "bought" }), "custom");
+    assert.equal(iconFor({ kind: "nonsense", gear: { dimension: "tripod" } }), "custom");
+  });
+
+  test("the drawing says what it is to a reader who cannot see it", () => {
+    const made: Array<{ tag: string; attrs: Map<string, string>; children: unknown[]; textContent: string }> = [];
+    const shim = {
+      createElementNS: (_ns: string, tag: string) => {
+        const node = {
+          tag,
+          attrs: new Map<string, string>(),
+          children: [] as unknown[],
+          textContent: "",
+          setAttribute(key: string, value: string) {
+            this.attrs.set(key, value);
+          },
+          append(...kids: unknown[]) {
+            this.children.push(...kids);
+          },
+        };
+        made.push(node);
+        return node;
+      },
+    };
+    const had = (globalThis as Record<string, unknown>).document;
+    (globalThis as Record<string, unknown>).document = shim;
+
+    try {
+      for (const name of ICON_NAMES) {
+        const svg = drawIcon(name, "anchor-icon") as unknown as (typeof made)[number];
+        assert.equal(svg.attrs.get("role"), "img", `${name} is not marked as a picture`);
+        assert.equal(svg.attrs.get("aria-label"), iconSpec(name).label);
+        assert.equal(svg.attrs.get("class"), "anchor-icon");
+        // In the reader's own ink, so one drawing works on both papers.
+        assert.equal(svg.attrs.get("stroke"), "currentColor");
+        assert.equal(svg.attrs.get("viewBox"), "0 0 24 24");
+
+        const titles = (svg.children as Array<{ tag: string; textContent: string }>).filter(
+          (child) => child.tag === "title",
+        );
+        assert.equal(titles.length, 1, `${name} has ${titles.length} names on hover`);
+        assert.equal(titles[0]?.textContent, iconSpec(name).label);
+      }
+    } finally {
+      (globalThis as Record<string, unknown>).document = had;
+    }
+  });
+
+  test("the page has somewhere to put one", () => {
+    assert.ok(scripts.includes("anchor-icon"), "nothing draws an icon beside a milestone");
+    assert.ok(/\.anchor-icon\b/.test(css), "the icon has no size in the stylesheet");
+  });
+});

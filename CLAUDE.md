@@ -34,7 +34,8 @@ src/web/       the UI — plain HTML/CSS/ES modules, no framework;
                picker.js is the colour picker, schemes.js the ready-made
                palettes, backdrop.js what a slide is drawn on, cards.js the
                panel a number is set on, type.js the lettering, roles.js which
-               colours a slide turned out to be drawn with
+               colours a slide turned out to be drawn with, icons.js the
+               drawings beside a milestone
 tools/         fixture generators: an EXIF/MP4 writer and a Lightroom catalog
 ```
 
@@ -484,6 +485,26 @@ re-reading a library for it.
   The one exception is the pair of queries that list the hidden gear itself,
   which pass `hideGear: false` — a hidden row nobody can see is a hidden row
   nobody can restore.
+- **An icon is drawn here, never fetched and never typed.** `web/icons.js`
+  holds the drawings beside a milestone as a handful of lines on a 24×24 grid,
+  stroked in `currentColor` with no fill — one drawing works on near-white paper
+  and on near-black, and the row sets the weight of it by setting its own
+  colour. An icon font or a sprite is out by the rule that keeps the lettering
+  to faces already on the machine; emoji are worse, being a different picture
+  per platform, absent entirely for a lens, and deaf to the colour around them.
+  Boxes and round things are `<rect>` and `<ellipse>` rather than arcs in a
+  path, which is what lets `test/page.test.ts` read every number in a `d` as a
+  coordinate: an arc carries two radii and three flags, and a bounds check that
+  reads a zero flag as a position fails a drawing that is perfectly fine. That
+  test is the whole safety net here, because the two ways a hand-written drawing
+  goes wrong are both silent — a coordinate outside the box is clipped rather
+  than drawn wrong, and an icon nobody named is a picture a screen reader cannot
+  read out.
+  An icon says what the milestone is *about*, never whether it was bought or
+  sold: that half is a verb the label already carries, and a plus and a minus
+  three pixels apart is a distinction nobody can see. Size is the other half of
+  the design — these are used at 22px, and the first lens was a barrel from the
+  side, which at that size is a battery. Front on, it is nothing else in the set.
 - **A milestone points at gear by key, never by name.** `Anchor.gear` holds a
   `camera.key` / `lens.key` — or `photo.tc` for a converter — so the thing it
   refers to survives a rename, a naming setting, and a second source spelling it
@@ -643,7 +664,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 348 tests
+npm test          # 354 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```

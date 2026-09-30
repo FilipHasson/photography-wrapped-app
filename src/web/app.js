@@ -9,6 +9,7 @@
  */
 
 import { createDeck } from "./deck.js";
+import { drawIcon, iconFor } from "./icons.js";
 import { colourAt, currentMode, paletteProblems, themeFor } from "./theme.js";
 import { colourPicker } from "./picker.js";
 import { SCHEMES, schemePalette } from "./schemes.js";
@@ -986,9 +987,13 @@ function renderMilestones() {
           el(
             "div",
             { class: "anchor" },
+            // What it is, before what it is called. A list of milestones is
+            // read by scanning it, and a column of pictures is scannable in a
+            // way a column of sentences that all begin "Bought the" is not.
+            drawIcon(iconFor(anchor), "anchor-icon"),
             el(
               "div",
-              {},
+              { class: "anchor-what" },
               el("div", { class: "anchor-label", text: anchor.label }),
               el(
                 "div",

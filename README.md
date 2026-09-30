@@ -133,7 +133,10 @@ Two settings deal with that, and both are saved:
   says so out loud whenever it is holding a range back.
 - **Milestones** — named dates worth measuring from ("Bought the a9 III",
   "Moved to Lisbon"). Each becomes a one-click **Since …** range of its own, and
-  any of them can be promoted to the library start date with one button.
+  any of them can be promoted to the library start date with one button. Each
+  carries a small drawing of what it is about — a camera, a lens, a converter, a
+  plane for a trip — so a list of twenty is something you scan rather than
+  something you read.
 
   **Add milestone** opens a picker rather than an empty text box. Buying and
   selling a camera or a lens are categories, and the thing itself is chosen from

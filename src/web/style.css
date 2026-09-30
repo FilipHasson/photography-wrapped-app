@@ -968,6 +968,21 @@ main:has(> .deck:not([hidden])) {
   border-radius: var(--radius);
   background: var(--plane);
 }
+/* The row is icon, what it is, and what you can do with it. The middle takes
+   whatever is left, or `space-between` spreads three children instead of
+   pushing the buttons to the end. */
+.anchor-what {
+  flex: 1;
+  min-width: 0;
+}
+.anchor-icon {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  /* Body text rather than the accent: it says which kind of thing this is, and
+     a column of green would read as a column of status. */
+  color: var(--ink2);
+}
 .anchor-label {
   font-weight: 600;
 }
