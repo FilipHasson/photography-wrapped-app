@@ -1539,23 +1539,15 @@ function drawMonthBlocks(root, plot, slide, theme, L) {
   const within = (span, key) => span && key >= span.from && key <= span.to;
   const inside = (span, key) => span && key > span.from && key < span.to;
 
-  /** Where a day sits, or null when it is not in a month being drawn. */
-  const locate = (day) => {
-    const date = toDate(day);
-    const index = months.findIndex(
-      (m) => m.year === date.getUTCFullYear() && m.month === date.getUTCMonth(),
-    );
-    if (index < 0) return null;
-
-    const origin = originOf(index);
-    const lead = (new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1)).getUTCDay() + 6) % 7;
-    const offset = lead + date.getUTCDate() - 1;
-    return {
-      x: origin.x + (offset % 7) * cell,
-      y: origin.y + labelH + Math.floor(offset / 7) * cell,
-      band: index,
-    };
-  };
+  /**
+   * Where every drawn day landed, filled in as the blocks are drawn.
+   *
+   * The same record the packed wall keeps, for the same reason: the milestones
+   * want the geometry the squares have already worked out. Days in a block but
+   * outside the range are drawn hollow and left out of here, so nothing can be
+   * marked on one.
+   */
+  const cells = new Map();
 
   months.forEach((month, index) => {
     const origin = originOf(index);
@@ -1592,6 +1584,8 @@ function drawMonthBlocks(root, plot, slide, theme, L) {
         continue;
       }
 
+      cells.set(key, { x, y, band: index });
+
       const value = counts.get(key) ?? 0;
       let fill = theme.blank;
       let what = "nothing";
@@ -1615,32 +1609,141 @@ function drawMonthBlocks(root, plot, slide, theme, L) {
     }
   });
 
-  // Milestones are a ring on the day and nothing more here: the strip above each
-  // block already carries the month's own name, and a label written over that
-  // would cost the reader the thing that makes this layout findable. The hover
-  // still says what happened, as it does on a four-pixel square anywhere else.
+  /**
+   * Milestones are an outline and nothing more here: the strip above each block
+   * already carries the month's own name, and a label written over that would
+   * cost the reader the thing that makes this layout findable. The hover still
+   * says what happened, as it does on a four-pixel square anywhere else.
+   *
+   * Days run *across* a week here and down a column on the packed wall, which is
+   * the whole of the difference between the two — hence `down` being false and
+   * everything else being shared.
+   */
+  const pen = {
+    fill: "none",
+    stroke: theme.ink,
+    "stroke-width": Math.max(1, Math.min(2, size * 0.18)),
+  };
+
   for (const mark of marks) {
-    const at = locate(mark.day);
-    if (!at) continue;
-    root.append(
-      titled(
-        el("rect", {
-          x: at.x,
-          y: at.y,
-          width: size,
-          height: size,
-          rx: Math.min(2, size / 3),
-          fill: "none",
-          stroke: theme.ink,
-          "stroke-width": Math.max(1, Math.min(2, size * 0.18)),
-        }),
-        mark.full,
-      ),
-    );
+    const strips = stripsOf(cells, mark.day, mark.until ?? mark.day, false);
+    const blocks = new Map();
+    for (const strip of strips) {
+      blocks.set(strip.band, [...(blocks.get(strip.band) ?? []), strip]);
+    }
+    for (const run of blocks.values()) {
+      const outline = stripOutline(run, cell, size, false, pen);
+      if (outline) root.append(titled(outline, mark.full));
+    }
   }
 
   stripLegend(root, plot, slide, theme, L);
 }
+
+/**
+ * The days a milestone covers, gathered into the strips of the wall it fills.
+ *
+ * A wall of days is a grid with consecutive days along one axis and weeks along
+ * the other, so the days a trip covers are never an arbitrary blob: part of one
+ * strip, whole strips in the middle, part of a last one. That is what makes the
+ * outline drawable as a single shape rather than a box per square.
+ *
+ * `down` says which way the days run — down a week column on the packed wall,
+ * across a week row inside a month block — and it is the only difference between
+ * the two walls, so both get one implementation.
+ *
+ * Read off the cells that were actually drawn, so a trip reaching in from before
+ * the range is outlined over the part of it the wall is showing and the rest is
+ * left alone. The same rule `drawMarks` follows on the charts that draw time.
+ */
+function stripsOf(cells, from, to, down) {
+  const strips = new Map();
+
+  for (const [day, at] of cells) {
+    if (day < from || day > to) continue;
+    const across = down ? at.x : at.y;
+    const along = down ? at.y : at.x;
+    const key = `${at.band}:${across}`;
+    const strip = strips.get(key);
+
+    if (strip === undefined) strips.set(key, { band: at.band, across, lo: along, hi: along });
+    else {
+      strip.lo = Math.min(strip.lo, along);
+      strip.hi = Math.max(strip.hi, along);
+    }
+  }
+  return [...strips.values()];
+}
+
+/**
+ * One outline around a run of strips: a rectangle, or the staircase a run makes
+ * when it crosses from one week into the next.
+ *
+ * Drawn on the pitch rather than on the squares — half a gutter out on every
+ * side — because that is the one geometry where neighbouring strips meet
+ * exactly. Inset onto the squares instead, a run of five full weeks would come
+ * out as five separate top edges with a gap at each week boundary.
+ *
+ * The staircase is built by walking the tops left to right and the bottoms back
+ * again, stepping vertically wherever two neighbours disagree. Collinear points
+ * are left in: they cost a few bytes and save a special case.
+ */
+function stripOutline(strips, cell, size, down, attrs) {
+  const pad = (cell - size) / 2;
+  const run = [...strips].sort((a, b) => a.across - b.across);
+  const first = run[0];
+  if (first === undefined) return null;
+
+  const lead = first.across - pad;
+  const span = (strip) => [strip.lo - pad, strip.hi + size + pad];
+
+  if (run.length === 1) {
+    // A run inside one week is a rectangle, and a rectangle keeps the rounded
+    // corner every square on the wall has.
+    const [lo, hi] = span(first);
+    const box = down
+      ? { x: lead, y: lo, width: cell, height: hi - lo }
+      : { x: lo, y: lead, width: hi - lo, height: cell };
+    return el("rect", { ...box, rx: Math.min(2, size / 3), ...attrs });
+  }
+
+  const points = [];
+  const at = (across, along) => points.push(down ? [across, along] : [along, across]);
+
+  run.forEach((strip, i) => {
+    const before = run[i - 1];
+    const [lo] = span(strip);
+    if (before !== undefined) {
+      const [wasLo] = span(before);
+      if (wasLo !== lo) at(strip.across - pad, wasLo);
+    }
+    at(strip.across - pad, lo);
+    at(strip.across - pad + cell, lo);
+  });
+
+  for (let i = run.length - 1; i >= 0; i--) {
+    const strip = run[i];
+    const after = run[i + 1];
+    const [, hi] = span(strip);
+    if (after !== undefined) {
+      const [, wasHi] = span(after);
+      if (wasHi !== hi) at(strip.across - pad + cell, wasHi);
+    }
+    at(strip.across - pad + cell, hi);
+    at(strip.across - pad, hi);
+  }
+
+  // A single NaN in `d` makes the whole path vanish without a word — and unlike
+  // an `x` on a rect there is nothing for the render test to read it off — so
+  // the check is here, where it can drop the shape instead of the slide.
+  if (!points.every(([x, y]) => Number.isFinite(x) && Number.isFinite(y))) return null;
+
+  const d = `M${points.map(([x, y]) => `${trim(x)} ${trim(y)}`).join("L")}Z`;
+  return el("path", { d, "stroke-linejoin": "round", ...attrs });
+}
+
+/** Coordinates at the precision a wall of four-pixel squares can show. */
+const trim = (value) => String(Math.round(value * 10) / 10);
 
 /**
  * Every day in the range as a square, a week to a column.
@@ -1717,8 +1820,19 @@ function drawStrip(root, plot, slide, theme, L) {
   // are days the camera did come out — the silence is what lies between them.
   const inside = (span, key) => span && key > span.from && key < span.to;
 
+  /**
+   * Where every drawn day landed, filled in as the wall is drawn.
+   *
+   * The milestones need the geometry the squares have just worked out, and this
+   * is that geometry rather than a second copy of the arithmetic: it replaced a
+   * `locate` closure per layout, one of which walked the years to find a day's
+   * row. Only days inside the range go in, so a mark can never be drawn on one
+   * of the hollow part-week squares at either end.
+   */
+  const cells = new Map();
+
   /** One square: the day, or a hollow box where the range has not started. */
-  const square = (x, y, key, date, inRange) => {
+  const square = (x, y, key, date, inRange, band) => {
     if (!inRange) {
       // Drawn rather than skipped, so a part-week at either end reads as "not
       // in this range" instead of as a year that came out ragged.
@@ -1735,6 +1849,8 @@ function drawStrip(root, plot, slide, theme, L) {
       );
       return;
     }
+
+    cells.set(key, { x, y, band });
 
     const value = counts.get(key) ?? 0;
     let fill = theme.blank;
@@ -1759,43 +1875,72 @@ function drawStrip(root, plot, slide, theme, L) {
   };
 
   /**
-   * A milestone on the wall: the day itself ringed, and named above its column
-   * where the label strip is not already spoken for.
+   * A milestone on the wall: the days it covers outlined, and its name above
+   * the leftmost of them where the label strip is not already spoken for.
    *
-   * The ring is drawn on the square rather than around it — a day here can be
-   * four pixels across, and an outline that grew by two would swallow its
-   * neighbours. Whatever the size, the hover title says what happened.
+   * A trip is a fortnight and a photoshoot is an afternoon, so the outline goes
+   * around *the days*, not around the first of them — which is what the wall was
+   * missing. A trip and a purchase were both a ring on one square, so the slide
+   * about how steadily you shoot said nothing about the fortnight you spent
+   * doing it. A run that wraps to the next row of the wall is two outlines,
+   * because it is in two places on the page.
+   *
+   * One day comes out as one square of the same outline, so a photoshoot and
+   * the fortnight either side of it are plainly the same kind of thing. It is
+   * drawn half a gutter out from the squares rather than on them — the geometry
+   * `stripOutline` needs to give a run of whole weeks one unbroken top edge —
+   * which on a four-pixel day puts the line in the half-pixel gap where it costs
+   * a neighbour nothing, and leaves the day's own colour showing. Whatever the
+   * size, the hover says what happened.
    */
-  const markDays = (locate, claimed) => {
+  const markDays = (claimed) => {
     const labelSize = Math.min(L.tiny, Math.max(9, labelH * 0.85));
+    const pen = {
+      fill: "none",
+      stroke: theme.ink,
+      "stroke-width": Math.max(1, Math.min(2, size * 0.18)),
+    };
 
     for (const mark of marks) {
-      const at = locate(mark.day);
-      if (!at) continue;
+      const strips = stripsOf(cells, mark.day, mark.until ?? mark.day, true);
+      if (strips.length === 0) continue;
 
-      root.append(
-        titled(
-          el("rect", {
-            x: at.x,
-            y: at.y,
-            width: size,
-            height: size,
-            rx: Math.min(2, size / 3),
-            fill: "none",
-            stroke: theme.ink,
-            "stroke-width": Math.max(1, Math.min(2, size * 0.18)),
-          }),
-          mark.full,
-        ),
-      );
+      const bands = new Map();
+      for (const strip of strips) {
+        bands.set(strip.band, [...(bands.get(strip.band) ?? []), strip]);
+      }
+      for (const run of bands.values()) {
+        const outline = stripOutline(run, cell, size, true, pen);
+        if (outline) root.append(titled(outline, mark.full));
+      }
 
       if (labelH === 0) continue;
-      const edge = claimed.get(at.band) ?? -Infinity;
-      if (at.x < edge) continue;
-      claimed.set(at.band, at.x + measure(mark.label, labelSize) + labelSize * 0.8);
+      // The first day of it the wall is actually showing, which for a trip
+      // reaching in from before the range is not `mark.day`.
+      const head = strips.reduce((first, strip) =>
+        strip.band < first.band || (strip.band === first.band && strip.across < first.across)
+          ? strip
+          : first,
+      );
+
+      /**
+       * Where the name goes, which for a span is not only its first week.
+       *
+       * Year labels claim their space before any of this — knowing which year
+       * you are looking at comes first — and a trip in the opening weeks of one
+       * used to lose its name to that, which is the common case now that the
+       * wall draws trips out of the box. A span is wide enough to have somewhere
+       * else to put it: any week the trip covers is an honest place for its
+       * name, so it slides along to the first free one and only gives up when
+       * the whole span is spoken for. A single day has nowhere to slide to.
+       */
+      const last = strips.reduce((a, b) => (b.band === head.band && b.across > a ? b.across : a), head.across);
+      const at = Math.max(head.across, claimed.get(head.band) ?? -Infinity);
+      if (at > last) continue;
+      claimed.set(head.band, at + measure(mark.label, labelSize) + labelSize * 0.8);
 
       root.append(
-        text(mark.label, at.x, topOf(at.band) - gap * 0.6, { size: labelSize, fill: theme.ink2 }),
+        text(mark.label, at, topOf(head.band) - gap * 0.6, { size: labelSize, fill: theme.ink2 }),
       );
     }
   };
@@ -1816,25 +1961,27 @@ function drawStrip(root, plot, slide, theme, L) {
       for (let i = 0; i < weeksIn(row) * 7; i++) {
         const date = new Date(first.getTime() + (i - lead) * 86400000);
         const key = toKey(date);
-        square(left0 + Math.floor(i / 7) * cell, top + (i % 7) * cell, key, date, key >= row.from && key <= row.to);
+        square(
+          left0 + Math.floor(i / 7) * cell,
+          top + (i % 7) * cell,
+          key,
+          date,
+          key >= row.from && key <= row.to,
+          index,
+        );
       }
     });
 
-    // A row per year: the milestone's own year is the row it lands in.
-    markDays((day) => {
-      const index = rows.findIndex((row) => day >= row.from && day <= row.to);
-      const row = rows[index];
-      if (!row) return null;
-
-      const first = toDate(row.from);
-      const offset =
-        Math.round((toDate(day).getTime() - first.getTime()) / 86400000) + ((first.getUTCDay() + 6) % 7);
-      return {
-        x: left0 + Math.floor(offset / 7) * cell,
-        y: topOf(index) + (offset % 7) * cell,
-        band: index,
-      };
-    }, new Map(rows.map((_, index) => [index, left0 + measure(rows[index]?.label ?? "", Math.min(L.tiny, Math.max(9, labelH * 0.85))) + L.tiny])));
+    // A row per year: the year's own label has already claimed the left of its
+    // strip, so a milestone in the first week of a year gives way to it.
+    markDays(
+      new Map(
+        rows.map((_, index) => [
+          index,
+          left0 + measure(rows[index]?.label ?? "", Math.min(L.tiny, Math.max(9, labelH * 0.85))) + L.tiny,
+        ]),
+      ),
+    );
   } else {
     const first = toDate(slide.from);
     const lead = (first.getUTCDay() + 6) % 7;
@@ -1853,6 +2000,7 @@ function drawStrip(root, plot, slide, theme, L) {
         key,
         date,
         key >= slide.from && key <= slide.to,
+        band,
       );
     }
 
@@ -1879,14 +2027,7 @@ function drawStrip(root, plot, slide, theme, L) {
       root.append(text(year.label, x, topOf(band) - gap * 0.6, { size: size2, fill: theme.muted }));
     }
 
-    markDays((day) => {
-      const offset = Math.round((toDate(day).getTime() - first.getTime()) / 86400000) + lead;
-      if (offset < 0) return null;
-      const week = Math.floor(offset / 7);
-      const band = Math.floor(week / perBand);
-      if (band >= layout.bands) return null;
-      return { x: left0 + (week - band * perBand) * cell, y: topOf(band) + (offset % 7) * cell, band };
-    }, claimed);
+    markDays(claimed);
   }
 
   stripLegend(root, plot, slide, theme, L);

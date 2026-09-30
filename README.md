@@ -160,13 +160,19 @@ your longest burst · a closing summary.
 A few things the slides do rather than say:
 
 - **Your milestones turn up on the charts.** A milestone inside the range is a
-  hairline on gear over time, on month by month, and a ringed day on the wall of
-  streaks — so a series appearing, or three months of silence, has a reason
-  beside it rather than looking like missing data. Each is named where there is
-  room and hovers for the rest. Each of those three slides has its own switch,
-  and they disagree out of the box on purpose: month by month has a strip down
-  its side doing nothing else, so it is annotated, while the wall of streaks
-  loses a square for every mark drawn on it and starts clean.
+  hairline on gear over time and on month by month, and an outline round the
+  days it covers on the wall of streaks — so a series appearing, or three months
+  of silence, has a reason beside it rather than looking like missing data. Each
+  is named where there is room and hovers for the rest.
+- **The wall of streaks starts with the trips and the photoshoots.** Those two
+  are stretches of shooting, which is what that slide is about: a fortnight away
+  is outlined around the fourteen squares it happened on, not ringed on the
+  first of them. A purchase and a note to yourself are dates rather than
+  stretches, and on a wall with a square per day they cost a ring and a name for
+  something the other two slides say better — so they start hidden there and are
+  one chip away. Every slide that draws marks has a switch per kind, answered for
+  that slide: gear is the story on gear over time and it is on there out of the
+  box.
 - **Month by month runs down the page, not across it.** A library that reaches
   back years is ninety-odd months, and as columns that is a picket fence with a
   label every twelfth post. A row each gives the years a margin to read down and

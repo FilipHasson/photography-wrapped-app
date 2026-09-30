@@ -115,16 +115,32 @@ export interface MarkToggles {
   months?: boolean;
 }
 
-export const DEFAULT_MARKS = { timeline: true, streaks: false, months: true } as const;
+export type MarkSlide = keyof MarkToggles;
+
+export const MARK_SLIDES: readonly MarkSlide[] = ["timeline", "streaks", "months"];
 
 /**
- * Which *kinds* of milestone are drawn, wherever they are drawn.
+ * The wall is annotated out of the box now, and what changed is *what* it is
+ * annotated with: it draws the occasions and not the events — see
+ * `DEFAULT_TYPES`. The ring on a single day was the thing in the way, and that
+ * is the half now switched off here by default.
+ */
+export const DEFAULT_MARKS = { timeline: true, streaks: true, months: true } as const;
+
+/**
+ * Which *kinds* of milestone a slide draws.
  *
- * Deliberately one set for the whole deck rather than one per slide. The
- * per-slide switch above answers "do I want annotations on this chart"; this
- * one answers "do I care about trips" — a different question, and one whose
- * answer does not change between two charts of the same library. A slide × type
- * matrix would be twelve controls to express what four express.
+ * Per slide, because the answer genuinely differs and the charts say why. The
+ * timeline is a line through the months with a clear strip above it, and a
+ * camera arriving is most of the reason a line moves — gear is the story there.
+ * The wall of days is a square per day with nothing spare, and a bought/sold
+ * pin on one of them is a ring plus a name over the squares either side: the
+ * cost that kept the wall unannotated altogether. Held deck-wide, one of those
+ * two had to be wrong.
+ *
+ * It is still four switches in front of the reader, not twelve: a slide's panel
+ * offers its own, only for the kinds the range holds, and only when the slide is
+ * drawing marks at all.
  *
  * Purchases and sales are one type. They are the same thing seen twice, they
  * are drawn with the same `+`/`−` vocabulary, and nobody wants their camera
@@ -139,7 +155,35 @@ export interface TypeToggles {
 
 export type MarkType = keyof TypeToggles;
 
+/** One answer per slide that draws marks. Absent means that slide's default. */
+export type SlideTypes = Partial<Record<MarkSlide, TypeToggles>>;
+
 export const MARK_TYPES: readonly MarkType[] = ["gear", "trip", "shoot", "custom"];
+
+/**
+ * What each slide draws when nobody has said otherwise.
+ *
+ * The wall of days is about stretches of shooting, so it starts with the kinds
+ * that *are* one — `WINDOWED_KINDS`, the trips and the photoshoots, the two that
+ * carry a window and a count of the frames inside it. A purchase and a note to
+ * yourself are events on a date: real milestones, drawn everywhere else, and one
+ * chip away here. Deriving it from `WINDOWED_KINDS` rather than listing two
+ * strings is what keeps this true if a fifth kind is ever added.
+ */
+const OCCASIONS = new Set<MarkType>(WINDOWED_KINDS.map(markTypeOf));
+
+const EVERYTHING: Required<TypeToggles> = { gear: true, trip: true, shoot: true, custom: true };
+
+export const DEFAULT_TYPES: Record<MarkSlide, Required<TypeToggles>> = {
+  timeline: EVERYTHING,
+  months: EVERYTHING,
+  streaks: {
+    gear: OCCASIONS.has("gear"),
+    trip: OCCASIONS.has("trip"),
+    shoot: OCCASIONS.has("shoot"),
+    custom: OCCASIONS.has("custom"),
+  },
+};
 
 export function markTypeOf(kind: AnchorKind): MarkType {
   if (kind === "bought" || kind === "sold") return "gear";
@@ -148,13 +192,19 @@ export function markTypeOf(kind: AnchorKind): MarkType {
   return "custom";
 }
 
-export function resolveTypes(types: TypeToggles = {}): Required<TypeToggles> {
-  return {
-    gear: types.gear !== false,
-    trip: types.trip !== false,
-    shoot: types.shoot !== false,
-    custom: types.custom !== false,
-  };
+export function resolveTypes(types: SlideTypes = {}): Record<MarkSlide, Required<TypeToggles>> {
+  const out = {} as Record<MarkSlide, Required<TypeToggles>>;
+  for (const slide of MARK_SLIDES) {
+    const asked = types[slide] ?? {};
+    const fallback = DEFAULT_TYPES[slide];
+    out[slide] = {
+      gear: asked.gear ?? fallback.gear,
+      trip: asked.trip ?? fallback.trip,
+      shoot: asked.shoot ?? fallback.shoot,
+      custom: asked.custom ?? fallback.custom,
+    };
+  }
+  return out;
 }
 
 export function resolveMarks(marks: MarkToggles = {}): Required<MarkToggles> {
@@ -513,8 +563,8 @@ export interface DeckStats {
   markWeekend: boolean;
   /** Which time slides are annotated with the reader's milestones. */
   showMarks: Required<MarkToggles>;
-  /** Which kinds of milestone are drawn, on every slide that draws any. */
-  showTypes: Required<TypeToggles>;
+  /** Which kinds of milestone each of those slides draws. */
+  showTypes: Record<MarkSlide, Required<TypeToggles>>;
   /** How much the kit history repeats itself. */
   kit: Required<KitToggles>;
   /**
@@ -565,8 +615,8 @@ export interface StatsOptions {
   anchors?: readonly Anchor[];
   /** Which slides draw those milestones. Each has its own answer. */
   marks?: MarkToggles;
-  /** Which kinds of milestone are worth drawing at all. One answer, deck-wide. */
-  types?: TypeToggles;
+  /** Which kinds of milestone each slide draws. One answer per slide. */
+  types?: SlideTypes;
   /** Which of the kit history's overlapping rows are folded together. */
   kit?: KitToggles;
   /** Which way each chart's bars run, by slide id. */

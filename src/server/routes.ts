@@ -37,9 +37,10 @@ import {
   type DaylightMode,
   type GearItem,
   type Layouts,
+  MARK_SLIDES,
   MARK_TYPES,
   type MarkToggles,
-  type TypeToggles,
+  type SlideTypes,
   type KitToggles,
   type WallLayout,
   type RowLimits,
@@ -394,7 +395,7 @@ export async function handleApi(
       // per slide, because a mark costs a month-by-month row nothing and costs
       // the wall of days a square.
       const marks: MarkToggles = {};
-      for (const slide of ["timeline", "streaks", "months"] as const) {
+      for (const slide of MARK_SLIDES) {
         const asked = url.searchParams.get(`marks.${slide}`);
         if (asked === "on" || asked === "off") marks[slide] = asked === "on";
       }
@@ -408,12 +409,17 @@ export async function handleApi(
         if (asked === "on" || asked === "off") kit[field] = asked === "on";
       }
 
-      // `type.trip=off`: which kinds of milestone are worth drawing. One
-      // answer for the whole deck rather than one per slide — see `TypeToggles`.
-      const types: TypeToggles = {};
-      for (const type of MARK_TYPES) {
-        const asked = url.searchParams.get(`type.${type}`);
-        if (asked === "on" || asked === "off") types[type] = asked === "on";
+      // `type.streaks.trip=off`: which kinds of milestone a slide draws. Named
+      // for the slide because the answer differs between them — a camera
+      // arriving is most of the reason the timeline moves, and a ring on one
+      // square is what kept the wall of days unannotated. See `TypeToggles`.
+      const types: SlideTypes = {};
+      for (const slide of MARK_SLIDES) {
+        for (const type of MARK_TYPES) {
+          const asked = url.searchParams.get(`type.${slide}.${type}`);
+          if (asked !== "on" && asked !== "off") continue;
+          types[slide] = { ...types[slide], [type]: asked === "on" };
+        }
       }
 
       // `layout.lenses=columns`: which way one chart's bars run. By slide id,

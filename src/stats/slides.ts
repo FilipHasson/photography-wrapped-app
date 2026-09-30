@@ -3,7 +3,7 @@ import type {
   DeckStats,
   DayCount,
   Debut,
-  MarkToggles,
+  MarkSlide,
   MarkType,
   Milestone,
   Orientation,
@@ -318,9 +318,9 @@ function markTitle(milestone: Milestone): string {
   return `${milestone.label} · ${when}${took}`;
 }
 
-/** Whether this milestone's kind is one the reader still wants to see. */
-const shownType = (stats: DeckStats) => (milestone: Milestone) =>
-  stats.showTypes[markTypeOf(milestone.kind)];
+/** Whether this milestone's kind is one this slide draws. */
+const shownType = (stats: DeckStats, slide: MarkSlide) => (milestone: Milestone) =>
+  stats.showTypes[slide][markTypeOf(milestone.kind)];
 
 /**
  * Marks for the slides that draw time, or nothing at all.
@@ -329,9 +329,9 @@ const shownType = (stats: DeckStats) => (milestone: Milestone) =>
  * a slide setting like the rest: someone reading the shape of a year does not
  * always want to be told why it has that shape.
  */
-function marksFor(stats: DeckStats, slide: keyof MarkToggles): Mark[] | undefined {
+function marksFor(stats: DeckStats, slide: MarkSlide): Mark[] | undefined {
   if (stats.milestones.length === 0 || !stats.showMarks[slide]) return undefined;
-  return stats.milestones.filter(shownType(stats)).map((milestone) => ({
+  return stats.milestones.filter(shownType(stats, slide)).map((milestone) => ({
     day: milestone.day,
     ...(milestone.until > milestone.day ? { until: milestone.until } : {}),
     label: markLabel(milestone),
@@ -660,18 +660,18 @@ function settingsOf(...offered: Array<SlideSetting | null>): { settings?: SlideS
 }
 
 /**
- * One switch per kind of milestone, deck-wide.
+ * One switch per kind of milestone, for this slide.
  *
- * Offered beside every slide that draws marks — the same setting, built by one
- * function, exactly as `yearBasisSetting` is shared by the years slide and the
- * wall. Two chips disagreeing about whether trips are shown would be worse than
- * having no chips at all.
+ * Built by one function for every slide that draws marks, but answered per
+ * slide: the chip says what *this* chart is showing, because that is what the
+ * reader is looking at while they press it. What the wall of days and the
+ * timeline want out of the box is genuinely different — see `DEFAULT_TYPES`.
  *
  * Only for kinds the range actually holds, and only when it holds more than
  * one: filtering to the single kind you have is a control that can only ever
  * make the chart worse.
  */
-function typeSettings(stats: DeckStats, slide: keyof MarkToggles): SlideSetting[] {
+function typeSettings(stats: DeckStats, slide: MarkSlide): SlideSetting[] {
   if (!stats.showMarks[slide] || stats.milestones.length === 0) return [];
 
   const present = MARK_TYPES.filter((type) =>
@@ -682,9 +682,11 @@ function typeSettings(stats: DeckStats, slide: keyof MarkToggles): SlideSetting[
   return present.map((type) => {
     const count = stats.milestones.filter((m) => markTypeOf(m.kind) === type).length;
     return {
-      id: `type.${type}`,
+      // By slide, because the answer is: two chips for trips, one per chart,
+      // each saying what the chart in front of you is drawing.
+      id: `type.${slide}.${type}`,
       label: TYPE_LABELS[type],
-      value: stats.showTypes[type] ? "on" : "off",
+      value: stats.showTypes[slide][type] ? "on" : "off",
       options: [
         { value: "on", label: "Shown", note: `${fmtInt(count)} in this range` },
         { value: "off", label: "Hidden" },
@@ -700,11 +702,11 @@ const TYPE_LABELS: Record<MarkType, string> = {
   custom: "Everything else",
 };
 
-function marksSetting(stats: DeckStats, slide: keyof MarkToggles): SlideSetting | null {
+function marksSetting(stats: DeckStats, slide: MarkSlide): SlideSetting | null {
   // What the switch would actually turn on, which is not every milestone once
   // a type can be hidden: "42 in this range" beside a chart showing six is a
   // chip that has stopped describing the thing it controls.
-  const count = stats.milestones.filter(shownType(stats)).length;
+  const count = stats.milestones.filter(shownType(stats, slide)).length;
   if (stats.milestones.length === 0) return null;
 
   return {

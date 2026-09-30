@@ -557,8 +557,11 @@ describe("milestones on the charts", () => {
       statsWith({
         milestones: KIT,
         // What is drawn where is the next block's business; this one is about
-        // what a mark says, so every slide that can carry one does.
+        // what a mark says, so every slide that can carry one does — and the
+        // wall is asked for the kinds it does not draw out of the box, because
+        // what these read are the gear labels.
         showMarks: resolveMarks({ streaks: true }),
+        showTypes: resolveTypes({ streaks: { gear: true, custom: true } }),
         daily,
         monthly: [
           { ym: 202501, shots: 60 },
@@ -707,14 +710,24 @@ describe("which slides draw the milestones", () => {
   };
 
   const slides = (marks = {}) => buildDeck(statsWith({ ...base, showMarks: resolveMarks(marks) })).slides;
+  /** The wall as it comes draws only trips and photoshoots, and `KIT` has none. */
+  const everything = { streaks: { gear: true, custom: true } };
   const marksOn = (id: string, marks = {}) => (findSlide(slides(marks), id)?.marks?.length ?? 0) > 0;
   const setting = (id: string, marks = {}) =>
     findSlide(slides(marks), id)?.settings?.find((s) => s.id.startsWith("marks."));
 
-  test("month by month is marked out of the box and the wall of days is not", () => {
+  test("every slide that can carry a mark is marked out of the box", () => {
     assert.equal(marksOn("calendar"), true);
     assert.equal(marksOn("timeline"), true);
+    // The wall draws them too now — but only the kinds that describe a stretch
+    // of shooting, and `KIT` is all purchases and one note, so it comes out
+    // empty until those kinds are asked for. That is the switch, not the wall.
     assert.equal(marksOn("streaks"), false);
+    assert.equal(
+      (findSlide(buildDeck(statsWith({ ...base, showTypes: resolveTypes(everything) })).slides, "streaks")
+        ?.marks?.length ?? 0) > 0,
+      true,
+    );
   });
 
   test("each carries its own switch, named for itself", () => {
@@ -724,20 +737,23 @@ describe("which slides draw the milestones", () => {
 
     // And each says where it currently stands rather than where the deck does.
     assert.equal(setting("calendar")?.value, "on");
-    assert.equal(setting("streaks")?.value, "off");
-    assert.equal(setting("streaks")?.options[0]?.note, "5 in this range");
+    assert.equal(setting("streaks")?.value, "on");
+    // What the switch would turn on here, which is none of `KIT`: the note
+    // counts what this slide draws rather than what the range holds.
+    assert.equal(setting("streaks")?.options[0]?.note, "0 in this range");
+    assert.equal(setting("calendar")?.options[0]?.note, "5 in this range");
   });
 
   test("turning one off leaves the others alone", () => {
     assert.equal(marksOn("calendar", { months: false }), false);
     assert.equal(marksOn("timeline", { months: false }), true);
-    assert.equal(marksOn("streaks", { streaks: true }), true);
-    assert.equal(marksOn("calendar", { streaks: true }), true);
+    assert.equal(marksOn("calendar", { streaks: false }), true);
+    assert.equal(marksOn("timeline", { streaks: false }), true);
   });
 
   test("the way back stays on the slide it was turned off from", () => {
     assert.equal(setting("calendar", { months: false })?.value, "off");
-    assert.equal(setting("streaks", { streaks: true })?.value, "on");
+    assert.equal(setting("streaks", { streaks: false })?.value, "off");
   });
 
   test("no switch at all when there is nothing to hide", () => {
@@ -751,7 +767,7 @@ describe("which slides draw the milestones", () => {
     const slide = findSlide(buildDeck(statsWith({ ...base, years: YEARS })).slides, "streaks");
     assert.deepEqual(
       slide?.settings?.map((setting) => setting.id),
-      ["wall", "yearBasis", "marks.streaks"],
+      ["wall", "yearBasis", "marks.streaks", "type.streaks.gear", "type.streaks.custom"],
     );
   });
 });
@@ -1002,16 +1018,50 @@ describe("which kinds of milestone get drawn", () => {
     return slide?.kind === "strip" ? slide : null;
   };
 
-  test("all four kinds by default", () => {
-    assert.equal(marksOn({})?.marks?.length, 4);
+  test("the wall starts with the occasions and not the events", () => {
+    // A trip and a photoshoot are stretches of shooting, which is what this
+    // slide is about; a purchase and a note to yourself are dates. Both are one
+    // chip away, and every other slide draws all four.
+    assert.deepEqual(
+      (marksOn({})?.marks ?? []).map((mark) => mark.label),
+      ["Iceland", "The wedding"],
+    );
+    assert.equal(marksOn({ streaks: { gear: true, custom: true } })?.marks?.length, 4);
   });
 
   test("a kind turned off leaves the others alone", () => {
-    const marks = marksOn({ trip: false, custom: false })?.marks ?? [];
+    const marks = marksOn({ streaks: { gear: true, trip: false, custom: true } })?.marks ?? [];
     assert.deepEqual(
       marks.map((mark) => mark.label),
-      ["+ a9 III", "The wedding"],
+      ["+ a9 III", "The wedding", "Moved to Lisbon"],
     );
+  });
+
+  test("one slide's answer is not another's", () => {
+    // Held deck-wide, one of these two had to be wrong: a camera arriving is
+    // most of the reason the timeline moves, and a ring on one square of the
+    // wall is the thing that kept the wall unannotated at all.
+    const deck = buildDeck(
+      statsWith({
+        milestones: MIXED,
+        showMarks: resolveMarks({}),
+        daily: [{ day: 20250110, shots: 5 }],
+        monthly: [{ ym: 202501, shots: 60 }, { ym: 202503, shots: 20 }, { ym: 202506, shots: 40 }],
+        longestStreak: { days: 40, from: 20250101, to: 20250209 },
+        longestGap: { days: 12, from: 20250210, to: 20250222 },
+        timeline: {
+          months: [202501, 202503, 202506],
+          series: [
+            { label: "FE 200-600mm G", values: [40, 10, 20] },
+            { label: "FE 70-200mm GM II", values: [20, 10, 20] },
+          ],
+        },
+      }),
+    ).slides;
+    const labels = (id: string) => (findSlide(deck, id)?.marks ?? []).map((mark) => mark.label);
+
+    assert.deepEqual(labels("streaks"), ["Iceland", "The wedding"]);
+    assert.deepEqual(labels("timeline"), ["+ a9 III", "Iceland", "The wedding", "Moved to Lisbon"]);
   });
 
   test("a trip carries its span, and nothing else does", () => {
@@ -1026,18 +1076,30 @@ describe("which kinds of milestone get drawn", () => {
     assert.equal(trip?.full, "Iceland · 1 Mar 2025 to 15 Mar 2025 · 120 photographs");
     // A purchase counts nothing: the frames taken the day a camera arrived say
     // nothing about the camera, and `gear.shots` is the honest number.
-    const bought = (marksOn({})?.marks ?? []).find((mark) => mark.label === "+ a9 III");
-    assert.equal(bought?.full, "Bought the a9 III · 10 Jan 2025");
+    const all = marksOn({ streaks: { gear: true } })?.marks ?? [];
+    assert.equal(all.find((mark) => mark.label === "+ a9 III")?.full, "Bought the a9 III · 10 Jan 2025");
   });
 
-  test("a switch per kind, and only for the kinds that are there", () => {
+  test("a switch per kind, named for the slide it speaks for", () => {
     const settings = marksOn({})?.settings?.map((one) => one.id) ?? [];
     assert.deepEqual(settings.filter((id) => id.startsWith("type.")), [
-      "type.gear",
-      "type.trip",
-      "type.shoot",
-      "type.custom",
+      "type.streaks.gear",
+      "type.streaks.trip",
+      "type.streaks.shoot",
+      "type.streaks.custom",
     ]);
+  });
+
+  test("each switch says what this slide is doing, not what the deck is", () => {
+    const chips = marksOn({})?.settings?.filter((one) => one.id.startsWith("type.")) ?? [];
+    const value = (type: string) => chips.find((one) => one.id === `type.streaks.${type}`)?.value;
+    assert.equal(value("trip"), "on");
+    assert.equal(value("shoot"), "on");
+    assert.equal(value("gear"), "off");
+    assert.equal(value("custom"), "off");
+    // And the count beside it is of the range, which is what a hidden kind
+    // needs in order to be worth turning on.
+    assert.equal(chips.find((one) => one.id === "type.streaks.gear")?.options[0]?.note, "1 in this range");
   });
 
   test("one kind of milestone is nothing to choose between", () => {
@@ -1060,7 +1122,9 @@ describe("which kinds of milestone get drawn", () => {
   test("the marks switch counts what it would actually show", () => {
     // "42 in this range" beside a chart drawing six is a chip that has stopped
     // describing the thing it controls.
-    const setting = marksOn({ trip: false, custom: false })?.settings?.find((one) => one.id === "marks.streaks");
+    const setting = marksOn({ streaks: { gear: true, trip: false } })?.settings?.find(
+      (one) => one.id === "marks.streaks",
+    );
     assert.equal(setting?.options[0]?.note, "2 in this range");
   });
 });

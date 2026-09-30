@@ -11,7 +11,7 @@ import { buildDeck, type Slide } from "../src/stats/slides.ts";
 import { resolveRange } from "../src/stats/range.ts";
 import { makeFixtures, fixtureCatalog, fixtureNow } from "../tools/make-fixtures.ts";
 import { makeCatalog } from "../tools/make-catalog.ts";
-import { daysBetween } from "../src/core/time.ts";
+import { addDays, daysBetween } from "../src/core/time.ts";
 
 /**
  * Renders every slide without a browser.
@@ -145,6 +145,12 @@ before(async () => {
         ]
       : []),
     makeAnchor("Moved to Lisbon", last, []),
+    // The kinds the wall of days draws out of the box, and the reason it has an
+    // outline at all. A fortnight crosses at least two week columns whatever
+    // weekday it starts on, so the staircase branch is drawn in every format;
+    // the one-day photoshoot keeps the single-square ring under test beside it.
+    makeAnchor("Iceland", addDays(first, 30), [], { kind: "trip", until: addDays(first, 43) }),
+    makeAnchor("The wedding", addDays(first, 60), [], { kind: "shoot" }),
   ];
 
   slides = buildDeck(computeStats(db, range, { includeVideo: true, anchors }), "Filip").slides;
@@ -229,6 +235,19 @@ describe("rendering", () => {
         const svg = renderSlide(slide, LIGHT, format);
         for (const node of svg.walk()) {
           if (node.tag === "svg") continue;
+          // A path has no x or y either, and its numbers are coordinate pairs
+          // in order — which holds because nothing in the deck draws an arc,
+          // the one command whose numbers are not all coordinates. Without this
+          // an outline round a trip could be drawn anywhere at all.
+          for (const [i, value] of (node.attrs.get("d") ?? "").split(/[^-0-9.]+/).filter(Boolean).entries()) {
+            const at = Number(value);
+            const [limit, edge] = i % 2 === 0 ? [format.width, "side"] : [format.height, "bottom"];
+            assert.ok(
+              Number.isFinite(at) && at >= -1 && at <= limit + 1,
+              `${format.id}/${slide.id}: ${node.tag} runs off the ${edge} (${at})`,
+            );
+          }
+
           // A polygon has no x or y — its geometry is a flat list of pairs, and
           // without this a drawn glyph could land anywhere at all and nothing
           // here would notice.
@@ -1361,3 +1380,128 @@ describe("what a slide says it is drawn with", () => {
     }
   });
 });
+
+/**
+ * The outline round the days a milestone covers.
+ *
+ * A trip is a fortnight and the wall of days is a square per day, so the mark
+ * has to be around *the days* — it was a ring on the first of them, which made a
+ * fortnight in Iceland and a lens arriving the same shape. The wall is the one
+ * chart in the deck where a span is not a horizontal band: days run down a week
+ * column here and across a week row inside a month block, so both walls build
+ * the shape from the cells they drew rather than from a formula of their own.
+ */
+describe("a trip on the wall of days", () => {
+  const wall = (layout: string, format = FORMATS[0]!) => {
+    const slide = slides.find((one) => one.id === "streaks");
+    assert.ok(slide?.kind === "strip", "the fixtures build no wall of days");
+    return renderSlide({ ...slide, layout }, LIGHT, format);
+  };
+
+  /** Everything drawn in `ink` with no fill: the outlines and nothing else. */
+  const outlines = (svg: ShimNode, label: string) =>
+    [...svg.walk()].filter(
+      (node) =>
+        node.attrs.get("fill") === "none" &&
+        node.children.some((child) => child.tag === "title" && child.textContent.startsWith(label)),
+    );
+
+  /**
+   * How far a shape reaches each way, whichever of the two it is: a run inside
+   * one week is a rectangle and keeps its rounded corner, and a run that crosses
+   * into the next is the staircase that needs a path.
+   */
+  const bounds = (node: ShimNode) => {
+    const at = (key: string) => Number(node.attrs.get(key) ?? 0);
+    if (node.tag === "rect") {
+      return { w: at("width"), h: at("height"), x: at("x"), right: at("x") + at("width") };
+    }
+    const numbers = (node.attrs.get("d") ?? "").split(/[^-0-9.]+/).filter(Boolean).map(Number);
+    const xs = numbers.filter((_, i) => i % 2 === 0);
+    const ys = numbers.filter((_, i) => i % 2 === 1);
+    return {
+      w: Math.max(...xs) - Math.min(...xs),
+      h: Math.max(...ys) - Math.min(...ys),
+      x: Math.min(...xs),
+      right: Math.max(...xs),
+    };
+  };
+
+  /** The side of one day's square, taken from the one-day mark beside it. */
+  const dayOf = (svg: ShimNode) => bounds(outlines(svg, "The wedding")[0]!).w;
+
+  test("the fixtures put one on the wall, in every layout", () => {
+    for (const layout of ["packed", "years", "months"]) {
+      assert.equal(outlines(wall(layout), "Iceland").length > 0, true, `no outline in ${layout}`);
+    }
+  });
+
+  test("it covers the days, not the first of them", () => {
+    // A fortnight crosses a week boundary whatever day it starts on, so the
+    // shape is the staircase: a path, more than one column wide, and as tall as
+    // the week it fills.
+    const svg = wall("packed");
+    const [shape] = outlines(svg, "Iceland");
+    const day = dayOf(svg);
+    assert.equal(shape?.tag, "path");
+    assert.ok(day > 0, "the one-day mark has no width");
+    assert.ok(bounds(shape!).w > day * 1.5, "the outline is one column wide");
+    assert.ok(bounds(shape!).h > day * 5, "the outline is shorter than the week it covers");
+  });
+
+  test("one day is one square of the same outline", () => {
+    // The same shape a fortnight gets, which is the point: a photoshoot and the
+    // trip either side of it are plainly the same kind of thing. A rectangle
+    // rather than a path, so it keeps the rounded corner every square here has.
+    const [shape] = outlines(wall("packed"), "The wedding");
+    assert.equal(shape?.tag, "rect");
+    const box = bounds(shape!);
+    assert.ok(Math.abs(box.w - box.h) < 0.001, `${box.w} by ${box.h} is not square`);
+  });
+
+  test("the month blocks outline the same days the other way up", () => {
+    // Days run across a week here and down a column on the packed wall, and
+    // that is the whole of the difference between the two — so a fortnight comes
+    // out wider than it is tall, where on the packed wall it was the reverse.
+    const shapes = outlines(wall("months"), "Iceland");
+    assert.ok(shapes.length > 0, "no outline in the month blocks");
+    const widest = shapes.map(bounds).reduce((a, b) => (a.w > b.w ? a : b));
+    assert.ok(widest.w > widest.h, `${widest.w} by ${widest.h} is drawn as a column`);
+  });
+
+  test("a trip across the turn of a month is outlined in both months", () => {
+    // Two places on the page, so two shapes — the same rule the packed wall
+    // follows when a run wraps onto the next row.
+    assert.equal(outlines(wall("months"), "Iceland").length, 2);
+  });
+
+  test("nothing is drawn for a milestone the wall is not showing", () => {
+    const slide = slides.find((one) => one.id === "streaks");
+    assert.ok(slide?.kind === "strip");
+    const bare = renderSlide({ ...slide, marks: [] }, LIGHT, FORMATS[0]!);
+    assert.equal(outlines(bare, "Iceland").length, 0);
+  });
+
+  test("a trip reaching in from before the range is outlined over the part that is drawn", () => {
+    const slide = slides.find((one) => one.id === "streaks");
+    assert.ok(slide?.kind === "strip");
+    const early = {
+      ...slide,
+      marks: [
+        {
+          day: addDays(slide.from, -40),
+          until: addDays(slide.from, 3),
+          label: "Before",
+          full: "Before · a trip that started earlier",
+        },
+      ],
+    };
+    const [shape] = outlines(renderSlide(early, LIGHT, FORMATS[0]!), "Before");
+    assert.ok(shape, "a trip overlapping the range is not drawn at all");
+
+    // Four days of it are in the range, so whatever it is, it is not the whole
+    // width of the wall — and it starts at the wall's own first column.
+    assert.ok(bounds(shape).w < FORMATS[0]!.width * 0.25, "the whole span was drawn");
+  });
+});
+

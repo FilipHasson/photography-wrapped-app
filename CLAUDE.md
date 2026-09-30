@@ -507,14 +507,20 @@ re-reading a library for it.
   unusable end date to a `shoot` rather than refusing it — losing a reader's
   own record of a trip over one mistyped field is the worse failure. Milestones
   are selected by *overlap* with the range, never containment.
-- **Which kinds are drawn is one answer for the whole deck.** `TypeToggles` /
-  `type.trip=off`, resolved by `resolveTypes` and built by one function,
+- **Which kinds a slide draws is that slide's answer.** `SlideTypes` /
+  `type.streaks.trip=off`, resolved by `resolveTypes` and built by one function,
   `typeSettings` — offered beside every slide that draws marks, only for the
-  kinds the range holds, and only when it holds more than one. The per-slide
-  `marks.*` switch answers "do I want annotations on this chart"; this answers
-  "do I care about trips", which is not a question whose answer changes between
-  two charts of the same library. A slide × type matrix would be twelve
-  controls doing the work of four. Purchases and sales are one type.
+  kinds the range holds, and only when it holds more than one. It was one answer
+  for the whole deck, on the argument that "do I care about trips" does not
+  change between two charts of the same library. It does: a camera arriving is
+  most of the reason the timeline moves, and on a wall with a square per day the
+  same milestone is a ring plus a name over its neighbours — the cost that kept
+  the wall unannotated altogether. Held deck-wide, one of those two had to be
+  wrong. It is still four switches in front of the reader rather than twelve: a
+  slide's panel offers its own. `DEFAULT_TYPES` is where they differ, and the
+  wall's default is *derived* from `WINDOWED_KINDS` rather than listing two
+  strings, so a fifth kind cannot quietly land on the wrong side of it.
+  Purchases and sales are one type.
 - **A milestone annotates; it never becomes a series.** `Mark`s ride on
   `Slide.marks` and only the renderers that draw time read them, as a dashed
   hairline in `ink2` with a name where one fits — never a colour from the
@@ -524,9 +530,8 @@ re-reading a library for it.
   before knowing which week a lens arrived. Drawing them at all is a slide
   setting — `marks.timeline`, `marks.streaks`, `marks.months` — resolved in one
   place, `resolveMarks`, and built by one function so three chips cannot drift
-  apart in wording. The *defaults* differ deliberately: a mark costs month by
-  month nothing and costs the wall of days a square, so the months start
-  annotated and the wall starts clean.
+  apart in wording. All three are on out of the box now; what the wall starts
+  *with* is the half of `DEFAULT_TYPES` that does not cost it a square.
 - **A bar chart's orientation is the reader's, and its default is the slide's.**
   `Slide.orientation` is set from `layout.<slide id>` and every renderer that
   draws bars branches on it — `drawBars` → `drawBarsAsColumns`, `drawColumns` →
@@ -536,6 +541,32 @@ re-reading a library for it.
   one answer in one place. Both halves are checked in every format and both
   themes: the flipped one is the half nobody looks at, and a label gutter that
   eats the plot is invisible to a bounds check.
+- **On the wall of days a milestone is an outline round the days it covers.**
+  Everywhere else a span is a band on a time axis; here the days are a grid, so
+  the days a trip covers are part of one week strip, whole strips, then part of
+  a last — never an arbitrary blob. `stripsOf` gathers them out of the cells the
+  wall has just drawn and `stripOutline` walks the tops left to right and the
+  bottoms back for the staircase, both in `chart.js` and both shared by the two
+  walls: days run down a week column on the packed one and across a week row
+  inside a month block, and `down` is the whole of the difference. It is built
+  on the *pitch* — half a gutter out from the squares on every side — because
+  that is the one geometry where neighbouring strips meet, and inset onto the
+  squares a run of five whole weeks comes out as five separate top edges. One
+  day is one square of the same outline, and a rectangle rather than a path so
+  it keeps the rounded corner every square here has. A run that wraps to the next
+  row of the wall is two shapes, because it is in two places on the page.
+  Reading the cells back rather than recomputing the geometry is also what
+  deleted a `locate` closure per layout, one of which walked the years per day;
+  only days inside the range are recorded, so nothing can be marked on the
+  hollow part-week squares at either end, and a trip reaching in from before the
+  range is outlined over the part that is drawn. A span's *name* may slide along
+  it to the first free week — year labels claim the strip first and a trip in
+  the opening weeks of one would otherwise lose its name, which is the common
+  case now that the wall draws trips out of the box; a single day has nowhere to
+  slide to. A `NaN` in a `d` makes the whole path vanish and there is no
+  attribute for the render test to read it off, so `stripOutline` drops a shape
+  it cannot number and the test parses `d` as coordinate pairs — which holds
+  because nothing in the deck draws an arc.
 - **The wall of days has three shapes and one legend.** `WallLayout` is
   `packed` (weeks wrapped into as many bands as make the squares biggest),
   `years` (a row each) or `months` (a block per month, days under their
@@ -612,7 +643,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 335 tests
+npm test          # 348 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```
