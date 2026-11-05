@@ -1,7 +1,9 @@
 # Photography Wrapped — working notes
 
 Counts a photography library and turns the counts into slides. See `README.md`
-for user-facing behaviour. This file is the map for changing it.
+for user-facing behaviour. This file is the map for changing it. The website is
+a separate repo, `photography-wrapped-site`, and its hero shows slides drawn by
+this repo's renderer — after a slide's layout changes, `npm run slides` there.
 
 ## Ground rules
 
@@ -35,7 +37,8 @@ src/web/       the UI — plain HTML/CSS/ES modules, no framework;
                palettes, backdrop.js what a slide is drawn on, cards.js the
                panel a number is set on, type.js the lettering, roles.js which
                colours a slide turned out to be drawn with, icons.js the
-               drawings beside a milestone
+               drawings beside a milestone, theme-toggle.js the light/dark
+               button (a plain script: it has to run before first paint)
 tools/         fixture generators: an EXIF/MP4 writer and a Lightroom catalog
 ```
 

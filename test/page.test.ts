@@ -173,6 +173,18 @@ const { ICON_NAMES, iconSpec, iconFor, drawIcon } = (await import("../src/web/ic
   drawIcon: (name: string, className?: string) => unknown;
 };
 
+describe("the light and dark toggle", () => {
+  test("is set before the stylesheet, so a stored choice never flashes", () => {
+    const script = html.indexOf('<script src="/theme-toggle.js"></script>');
+    assert.ok(script >= 0 && script < html.indexOf('rel="stylesheet"'));
+  });
+
+  test("the slides follow it, not only the OS", () => {
+    assert.ok(read("theme.js").includes("documentElement.dataset.theme"), "exports would ignore the toggle");
+    assert.ok(scripts.includes('"themechange"'), "the deck on screen would not redraw");
+  });
+});
+
 describe("the milestone icons", () => {
   /**
    * Every number in the drawing, whatever shape it came from.

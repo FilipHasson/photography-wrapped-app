@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- A plain camera whose lens is a pie chart: photographs, counted. -->
+  <rect x="10" y="4.5" width="12" height="6" rx="2" fill="#4caf6e"/>
+  <rect x="1.5" y="8.5" width="29" height="20" rx="4.5" fill="#4caf6e"/>
+  <circle cx="16" cy="18.5" r="7.5" fill="#fff"/>
+  <path d="M16 18.5V11a7.5 7.5 0 0 1 7.13 9.82z" fill="#23663d"/>
+</svg>

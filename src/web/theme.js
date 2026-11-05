@@ -98,9 +98,8 @@ export const DARK = {
 
 /** Which of the two columns is in front of the reader right now. */
 export function currentMode() {
-  const attribute = document.documentElement.dataset.theme;
-  if (attribute === "dark") return "dark";
-  if (attribute === "light") return "light";
+  const chosen = document.documentElement.dataset.theme;
+  if (chosen) return chosen;
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 

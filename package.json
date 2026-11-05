@@ -1,5 +1,5 @@
 {
-  "name": "photography-wrapped",
+  "name": "photography-wrapped-app",
   "version": "0.1.0",
   "private": true,
   "description": "Scan a photography library and turn it into a deck of stats slides — favourite lens, favourite body, favourite camera+lens combo, and the rest of the year in frames.",
@@ -12,9 +12,11 @@
     "wrapped": "src/cli.ts"
   },
   "scripts": {
+    "dev": "node --watch --disable-warning=ExperimentalWarning src/cli.ts --port 4112 --no-open",
     "start": "node --disable-warning=ExperimentalWarning src/cli.ts",
     "test": "node --disable-warning=ExperimentalWarning --test \"test/*.test.ts\"",
     "typecheck": "tsc --noEmit",
+    "clean": "node -e \"for (const p of ['fixtures', 'tmp']) require('node:fs').rmSync(p, { recursive: true, force: true })\"",
     "fixtures": "node tools/make-fixtures.ts"
   },
   "dependencies": {

@@ -1,27 +1,26 @@
 /*
- * The page uses the same tokens the slides are drawn with, so the chrome round
- * a slide never fights the slide. The accent is the palette's own primary,
- * stepped per mode the same way it is there — which is why the light one is a
- * shade darker than the colour it stands for: at L 0.75 mint cannot carry text
- * or clear a mark floor on near-white. Dark mode is a separate set of steps chosen
- * for a dark surface, not an inversion of the light one — see web/theme.js,
- * which holds the same values for the SVG side.
+ * The page wears the Easy Exif theme every photography project here shares
+ * (photo-settings-overlay/css/site.css): warm paper neutrals, green for
+ * anything you act on. That is the chrome only. The slides carry their own
+ * palette in web/theme.js — validated for colour blindness and the reader's to
+ * change — and nothing on a slide reads these tokens.
  */
 
 :root {
-  --surface: #fcfcfb;
-  --plane: #f9f9f7;
-  --raised: #ffffff;
-  --border: #e1e0d9;
-  --border-strong: #c3c2b7;
-  --ink: #0b0b0b;
-  --ink2: #52514e;
-  --muted: #898781;
+  --bg: #f5f1e8;
+  --surface: #fffcf5;
+  --surface-2: #efe9dc;
+  --border: #e2d9c6;
+  --border-strong: #cbbfa6;
+  --text: #1f1c16;
+  --text-dim: #615847;
+  --text-faint: #91866f;
 
-  --accent: #12a676;
-  /* Near-black on the accent rather than white: mint at 3.1:1 under white is
-     under the floor for text, and at 6.3:1 under ink it is comfortably over. */
-  --accent-ink: #0b0b0b;
+  --accent: #1f8a4c;
+  --accent-text: #ffffff;
+  /* Green for links and small text. The same as --accent on the light page;
+     on the dark one --accent is too dark to read as text. */
+  --accent-light: #1f8a4c;
   --danger: #d33b36;
 
   --radius: 10px;
@@ -36,34 +35,43 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --surface: #1a1a19;
-    --plane: #0d0d0d;
-    --raised: #232322;
-    --border: #2c2c2a;
-    --border-strong: #383835;
-    --ink: #ffffff;
-    --ink2: #c3c2b7;
-    --muted: #898781;
+    --bg: #171512;
+    --surface: #1f1c18;
+    --surface-2: #28241f;
+    --border: #35302a;
+    --border-strong: #4a433a;
+    --text: #f0ebe2;
+    --text-dim: #b5ab9b;
+    --text-faint: #837a6b;
 
-    --accent: #0fce92;
-    --accent-ink: #0d0d0d;
+    --accent: #4caf6e;
+    --accent-text: #0b1a10;
+    --accent-light: #8fd3a5;
     --danger: #e95048;
+
+    --theme-sun: none;
+    --theme-moon: block;
   }
 }
 
+/* The same values, for someone who chose dark with the toggle. */
 :root[data-theme="dark"] {
-  --surface: #1a1a19;
-  --plane: #0d0d0d;
-  --raised: #232322;
-  --border: #2c2c2a;
-  --border-strong: #383835;
-  --ink: #ffffff;
-  --ink2: #c3c2b7;
-  --muted: #898781;
+  --bg: #171512;
+  --surface: #1f1c18;
+  --surface-2: #28241f;
+  --border: #35302a;
+  --border-strong: #4a433a;
+  --text: #f0ebe2;
+  --text-dim: #b5ab9b;
+  --text-faint: #837a6b;
 
-  --accent: #0fce92;
-  --accent-ink: #0d0d0d;
+  --accent: #4caf6e;
+  --accent-text: #0b1a10;
+  --accent-light: #8fd3a5;
   --danger: #e95048;
+
+  --theme-sun: none;
+  --theme-moon: block;
 }
 
 * {
@@ -73,8 +81,8 @@
 body {
   margin: 0;
   font-family: var(--sans);
-  background: var(--plane);
-  color: var(--ink);
+  background: var(--bg);
+  color: var(--text);
   font-size: 15px;
   line-height: 1.5;
 }
@@ -98,13 +106,13 @@ button {
   cursor: pointer;
   border-radius: 8px;
   border: 1px solid var(--border-strong);
-  background: var(--raised);
-  color: var(--ink);
+  background: var(--surface);
+  color: var(--text);
   padding: 7px 14px;
   transition: background 0.12s ease, border-color 0.12s ease;
 }
 button:hover:not(:disabled) {
-  border-color: var(--ink2);
+  border-color: var(--text-dim);
 }
 button:disabled {
   opacity: 0.5;
@@ -112,8 +120,8 @@ button:disabled {
 }
 button.primary {
   background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
+  border-color: var(--accent-light);
+  color: var(--accent-text);
   font-weight: 600;
 }
 button.ghost {
@@ -125,8 +133,8 @@ input[type="number"],
 input[type="search"],
 input[type="date"] {
   font: inherit;
-  color: var(--ink);
-  background: var(--raised);
+  color: var(--text);
+  background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 8px;
   padding: 7px 10px;
@@ -138,7 +146,7 @@ button:focus-visible {
 }
 
 .hint {
-  color: var(--muted);
+  color: var(--text-faint);
   font-size: 0.86rem;
 }
 
@@ -150,8 +158,8 @@ button:focus-visible {
   justify-content: space-between;
   gap: 16px;
   padding: 12px 22px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  border-bottom: 1px solid transparent;
   position: sticky;
   top: 0;
   z-index: 5;
@@ -162,12 +170,41 @@ button:focus-visible {
   gap: 10px;
 }
 .brand-mark {
-  font-size: 20px;
+  display: block;
+  flex: none;
 }
 .topbar-right {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.theme-toggle:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+.theme-toggle svg {
+  width: 16px;
+  height: 16px;
+}
+.theme-sun {
+  display: var(--theme-sun, block);
+}
+.theme-moon {
+  display: var(--theme-moon, none);
 }
 
 main {
@@ -220,7 +257,7 @@ main:has(> .deck:not([hidden])) {
   margin-bottom: 10px;
 }
 .hero p {
-  color: var(--ink2);
+  color: var(--text-dim);
   max-width: 620px;
   margin: 0 auto 22px;
 }
@@ -244,8 +281,8 @@ main:has(> .deck:not([hidden])) {
 }
 .chip.is-current {
   background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
+  border-color: var(--accent-light);
+  color: var(--accent-text);
   font-weight: 600;
 }
 .chip-count {
@@ -259,7 +296,7 @@ main:has(> .deck:not([hidden])) {
   gap: 10px;
   flex-wrap: wrap;
   margin: 16px 0;
-  color: var(--ink2);
+  color: var(--text-dim);
 }
 .range-go {
   display: flex;
@@ -284,7 +321,7 @@ main:has(> .deck:not([hidden])) {
   padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--plane);
+  background: var(--bg);
 }
 .source-title {
   display: flex;
@@ -295,11 +332,11 @@ main:has(> .deck:not([hidden])) {
 .source-path {
   font-family: var(--mono);
   font-size: 0.8rem;
-  color: var(--muted);
+  color: var(--text-faint);
   word-break: break-all;
 }
 .source-meta {
-  color: var(--ink2);
+  color: var(--text-dim);
   font-size: 0.86rem;
   margin-top: 2px;
 }
@@ -315,11 +352,11 @@ main:has(> .deck:not([hidden])) {
   padding: 2px 7px;
   border-radius: 999px;
   border: 1px solid var(--border-strong);
-  color: var(--muted);
+  color: var(--text-faint);
   font-weight: 600;
 }
 .empty-note {
-  color: var(--muted);
+  color: var(--text-faint);
   margin: 0;
 }
 
@@ -349,7 +386,7 @@ main:has(> .deck:not([hidden])) {
   margin-top: 3px;
   width: 16px;
   height: 16px;
-  accent-color: var(--accent);
+  accent-color: var(--accent-light);
 }
 
 /* ---------------------------------------------------------------- deck --- */
@@ -473,23 +510,23 @@ main:has(> .deck:not([hidden])) {
   border: 1px solid transparent;
   border-radius: 6px;
   background: none;
-  color: var(--ink2);
+  color: var(--text-dim);
   font: inherit;
   font-size: 0.86rem;
   text-align: left;
   cursor: pointer;
 }
 .slide-row:hover {
-  background: var(--plane);
+  background: var(--bg);
 }
 .slide-row.is-current {
   background: color-mix(in oklab, var(--accent) 16%, transparent);
   border-color: color-mix(in oklab, var(--accent) 45%, transparent);
-  color: var(--ink);
+  color: var(--text);
   font-weight: 600;
 }
 .slide-row-n {
-  color: var(--muted);
+  color: var(--text-faint);
   font-variant-numeric: tabular-nums;
   font-size: 0.78rem;
   text-align: right;
@@ -526,7 +563,7 @@ main:has(> .deck:not([hidden])) {
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--text-faint);
   cursor: pointer;
   list-style: none;
   display: flex;
@@ -552,7 +589,7 @@ main:has(> .deck:not([hidden])) {
   transform: rotate(90deg);
 }
 .inspect-section > summary:hover {
-  color: var(--ink);
+  color: var(--text);
 }
 .inspect-section > .inspect-body {
   padding: 2px 12px 12px;
@@ -582,8 +619,8 @@ main:has(> .deck:not([hidden])) {
   padding: 5px 7px;
   border-radius: 6px;
   border: 1px solid var(--border);
-  background: var(--plane);
-  color: var(--ink);
+  background: var(--bg);
+  color: var(--text);
   resize: vertical;
   min-height: 30px;
   field-sizing: content;
@@ -602,7 +639,7 @@ main:has(> .deck:not([hidden])) {
   padding: 0;
   border: 0;
   background: none;
-  color: var(--accent);
+  color: var(--accent-light);
   font: inherit;
   font-size: 0.72rem;
   cursor: pointer;
@@ -716,7 +753,7 @@ main:has(> .deck:not([hidden])) {
 .deck-data th {
   text-align: left;
   font-weight: 600;
-  color: var(--muted);
+  color: var(--text-faint);
   padding: 10px 12px 8px 0;
   position: sticky;
   top: 0;
@@ -726,7 +763,7 @@ main:has(> .deck:not([hidden])) {
 .deck-data td {
   padding: 6px 12px 6px 0;
   border-bottom: 1px solid var(--border);
-  color: var(--ink2);
+  color: var(--text-dim);
 }
 .deck-data td.numeric {
   font-variant-numeric: tabular-nums;
@@ -742,7 +779,7 @@ main:has(> .deck:not([hidden])) {
 .deck-data td.tick input {
   width: 16px;
   height: 16px;
-  accent-color: var(--accent);
+  accent-color: var(--accent-light);
   cursor: pointer;
 }
 /* A hidden row stays legible — it has to be readable to be brought back. */
@@ -808,7 +845,7 @@ main:has(> .deck:not([hidden])) {
   min-width: 240px;
 }
 .job-text span {
-  color: var(--muted);
+  color: var(--text-faint);
   font-size: 0.84rem;
 }
 .job-bar {
@@ -831,7 +868,7 @@ main:has(> .deck:not([hidden])) {
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   background: var(--surface);
-  color: var(--ink);
+  color: var(--text);
   padding: 0;
   width: min(760px, 92vw);
 }
@@ -885,11 +922,11 @@ main:has(> .deck:not([hidden])) {
   align-items: center;
 }
 .picker-entry:hover {
-  background: var(--plane);
+  background: var(--bg);
 }
 .picker-entry.is-current {
   background: var(--accent);
-  color: var(--accent-ink);
+  color: var(--accent-text);
 }
 .picker-icon {
   opacity: 0.8;
@@ -913,7 +950,7 @@ main:has(> .deck:not([hidden])) {
   bottom: 22px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--ink);
+  background: var(--text);
   color: var(--surface);
   padding: 10px 18px;
   border-radius: 999px;
@@ -966,7 +1003,7 @@ main:has(> .deck:not([hidden])) {
   padding: 10px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--plane);
+  background: var(--bg);
 }
 /* The row is icon, what it is, and what you can do with it. The middle takes
    whatever is left, or `space-between` spreads three children instead of
@@ -981,7 +1018,7 @@ main:has(> .deck:not([hidden])) {
   height: 22px;
   /* Body text rather than the accent: it says which kind of thing this is, and
      a column of green would read as a column of status. */
-  color: var(--ink2);
+  color: var(--text-dim);
 }
 .anchor-label {
   font-weight: 600;
@@ -1034,7 +1071,7 @@ main:has(> .deck:not([hidden])) {
   font-size: 0.76rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--text-faint);
 }
 .gear-group + li .picker-entry {
   border-top: none;
@@ -1048,11 +1085,11 @@ main:has(> .deck:not([hidden])) {
 }
 .gear-note {
   font-size: 0.78rem;
-  color: var(--muted);
+  color: var(--text-faint);
 }
 .gear-meta {
   font-size: 0.78rem;
-  color: var(--muted);
+  color: var(--text-faint);
   white-space: nowrap;
 }
 .picker-entry.is-current .gear-note,
@@ -1061,7 +1098,7 @@ main:has(> .deck:not([hidden])) {
   opacity: 0.85;
 }
 .gear-meta.is-recorded {
-  color: var(--accent);
+  color: var(--accent-light);
 }
 .picker-entry.is-current .gear-meta.is-recorded {
   color: inherit;
@@ -1121,7 +1158,7 @@ main:has(> .deck:not([hidden])) {
 /* The name over a row of chips. Quiet, because the chips are the thing being
    read — but present, because three unlabelled rows in one card is a puzzle. */
 .chips-label {
-  color: var(--muted);
+  color: var(--text-faint);
   font-size: 0.78rem;
   font-weight: 600;
   letter-spacing: 0.4px;
@@ -1179,7 +1216,7 @@ main:has(> .deck:not([hidden])) {
   border-radius: 6px;
 }
 .colour-well:hover {
-  background: var(--plane);
+  background: var(--bg);
 }
 .colour-well-name {
   overflow: hidden;
@@ -1190,7 +1227,7 @@ main:has(> .deck:not([hidden])) {
 .colour-well-hex {
   font-family: var(--mono);
   font-size: 0.72rem;
-  color: var(--muted);
+  color: var(--text-faint);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -1206,7 +1243,7 @@ main:has(> .deck:not([hidden])) {
    point is to answer "which one of these is that?" without the reader having to
    compare twenty swatches by eye. */
 .colour-well.is-found {
-  border-color: var(--accent);
+  border-color: var(--accent-light);
   background: color-mix(in oklab, var(--accent) 16%, transparent);
 }
 
@@ -1243,7 +1280,7 @@ main:has(> .deck:not([hidden])) {
   padding: 10px;
   border: 1px solid var(--border-strong);
   border-radius: 8px;
-  background: var(--plane);
+  background: var(--bg);
 }
 
 .picker-row {
@@ -1264,7 +1301,7 @@ main:has(> .deck:not([hidden])) {
   padding: 0;
   border: 1px solid var(--border-strong);
   border-radius: 999px;
-  background: var(--track, var(--raised));
+  background: var(--track, var(--surface-2));
   cursor: pointer;
 }
 .picker-row input[type="range"]::-webkit-slider-runnable-track {
@@ -1378,7 +1415,7 @@ main:has(> .deck:not([hidden])) {
   padding: 10px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--plane);
+  background: var(--bg);
 }
 .naming-example {
   font-weight: 600;
@@ -1392,11 +1429,11 @@ main:has(> .deck:not([hidden])) {
   flex-wrap: wrap;
   margin-top: 6px;
   font-size: 0.86rem;
-  color: var(--ink2);
+  color: var(--text-dim);
 }
 .badge.stale {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--accent-light);
+  color: var(--accent-light);
 }
 
 /* Every slide at once — a contact sheet, meant to be screenshotted whole.
@@ -1422,7 +1459,7 @@ main:has(> .deck:not([hidden])) {
   line-height: 0;
 }
 .sheet figure:hover {
-  border-color: var(--accent);
+  border-color: var(--accent-light);
 }
 .sheet svg {
   display: block;
@@ -1473,11 +1510,6 @@ main:has(> .deck:not([hidden])) {
   border-radius: 5px;
   padding: 1px 5px;
 }
-:root[data-theme="dark"] .stale-banner {
-  --warn-border: #7a5a1c;
-  --warn-surface: #2a2113;
-  --warn-ink: #f0d9a8;
-}
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .stale-banner {
     --warn-border: #7a5a1c;
@@ -1485,7 +1517,11 @@ main:has(> .deck:not([hidden])) {
     --warn-ink: #f0d9a8;
   }
 }
-
+:root[data-theme="dark"] .stale-banner {
+  --warn-border: #7a5a1c;
+  --warn-surface: #2a2113;
+  --warn-ink: #f0d9a8;
+}
 
 /* The hours behind "daylight is these hours", under the chips that ask. */
 .setting-hours {
@@ -1497,13 +1533,13 @@ main:has(> .deck:not([hidden])) {
   flex-direction: column;
   gap: 4px;
   font-size: 0.78rem;
-  color: var(--muted);
+  color: var(--text-faint);
 }
 .setting-hour input[type="time"] {
   font: inherit;
   font-size: 0.92rem;
-  color: var(--ink);
-  background: var(--raised);
+  color: var(--text);
+  background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 8px;
   padding: 6px 8px;

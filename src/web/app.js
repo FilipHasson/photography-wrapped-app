@@ -1702,22 +1702,12 @@ $("picker").addEventListener("close", () => {
   picker.resolve = null;
 });
 
-$("theme-toggle").addEventListener("click", () => {
-  const root = document.documentElement;
-  const dark = root.dataset.theme
-    ? root.dataset.theme === "dark"
-    : window.matchMedia("(prefers-color-scheme: dark)").matches;
-  root.dataset.theme = dark ? "light" : "dark";
-  localStorage.setItem("wdis-theme", root.dataset.theme);
+// The OS or the toggle switching themes should redraw the deck.
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
   deck.repaint();
 });
-
-const savedTheme = localStorage.getItem("wdis-theme");
-if (savedTheme === "dark" || savedTheme === "light") document.documentElement.dataset.theme = savedTheme;
-
-// The OS switching themes should redraw a deck that is following the OS.
-window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
-  if (!document.documentElement.dataset.theme) deck.repaint();
+window.addEventListener("themechange", () => {
+  deck.repaint();
 });
 
 document.addEventListener("keydown", (event) => {

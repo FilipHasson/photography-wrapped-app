@@ -28,10 +28,12 @@ A browser opens on `http://127.0.0.1:4112`. Add a source, wait for the index,
 pick a range, and hit **Show me the deck**.
 
 ```
+npm run dev                  # restarts on every source change, no browser
 npm start -- --port 8080     # a different port
 npm start -- --no-open       # don't launch a browser
 npm test                     # 145 tests, including a full index-and-count run
 npm run typecheck
+npm run clean                # remove generated fixtures and scratch
 ```
 
 ## What a source is
