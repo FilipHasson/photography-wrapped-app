@@ -1,20 +1,20 @@
 /*
  * The page wears the Easy Exif theme every photography project here shares
- * (photo-settings-overlay/css/site.css): warm paper neutrals, green for
+ * (photo-settings-overlay/css/site.css): white and grey neutrals, green for
  * anything you act on. That is the chrome only. The slides carry their own
  * palette in web/theme.js — validated for colour blindness and the reader's to
  * change — and nothing on a slide reads these tokens.
  */
 
 :root {
-  --bg: #f5f1e8;
-  --surface: #fffcf5;
-  --surface-2: #efe9dc;
-  --border: #e2d9c6;
-  --border-strong: #cbbfa6;
-  --text: #1f1c16;
-  --text-dim: #615847;
-  --text-faint: #91866f;
+  --bg: #fcfcfc;
+  --surface: #ffffff;
+  --surface-2: #f2f2f2;
+  --border: #e4e4e4;
+  --border-strong: #cecece;
+  --text: #060606;
+  --text-dim: #555555;
+  --text-faint: #808080;
 
   --accent: #1f8a4c;
   --accent-text: #ffffff;
