@@ -4,6 +4,7 @@ import {
   apertureBucket,
   focalBucket,
   focalClass,
+  FOCAL_STOPS,
   formatAperture,
   formatFocal,
   formatIso,
@@ -875,11 +876,26 @@ function num(value: unknown): number {
  * and 1/320s; a histogram of those is unreadable. Bucketing happens here rather
  * than in SQL because the scales are logarithmic and irregular.
  */
+/**
+ * Counts per bucket, and optionally the empty rungs between them.
+ *
+ * `ladder` is the scale the buckets snap to. Given one, every rung between the
+ * lowest and the highest that were actually shot comes back with a zero. The
+ * axis is ordinal but its spacing is not: four bars at 24, 70, 200 and 300mm
+ * drawn evenly apart say those are neighbours, and they are five rungs apart.
+ * Filling claims nothing that was not counted — `known` is untouched, so every
+ * share still divides by the frames that carried the field, and a zero draws no
+ * bar at all. It says what the scale is, which is the whole job of an axis.
+ *
+ * Outside the range shot, nothing is filled: somebody who owns one 35mm lens
+ * should not be shown an empty ladder from 8mm to 800 to make the point.
+ */
 function distribute(
   rows: Array<{ value: number | null; n: number }>,
   bucketOf: (value: number | null) => number | null,
   labelOf: (value: number) => string,
   sort: "asc" | "desc" = "asc",
+  ladder: readonly number[] | null = null,
 ): Distribution {
   const counts = new Map<number, number>();
   let known = 0;
@@ -889,6 +905,15 @@ function distribute(
     if (bucket === null) continue;
     counts.set(bucket, (counts.get(bucket) ?? 0) + row.n);
     known += row.n;
+  }
+
+  if (ladder && counts.size > 0) {
+    const shot = [...counts.keys()];
+    const shortest = Math.min(...shot);
+    const longest = Math.max(...shot);
+    for (const rung of ladder) {
+      if (rung > shortest && rung < longest && !counts.has(rung)) counts.set(rung, 0);
+    }
   }
 
   const buckets: Bucket[] = [...counts.entries()]
@@ -1431,7 +1456,9 @@ export function computeStats(db: Db, range: Range, options: StatsOptions): DeckS
     }),
     hiddenCameras: tallies(hiddenCameras, cameraKnown, true),
     hiddenLenses: tallies(hiddenLenses, lensKnown, true),
-    focal: distribute(focalRows, focalBucket, formatFocal),
+    // The whole ladder between the shortest and longest frame, empty rungs
+    // included: the one chart here whose axis is a scale people can name.
+    focal: distribute(focalRows, focalBucket, formatFocal, "asc", FOCAL_STOPS),
     focalClasses: [...classCounts.entries()]
       .map(([label, shots]) => ({ label, shots }))
       .sort((a, b) => b.shots - a.shots),

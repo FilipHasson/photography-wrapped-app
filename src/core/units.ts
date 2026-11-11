@@ -19,8 +19,15 @@ const SHUTTER_STOPS = [
   1 / 30, 1 / 15, 1 / 8, 1 / 4, 1 / 2, 1, 2, 4, 8, 15, 30,
 ];
 
-/** Focal lengths lenses are actually sold at — the vocabulary people use. */
-const FOCAL_STOPS = [
+/**
+ * Focal lengths lenses are actually sold at — the vocabulary people use.
+ *
+ * Exported because the focal slide draws the whole ladder between the shortest
+ * and longest frame rather than only the rungs that were used: four bars at 24,
+ * 70, 200 and 300, evenly spaced, is not a histogram of anything. See
+ * `distribute` in stats/aggregate.ts.
+ */
+export const FOCAL_STOPS = [
   8, 10, 12, 14, 16, 18, 20, 24, 28, 35, 40, 50, 60, 70, 85, 100, 105, 135,
   150, 180, 200, 240, 300, 400, 500, 600, 800,
 ];
