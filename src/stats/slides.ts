@@ -950,8 +950,12 @@ function focalSlide(stats: DeckStats): Slide | null {
   if (focal.buckets.length === 0 || focal.favourite === null) return null;
 
   const favourite = focal.favourite;
-  const widest = focal.buckets[0];
-  const longest = focal.buckets[focal.buckets.length - 1];
+  // The shortest and longest the reader actually shot, which is no longer the
+  // first and last bar: the axis is the whole ladder, so both ends of it carry
+  // rungs nobody went near.
+  const shot = focal.buckets.filter((bucket) => bucket.shots > 0);
+  const widest = shot[0];
+  const longest = shot[shot.length - 1];
   const topClass = focalClasses[0];
 
   return {

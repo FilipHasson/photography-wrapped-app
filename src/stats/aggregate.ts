@@ -879,16 +879,19 @@ function num(value: unknown): number {
 /**
  * Counts per bucket, and optionally the empty rungs between them.
  *
- * `ladder` is the scale the buckets snap to. Given one, every rung between the
- * lowest and the highest that were actually shot comes back with a zero. The
- * axis is ordinal but its spacing is not: four bars at 24, 70, 200 and 300mm
- * drawn evenly apart say those are neighbours, and they are five rungs apart.
- * Filling claims nothing that was not counted — `known` is untouched, so every
- * share still divides by the frames that carried the field, and a zero draws no
- * bar at all. It says what the scale is, which is the whole job of an axis.
+ * `ladder` is the scale the buckets snap to, and given one it comes back
+ * whole: every rung, including the ones nothing was shot at. The axis is
+ * ordinal but its spacing is not — four bars at 24, 70, 200 and 300mm drawn
+ * evenly apart say those are neighbours, and they are five rungs apart.
  *
- * Outside the range shot, nothing is filled: somebody who owns one 35mm lens
- * should not be shown an empty ladder from 8mm to 800 to make the point.
+ * Filling claims nothing that was not counted. `known` is untouched, so every
+ * share still divides by the frames that carried the field, and a zero draws no
+ * bar at all: what is added is the scale, which is the whole job of an axis.
+ * The ends are the ladder's, not the reader's, so two libraries can be held
+ * side by side and a 70-200 zoom sits in the same place on both — but that
+ * also means the first and last *bar* are no longer the first and last bucket,
+ * and anything wanting the range actually shot has to ask for a bucket with
+ * shots in it. `focalSlide`'s note does.
  */
 function distribute(
   rows: Array<{ value: number | null; n: number }>,
@@ -908,12 +911,7 @@ function distribute(
   }
 
   if (ladder && counts.size > 0) {
-    const shot = [...counts.keys()];
-    const shortest = Math.min(...shot);
-    const longest = Math.max(...shot);
-    for (const rung of ladder) {
-      if (rung > shortest && rung < longest && !counts.has(rung)) counts.set(rung, 0);
-    }
+    for (const rung of ladder) if (!counts.has(rung)) counts.set(rung, 0);
   }
 
   const buckets: Bucket[] = [...counts.entries()]

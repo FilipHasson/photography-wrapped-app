@@ -480,18 +480,24 @@ re-reading a library for it.
   reachable only by colour is a defect.
 - `buildDeck` drops slides with nothing to say rather than rendering them empty,
   and returns a one-slide "nothing here yet" deck for an empty range.
-- **The focal axis is a scale, not a list of what was used.** `distribute`
-  takes the ladder the buckets snap to and fills in every rung between the
-  shortest and the longest frame, so an empty one is drawn as a gap rather
-  than closed up. Four bars at 24, 70, 200 and 300mm spaced evenly apart say
-  those are neighbours; they are five rungs apart, and the shape of a
-  photographer who owns one wide prime and one long zoom is exactly what the
-  gaps show. It claims nothing extra: `known` counts only frames that carried
-  a focal length, every share still divides by that, and a zero draws no bar —
-  `drawColumns` already guards `item.value > 0`. Nothing is filled outside the
-  range shot, so one 35mm prime does not come with an empty ladder from 8 to
-  800. Focal is the only one that takes a ladder today; aperture, ISO and
-  shutter would each be one argument.
+- **The focal axis is the whole ladder, not a list of what was used.**
+  `distribute` takes the scale its buckets snap to and returns every rung of
+  it, 8mm to 800, including the ones nothing was shot at. Four bars at 24, 70,
+  200 and 300mm spaced evenly apart say those are neighbours; they are five
+  rungs apart, and where a reader sits on the whole range is the thing the
+  chart is for. It was filled only between the shortest and longest frame at
+  first, on the argument that one 35mm prime should not come with an empty
+  ladder — the reader overruled that, and the fixed ends are worth more than
+  the saved space: two libraries can be held side by side and a 70-200 zoom
+  sits in the same place on both.
+  It claims nothing extra: `known` counts only frames that carried a focal
+  length, every share still divides by that, and a zero draws no bar at all —
+  `drawColumns` already guards `item.value > 0`. What it does cost is that the
+  first and last *bar* are no longer the first and last bucket, so anything
+  wanting the range actually shot has to filter for `shots > 0` first:
+  `focalSlide`’s note would otherwise tell every reader they shot 8mm to 800.
+  Focal is the only one that takes a ladder; aperture, ISO and shutter would
+  each be one argument.
 - **A chart may summarise; a table may not.** `stats/aggregate.ts` returns full
   lists and `stats/slides.ts` does the top-N-plus-"others" folding for the bars
   only. The table carries every row, including hidden gear, with a `RowKey` so
