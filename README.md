@@ -31,10 +31,42 @@ pick a range, and hit **Show me the deck**.
 npm run dev                  # restarts on every source change, no browser
 npm start -- --port 8080     # a different port
 npm start -- --no-open       # don't launch a browser
-npm test                     # 145 tests, including a full index-and-count run
+npm test                     # 369 tests, including a full index-and-count run
 npm run typecheck
-npm run clean                # remove generated fixtures and scratch
+npm run clean                # remove generated fixtures, builds and scratch
+npm run app                  # in its own window (Electron)
+npm run app:smoke            # boot the window on a throwaway home, save a picture of it
 ```
+
+### Packaging
+
+```bash
+npm run package     # dist/Photography Wrapped-win32-x64/Photography Wrapped.exe
+```
+
+The window is the same server pointed at by Electron, and the packaged app
+runs the same unbuilt TypeScript out of its archive. Builds for the platform
+you run it on; only Windows has been packaged and tested — macOS and Linux
+need their own icon formats. The icon is drawn by `tools/make-icon.ts` from
+the geometry in `src/web/favicon.svg`, not committed.
+
+### Releasing
+
+Push a version tag:
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+`.github/workflows/release.yml` runs the typecheck and tests, packages the app,
+and publishes `Photography-Wrapped-win32-x64.zip` as a GitHub Release. Running
+the workflow by hand (Actions → Release → Run workflow) builds the zip as a
+workflow artifact without publishing anything.
+
+The zip has the same name on every release, so
+`/releases/latest/download/Photography-Wrapped-win32-x64.zip` always fetches
+the newest build. The website's download button will depend on that, so don't
+add a version number to the file name.
 
 ## What a source is
 

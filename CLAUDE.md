@@ -39,12 +39,26 @@ src/web/       the UI — plain HTML/CSS/ES modules, no framework;
                colours a slide turned out to be drawn with, icons.js the
                drawings beside a milestone, theme-toggle.js the light/dark
                button (a plain script: it has to run before first paint)
-tools/         fixture generators: an EXIF/MP4 writer and a Lightroom catalog
+electron/      the desktop shell — a window pointed at the same server
+tools/         fixture generators (an EXIF/MP4 writer and a Lightroom catalog)
+               and the icon, drawn from favicon.svg
 ```
 
-Dependencies point one way: `web → server → stats → index → core`.
+Dependencies point one way: `web → server → stats → index → core`, with
+`electron → server` alongside `web`.
 
 ## The parts that carry the weight
+
+**`electron/` is a shell and must stay one**, ported from Can I Format?. It
+boots the same `startServer` the CLI does — after the same `repairIndex` — and
+points a window at it. Nothing about reading a library, counting it or drawing
+a slide may move in here, and no second copy of a page or an endpoint may
+appear: one implementation is why the desktop build was cheap. The renderer
+runs with `contextIsolation` on, `nodeIntegration` off, `sandbox` on and no
+preload, reaching the disk through the loopback API exactly as the browser
+does. `electron/policy.ts` holds what the window may navigate to, what may go
+to `shell.openExternal` and where the window goes back on screen, free of
+Electron so `test/desktop.test.ts` can call it.
 
 **Naming happens at read time.** `camera` and `lens` rows keep `raw_make`/`raw_model`
 — the name exactly as the camera wrote it — and `stats/aggregate.ts` builds every
@@ -685,7 +699,7 @@ re-reading a library for it.
 ## Testing
 
 ```bash
-npm test          # 354 tests
+npm test          # 369 tests
 npm run typecheck
 npm run fixtures -- ./fixtures
 ```
@@ -728,6 +742,19 @@ one is the bug that produced the first round of feedback on this tool.
   between frames are arithmetic.
 - The server exposes filesystem browsing, hence the loopback bind plus `Host`
   header check in `server/server.ts`. Don't relax either.
+- **Electron emits `ready` only after the entry module finishes evaluating.**
+  A top-level `await app.whenReady()` in an ESM main entry is a module waiting
+  on an event that is waiting on the module: no window, no output, no error.
+  `main.ts` calls `boot()` without awaiting it, and `smoke.ts` says why.
+- Node's type stripping reads `.ts` out of an `app.asar` archive without help,
+  so the packaged app ships the same unbuilt sources — verified by running the
+  built `.exe` and watching it answer `/api/state`. Keep it that way; the
+  moment packaging needs a compile step, rule 3 is gone.
+- **The release asset is always `Photography-Wrapped-win32-x64.zip`.** The
+  site's download button will link to `/releases/latest/download/` plus that
+  name, so a version in it breaks every download link without any error
+  anywhere. Releases are cut by pushing a `v*` tag;
+  `.github/workflows/release.yml` tests before it packages.
 - `src/web/*.js` carries `// @ts-check` for the editor, but is not in the
   `tsconfig` program — same convention as the sibling `can-i-format` project.
 - **A class that sets a `display` beats the browser's own `[hidden]`.** Anything
