@@ -465,7 +465,7 @@ version learned to read.
   Capture times before 1990 are treated as unknown; a stuck clock inside that
   range is believed.
 
-## Licence
+## License
 
 [MIT](LICENSE). Use it, change it, ship it, sell it; keep the copyright
 notice with it.
