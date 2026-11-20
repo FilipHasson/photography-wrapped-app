@@ -2,6 +2,7 @@
   "name": "photography-wrapped-app",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Scan a photography library and turn it into a deck of stats slides — favourite lens, favourite body, favourite camera+lens combo, and the rest of the year in frames.",
   "type": "module",
   "productName": "Photography Wrapped",

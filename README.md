@@ -464,3 +464,8 @@ version learned to read.
 - **Everything in one year, decades ago.** A camera with a dead clock battery.
   Capture times before 1990 are treated as unknown; a stuck clock inside that
   range is believed.
+
+## Licence
+
+[MIT](LICENSE). Use it, change it, ship it, sell it; keep the copyright
+notice with it.
