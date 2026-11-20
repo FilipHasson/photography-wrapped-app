@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Photography Wrapped</title>
+    <script src="/theme-toggle.js"></script>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <img class="brand-mark" src="/favicon.svg" alt="" width="22" height="22" />
+        <h1>Photography Wrapped</h1>
+      </div>
+      <div class="topbar-right">
+        <button id="nav-home" class="ghost" type="button" hidden>← Library</button>
+      </div>
+    </header>
+
+<!--
+      Two halves, and saying only one of them has cost real time: the server
+      reads its TypeScript once at boot, and this page has been running the
+      JavaScript it downloaded when it was opened. Restarting the server alone
+      gives you new numbers through the API and the same interface you had
+      before — which reads as the change not having shipped.
+    -->
+    <div id="stale-banner" class="stale-banner" hidden>
+      <strong>This server is running older code.</strong>
+      <span>
+        Files changed after it started. Stop it and run <code>npm start</code> again — and
+        reload this page, which is still running the JavaScript it loaded when you opened it.
+      </span>
+      <button id="stale-reload" class="ghost" type="button">Reload the page</button>
+    </div>
+
+    <div id="job-banner" class="job-banner" hidden>
+      <div class="job-text">
+        <strong id="job-label"></strong>
+        <span id="job-message"></span>
+      </div>
+      <div class="job-bar"><div id="job-fill"></div></div>
+      <button id="job-cancel" class="ghost" type="button">Cancel</button>
+    </div>
+
+    <main>
+      <!-- First run -->
+      <section id="view-setup" class="view" hidden>
+        <div class="hero">
+          <h2>Point me at your photographs</h2>
+          <p>
+            Add the folders your photographs live in, or your Lightroom catalog — both, if you have
+            both. Everything is read where it sits: nothing is copied, moved, or written to.
+          </p>
+          <button id="setup-add" class="primary" type="button">Add a source</button>
+        </div>
+      </section>
+
+      <!-- Sources and range picking -->
+      <section id="view-home" class="view" hidden>
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Build a deck</h2>
+            <div class="panel-actions">
+              <span id="library-summary" class="hint"></span>
+            </div>
+          </div>
+
+          <div class="range-block">
+            <div id="range-presets" class="chips"></div>
+
+            <div class="range-custom">
+              <label for="range-from">From</label>
+              <input id="range-from" type="date" />
+              <label for="range-to">to</label>
+              <input id="range-to" type="date" />
+              <button id="range-custom-go" class="ghost" type="button">Use these dates</button>
+            </div>
+
+            <div class="range-go">
+              <button id="deck-build" class="primary" type="button">Show me the deck</button>
+              <span id="range-current" class="hint"></span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Sources</h2>
+            <div class="panel-actions">
+              <button id="source-add" class="ghost" type="button">Add source</button>
+              <button id="index-all" class="ghost" type="button">Re-index everything</button>
+            </div>
+          </div>
+          <div id="sources" class="source-list"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Milestones</h2>
+            <div class="panel-actions">
+              <button id="anchor-open" class="ghost" type="button">Add milestone</button>
+              <button id="milestones-toggle" class="ghost" type="button" aria-expanded="false">
+                Show
+              </button>
+            </div>
+          </div>
+
+          <div id="milestones" class="milestones" hidden>
+            <p class="hint milestones-intro">
+              Dates worth measuring from — each becomes a range of its own. Buying and selling a
+              camera or a lens are picked from the gear in your library, so a milestone knows which
+              body it means rather than just how you spelled it.
+            </p>
+
+            <div class="setting start-day">
+              <span class="setting-label">My library starts on</span>
+              <input id="setting-start" type="date" />
+              <button id="setting-start-clear" class="ghost" type="button">Clear</button>
+              <span class="hint">
+                Anything earlier is left out of every range, including all-time. Useful when a catalog
+                reaches back to phone snaps from before the photography started.
+              </span>
+            </div>
+
+            <div id="anchors" class="anchor-list"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Settings</h2></div>
+          <div class="settings">
+            <label class="setting">
+              <span class="setting-label">Your name</span>
+              <input id="setting-owner" type="text" maxlength="60" placeholder="on the title slide" />
+            </label>
+            <label class="setting checkbox">
+              <input id="setting-merge" type="checkbox" />
+              <span>
+                <span class="setting-label">Count raw + JPEG as one photograph</span>
+                <span class="hint">One press of the shutter is one photograph, however many files it wrote.</span>
+              </span>
+            </label>
+            <label class="setting checkbox">
+              <input id="setting-video" type="checkbox" />
+              <span>
+                <span class="setting-label">Include video clips</span>
+                <span class="hint">Clips count towards totals and the calendar; they carry no exposure data.</span>
+              </span>
+            </label>
+
+            <label class="setting deleted-before">
+              <span class="setting-label">Photographs deleted before indexing</span>
+              <!--
+                Text, not `type="number"`: a number field silently reports an
+                empty string for anything it dislikes — a typed thousands
+                separator included — so a count entered the way people write
+                counts vanished without a word. `coerceCount` does the reading.
+              -->
+              <input id="setting-deleted" type="text" inputmode="numeric" maxlength="12" placeholder="0" />
+              <span class="hint">
+                Nothing records what a library used to hold, so anything you deleted before this tool
+                first looked is invisible to it. Your own figure joins the total and counts as rejects.
+                It has no date, so it is the same figure whatever range you build.
+              </span>
+            </label>
+
+            <div class="setting naming">
+              <span class="setting-label">What a gear name says</span>
+              <div id="naming-toggles" class="naming-toggles"></div>
+              <div id="naming-preview" class="naming-preview" aria-live="polite"></div>
+              <span class="hint">
+                Only how the name is written. Two spellings of one lens are still one lens — the
+                grouping never sees these.
+              </span>
+            </div>
+
+            <div class="setting location">
+              <span class="setting-label">Where you are</span>
+              <div class="location-row">
+                <button id="location-here" class="ghost" type="button">Use my location</button>
+                <input id="location-label" type="text" maxlength="60" placeholder="Stockholm" />
+                <input id="location-lat" type="number" step="0.01" min="-90" max="90" placeholder="Latitude" />
+                <input id="location-lon" type="number" step="0.01" min="-180" max="180" placeholder="Longitude" />
+                <button id="location-save" class="ghost" type="button">Save</button>
+                <button id="location-clear" class="ghost" type="button">Clear</button>
+              </div>
+              <span class="hint">
+                Used to work out sunrise and sunset for the time-of-day slide. Your own position, not
+                the GPS in your photographs — a fortnight abroad should not decide what "after dark"
+                means for a year shot at home. It never leaves this machine.
+              </span>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <!-- The deck -->
+      <section id="view-deck" class="view deck" hidden>
+        <div class="deck-bar">
+          <div class="deck-title">
+            <strong id="deck-name"></strong>
+            <span id="deck-range" class="hint"></span>
+          </div>
+          <div class="deck-actions">
+            <div id="deck-formats" class="chips" role="group" aria-label="Slide shape"></div>
+            <div id="deck-image-types" class="chips" role="group" aria-label="Picture format"></div>
+            <button id="deck-table-toggle" class="ghost" type="button" title="Show the data (t)">
+              Data
+            </button>
+            <button id="deck-sheet-toggle" class="ghost" type="button" title="Every slide on one page (a)">
+              All slides
+            </button>
+            <button id="deck-png" class="ghost" type="button">Slide (PNG)</button>
+            <button id="deck-pdf" class="ghost" type="button">Deck (PDF)</button>
+            <button id="deck-zip" class="ghost" type="button" title="One PNG per slide, zipped">
+              Deck (PNGs)
+            </button>
+            <button id="deck-full" class="ghost" type="button" title="Full screen (f)">Full screen</button>
+          </div>
+        </div>
+
+        <!--
+          Three columns, and the middle one is the work. A rail of slides on the
+          left, the slide itself, and one inspector on the right — rather than
+          the three free-floating cards this grew into, which wrapped against
+          each other, each carried its own scrollbar, and left the reader
+          hunting for which of them held the setting they wanted.
+        -->
+        <div class="deck-body">
+          <aside id="deck-rail" class="deck-rail" aria-label="The slides">
+            <div class="rail-head">
+              <button id="deck-prev" class="ghost" type="button" aria-label="Previous slide">←</button>
+              <span id="deck-count" class="hint"></span>
+              <button id="deck-next" class="ghost" type="button" aria-label="Next slide">→</button>
+            </div>
+            <div id="deck-dots" class="deck-slides" role="tablist" aria-label="Slides"></div>
+          </aside>
+
+          <aside id="deck-table" class="deck-data" aria-label="The numbers behind this slide" hidden></aside>
+          <div id="stage" class="stage" tabindex="0" aria-live="polite"></div>
+
+          <!--
+            One inspector, in sections, rather than three cards side by side.
+            The order is the order the questions get asked: what this slide
+            shows, what it is drawn in, and then the deck-wide look — which is
+            set once and rarely returned to, so it sits at the bottom.
+          -->
+          <aside id="deck-side" class="deck-inspect" aria-label="Inspector">
+            <details id="deck-settings" class="inspect-section" open>
+              <summary>This slide</summary>
+              <div id="slide-settings" class="inspect-body"></div>
+            </details>
+
+            <details id="deck-words" class="inspect-section">
+              <summary>Words<span id="words-tally" class="tally"></span></summary>
+              <div id="slide-words" class="inspect-body"></div>
+            </details>
+
+            <details id="deck-slide-colours" class="inspect-section" open>
+              <summary>Colours here</summary>
+              <div class="inspect-body">
+                <div id="colour-wells" class="colour-wells"></div>
+                <button id="colour-all" class="chip colour-all" type="button" aria-pressed="false">
+                  Every colour
+                </button>
+              </div>
+            </details>
+
+            <details id="deck-problems-section" class="inspect-section" hidden>
+              <summary>Worth knowing<span id="colour-tally" class="tally"></span></summary>
+              <div class="inspect-body">
+                <div id="colour-problems" class="colour-problems" aria-live="polite"></div>
+              </div>
+            </details>
+
+            <details id="deck-style" class="inspect-section">
+              <summary>Style</summary>
+              <div class="inspect-body">
+                <span class="chips-label">Colours</span>
+                <div id="scheme-chips" class="chips scheme-chips" role="group" aria-label="Colour scheme"></div>
+
+                <span class="chips-label">Behind the slide</span>
+                <div class="backdrop-row">
+                  <div id="backdrop-chips" class="chips scheme-chips" role="group" aria-label="What the slide is drawn on"></div>
+                  <button id="backdrop-shuffle" class="ghost" type="button" hidden>Shuffle</button>
+                </div>
+
+                <span class="chips-label">Cards</span>
+                <div id="card-chips" class="chips scheme-chips" role="group" aria-label="How a card is drawn"></div>
+              </div>
+            </details>
+
+            <details id="deck-type" class="inspect-section">
+              <summary>Type</summary>
+              <div class="inspect-body">
+                <span class="chips-label">Face</span>
+                <div id="font-chips" class="chips scheme-chips" role="group" aria-label="Which face the deck is set in"></div>
+
+                <span class="chips-label">Size</span>
+                <div id="scale-chips" class="chips scheme-chips" role="group" aria-label="How big the type is"></div>
+
+                <span class="chips-label">Headline</span>
+                <div id="weight-chips" class="chips scheme-chips" role="group" aria-label="How the headline is set"></div>
+                <label class="setting checkbox type-italic">
+                  <input id="type-italic" type="checkbox" />
+                  <span class="setting-label">Italic</span>
+                </label>
+                <span class="hint">
+                  Weight and slant are the headline's alone — an eyebrow in italics is a mistake, and
+                  an axis label at weight 800 is noise. Size moves the whole deck together, so the
+                  proportions the layouts are tuned for survive.
+                </span>
+              </div>
+            </details>
+
+            <details id="deck-page-colours" class="inspect-section">
+              <summary>The page</summary>
+              <div class="inspect-body">
+                <div class="colour-modes" role="group" aria-label="Which theme these colours are for">
+                  <button id="colour-light" class="chip" type="button" data-mode="light">Light</button>
+                  <button id="colour-dark" class="chip" type="button" data-mode="dark">Dark</button>
+                </div>
+                <div id="page-wells" class="colour-wells"></div>
+                <button id="colour-reset" class="ghost" type="button">Back to the defaults</button>
+                <span class="hint">
+                  Light and dark are set separately — they are not inversions of each other. Anything
+                  you have not changed follows the built-in palette, so it keeps improving.
+                </span>
+              </div>
+            </details>
+          </aside>
+
+          <!-- Every slide at once, sized to fit the window in one screenshot. -->
+          <div id="sheet" class="sheet" aria-label="Every slide" hidden></div>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="picker" class="picker">
+      <form method="dialog" class="picker-form">
+        <header class="picker-head">
+          <h3 id="picker-title">Choose a folder or a .lrcat file</h3>
+          <button value="cancel" class="ghost" type="submit">Close</button>
+        </header>
+        <div class="picker-path">
+          <button id="picker-up" class="ghost" type="button">↑ Up</button>
+          <input id="picker-input" type="text" spellcheck="false" autocomplete="off" />
+          <button id="picker-go" class="ghost" type="button">Go</button>
+        </div>
+        <div id="picker-shortcuts" class="picker-shortcuts"></div>
+        <ul id="picker-list" class="picker-list"></ul>
+        <footer class="picker-foot">
+          <span id="picker-hint" class="hint"></span>
+          <button id="picker-choose" class="primary" type="button">Use this</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="milestone" class="picker milestone">
+      <form id="milestone-form" method="dialog" class="picker-form">
+        <header class="picker-head">
+          <h3>Add a milestone</h3>
+          <button value="cancel" class="ghost" type="submit">Close</button>
+        </header>
+
+        <div id="milestone-kinds" class="chips" role="group" aria-label="What kind of milestone"></div>
+
+        <div id="milestone-gear" class="milestone-gear">
+          <input
+            id="milestone-search"
+            type="search"
+            placeholder="Search your gear"
+            autocomplete="off"
+            spellcheck="false"
+            aria-label="Search your gear"
+          />
+          <ul id="milestone-list" class="picker-list"></ul>
+        </div>
+
+        <div class="milestone-fields">
+          <label class="milestone-field">
+            <span class="setting-label">When</span>
+            <input id="milestone-day" type="date" />
+          </label>
+          <label id="milestone-until-field" class="milestone-field" hidden>
+            <span class="setting-label">Until</span>
+            <input id="milestone-until" type="date" />
+          </label>
+          <label class="milestone-field wide">
+            <span class="setting-label">What the deck calls it</span>
+            <input id="milestone-label" type="text" maxlength="60" placeholder="Bought the a9 III" />
+          </label>
+        </div>
+
+        <footer class="picker-foot">
+          <span id="milestone-hint" class="hint"></span>
+          <button id="milestone-save" class="primary" type="button">Add milestone</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" hidden></div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

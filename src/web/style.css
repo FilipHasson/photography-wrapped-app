@@ -1,0 +1,1555 @@
+/*
+ * The page wears the Easy Exif theme every photography project here shares
+ * (photo-settings-overlay/css/site.css): white and grey neutrals, green for
+ * anything you act on. That is the chrome only. The slides carry their own
+ * palette in web/theme.js — validated for colour blindness and the reader's to
+ * change — and nothing on a slide reads these tokens.
+ */
+
+:root {
+  --bg: #fcfcfc;
+  --surface: #ffffff;
+  --surface-2: #f2f2f2;
+  --border: #e4e4e4;
+  --border-strong: #cecece;
+  --text: #060606;
+  --text-dim: #555555;
+  --text-faint: #808080;
+
+  --accent: #1f8a4c;
+  --accent-text: #ffffff;
+  /* Green for links and small text. The same as --accent on the light page;
+     on the dark one --accent is too dark to read as text. */
+  --accent-light: #1f8a4c;
+  --danger: #d33b36;
+
+  --radius: 10px;
+  /* The inspector's width and how tall a side panel may get. Both are here
+     rather than repeated: the rail, the table and the inspector have to agree
+     or the row of them steps. */
+  --inspect-w: 296px;
+  --panel-h: 78vh;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #171512;
+    --surface: #1f1c18;
+    --surface-2: #28241f;
+    --border: #35302a;
+    --border-strong: #4a433a;
+    --text: #f0ebe2;
+    --text-dim: #b5ab9b;
+    --text-faint: #837a6b;
+
+    --accent: #4caf6e;
+    --accent-text: #0b1a10;
+    --accent-light: #8fd3a5;
+    --danger: #e95048;
+
+    --theme-sun: none;
+    --theme-moon: block;
+  }
+}
+
+/* The same values, for someone who chose dark with the toggle. */
+:root[data-theme="dark"] {
+  --bg: #171512;
+  --surface: #1f1c18;
+  --surface-2: #28241f;
+  --border: #35302a;
+  --border-strong: #4a433a;
+  --text: #f0ebe2;
+  --text-dim: #b5ab9b;
+  --text-faint: #837a6b;
+
+  --accent: #4caf6e;
+  --accent-text: #0b1a10;
+  --accent-light: #8fd3a5;
+  --danger: #e95048;
+
+  --theme-sun: none;
+  --theme-moon: block;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+h1 {
+  font-size: 1.05rem;
+}
+h2 {
+  font-size: 1.15rem;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  padding: 7px 14px;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+button:hover:not(:disabled) {
+  border-color: var(--text-dim);
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent-light);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+button.ghost {
+  background: transparent;
+}
+
+input[type="text"],
+input[type="number"],
+input[type="search"],
+input[type="date"] {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 7px 10px;
+}
+input:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.hint {
+  color: var(--text-faint);
+  font-size: 0.86rem;
+}
+
+/* ------------------------------------------------------------- chrome --- */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 22px;
+  background: var(--bg);
+  border-bottom: 1px solid transparent;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.brand-mark {
+  display: block;
+  flex: none;
+}
+.topbar-right {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.theme-toggle:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+.theme-toggle svg {
+  width: 16px;
+  height: 16px;
+}
+.theme-sun {
+  display: var(--theme-sun, block);
+}
+.theme-moon {
+  display: var(--theme-moon, none);
+}
+
+main {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 22px;
+}
+/* The deck earns more width than the library pages do. Three cards beside a
+   slide is the better part of 800px of chrome, and a slide squeezed into what
+   is left of 1180 is not a slide anybody would post. Where `:has` is missing
+   this simply does not apply and the cards wrap, which is the behaviour a
+   narrow window gets anyway. */
+main:has(> .deck:not([hidden])) {
+  max-width: 1640px;
+}
+.view[hidden] {
+  display: none;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  margin-bottom: 18px;
+}
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.panel-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.hero {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 48px;
+  text-align: center;
+}
+.hero h2 {
+  font-size: 1.6rem;
+  margin-bottom: 10px;
+}
+.hero p {
+  color: var(--text-dim);
+  max-width: 620px;
+  margin: 0 auto 22px;
+}
+
+/* -------------------------------------------------------------- ranges --- */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chip {
+  border-radius: 999px;
+  padding: 6px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.chip[hidden] {
+  display: none;
+}
+.chip.is-current {
+  background: var(--accent);
+  border-color: var(--accent-light);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.chip-count {
+  font-size: 0.78rem;
+  opacity: 0.7;
+}
+
+.range-custom {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 16px 0;
+  color: var(--text-dim);
+}
+.range-go {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+/* ------------------------------------------------------------- sources --- */
+
+.source-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.source {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+.source-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+.source-path {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--text-faint);
+  word-break: break-all;
+}
+.source-meta {
+  color: var(--text-dim);
+  font-size: 0.86rem;
+  margin-top: 2px;
+}
+.source-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.badge {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-faint);
+  font-weight: 600;
+}
+.empty-note {
+  color: var(--text-faint);
+  margin: 0;
+}
+
+/* ------------------------------------------------------------ settings --- */
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.setting {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.setting.checkbox {
+  align-items: flex-start;
+}
+.setting.checkbox span {
+  display: flex;
+  flex-direction: column;
+}
+.setting-label {
+  font-weight: 600;
+}
+.setting input[type="checkbox"] {
+  margin-top: 3px;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-light);
+}
+
+/* ---------------------------------------------------------------- deck --- */
+
+.deck {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.deck-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.deck-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.deck-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.deck-actions .chips {
+  gap: 4px;
+  padding-right: 8px;
+  border-right: 1px solid var(--border);
+  margin-right: 4px;
+}
+.deck-actions .chip {
+  padding: 5px 10px;
+  font-size: 0.85rem;
+}
+
+/*
+ * The stage holds whatever shape the slide is. A 9:16 slide at full page width
+ * would be two screens tall, so the height is capped and the SVG is centred in
+ * whatever is left — the same rule then covers 4:5, 1:1 and 4:3 without a case
+ * for each.
+ */
+/*
+ * Data on the left, the slide in the middle, that slide s own settings on the
+ * right. The middle column is sized by the slide rather than the other way
+ * round — a 9:16 deck should not leave 16:9 worth of empty page beside it — so
+ * the stage hugs its content and the columns either side collapse when they
+ * have nothing to show.
+ */
+/* Three columns: a rail of slides, the slide, and one inspector. Placed rather
+   than flowed, because a `display: none` grid item leaves the grid entirely —
+   hiding the rail used to shuffle the slide into the track meant for it. */
+.deck-body {
+  display: grid;
+  grid-template-columns: auto minmax(320px, 1fr) var(--inspect-w);
+  gap: 14px;
+  align-items: start;
+}
+.deck-rail,
+.deck-data {
+  grid-column: 1;
+}
+.stage {
+  grid-column: 2;
+}
+.deck-inspect {
+  grid-column: 3;
+}
+
+.deck-rail,
+.deck-data,
+.deck-inspect {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.deck-rail[hidden],
+.deck-data[hidden],
+.deck-inspect[hidden] {
+  display: none;
+}
+
+/* ------------------------------------------------------------- the rail --- */
+
+.deck-rail {
+  width: 208px;
+  display: flex;
+  flex-direction: column;
+  max-block-size: var(--panel-h);
+  overflow: hidden;
+}
+.rail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 8px 8px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.rail-head .ghost {
+  padding: 2px 9px;
+}
+.deck-slides {
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+/* One line each, and the number stays put so the names line up. A row is 26px
+   because the point of a list of twenty-one is seeing twenty-one of them. */
+.slide-row {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 8px;
+  align-items: center;
+  min-height: 26px;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 0.86rem;
+  text-align: left;
+  cursor: pointer;
+}
+.slide-row:hover {
+  background: var(--bg);
+}
+.slide-row.is-current {
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+  color: var(--text);
+  font-weight: 600;
+}
+.slide-row-n {
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.78rem;
+  text-align: right;
+}
+.slide-row-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* -------------------------------------------------------- the inspector --- */
+
+.deck-inspect {
+  display: flex;
+  flex-direction: column;
+  max-block-size: var(--panel-h);
+  overflow-y: auto;
+}
+/* Sections rather than cards. Three panels floating beside each other wrapped
+   against one another, each carried its own scrollbar, and left the reader
+   hunting for which one held the setting they wanted. */
+.inspect-section {
+  border-bottom: 1px solid var(--border);
+}
+.inspect-section[hidden] {
+  display: none;
+}
+.inspect-section:last-child {
+  border-bottom: 0;
+}
+.inspect-section > summary {
+  padding: 9px 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  user-select: none;
+}
+.inspect-section > summary::-webkit-details-marker {
+  display: none;
+}
+/* A disclosure arrow drawn rather than borrowed, so it points the same way in
+   every browser and turns with the section. */
+.inspect-section > summary::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 4px solid currentColor;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  transition: transform 120ms ease;
+}
+.inspect-section[open] > summary::before {
+  transform: rotate(90deg);
+}
+.inspect-section > summary:hover {
+  color: var(--text);
+}
+.inspect-section > .inspect-body {
+  padding: 2px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* A column stretches its children, which turned every button in here into a
+   full-width bar that read as a text field. They are buttons: they take the
+   room the word needs. */
+.inspect-section > .inspect-body > .ghost,
+.inspect-section > .inspect-body > .chip,
+.inspect-section > .inspect-body > .setting {
+  align-self: flex-start;
+}
+/* A field per line of writing on the slide, and the reset only appears once
+   there is something to reset — a row of dead buttons reads as broken. */
+.word-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.word-field textarea {
+  font: inherit;
+  font-size: 0.86rem;
+  line-height: 1.35;
+  padding: 5px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  resize: vertical;
+  min-height: 30px;
+  field-sizing: content;
+}
+.word-field textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.word-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.word-reset {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-light);
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+.word-reset[hidden] {
+  display: none;
+}
+.type-italic {
+  gap: 8px;
+  align-items: center;
+  font-style: italic;
+}
+/* A count on the heading, so a folded section still says how much is behind
+   it — the whole reason it is safe to fold. */
+.inspect-section > summary .tally {
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+.inspect-section > summary .tally.is-warn {
+  color: var(--danger);
+}
+
+.backdrop-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.backdrop-row .ghost {
+  padding: 4px 10px;
+  font-size: 0.82rem;
+}
+
+/* The scheme chips sit tight: six of them in a 244px column need the room. */
+.scheme-chips {
+  gap: 5px;
+}
+.scheme-chips .chip {
+  padding: 4px 10px;
+  font-size: 0.82rem;
+}
+/* An option is a row, not a card. In a 296px inspector three of these at card
+   size was most of the panel, and the panel has four other things to say. */
+.setting-options {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.setting-options .chip {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  border-radius: 6px;
+  padding: 4px 9px;
+  text-align: left;
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+.setting-options .chip .chip-count {
+  font-size: 0.72rem;
+  opacity: 0.75;
+}
+
+.stage {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  /* Everything on a slide is clickable, and clicking selects the colour under
+     the pointer rather than advancing — so the cursor says "pick", not "go". */
+  cursor: crosshair;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Exactly as wide as the slide it holds, and centred in what is left. */
+  width: fit-content;
+  margin-inline: auto;
+}
+.stage[hidden] {
+  /* Sets a display of its own, which would otherwise beat [hidden]. */
+  display: none;
+}
+.stage:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.stage svg {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  /* Tall enough that a 9:16 slide is previewed at a useful size, and the same
+     ceiling the panels either side take, so the three do not step. */
+  max-height: min(var(--panel-h), 1120px);
+}
+
+.deck-data {
+  width: min(34vw, 460px);
+  padding: 4px 16px 16px;
+  /* A wide table scrolls inside its own box; the page never scrolls sideways. */
+  overflow-x: auto;
+  max-height: var(--panel-h);
+  overflow-y: auto;
+}
+.deck-data table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.9rem;
+}
+.deck-data th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-faint);
+  padding: 10px 12px 8px 0;
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.deck-data td {
+  padding: 6px 12px 6px 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.deck-data td.numeric {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  padding-right: 24px;
+}
+.deck-data th.tick,
+.deck-data td.tick {
+  width: 62px;
+  padding-right: 12px;
+  text-align: left;
+}
+.deck-data td.tick input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-light);
+  cursor: pointer;
+}
+/* A hidden row stays legible — it has to be readable to be brought back. */
+.deck-data tr.is-excluded td {
+  opacity: 0.55;
+  font-style: italic;
+}
+
+/* Full screen: the slide is the only thing left. */
+.deck:fullscreen {
+  background: var(--surface);
+  padding: 16px;
+  justify-content: center;
+}
+.deck:fullscreen .deck-bar,
+.deck:fullscreen .deck-data,
+.deck:fullscreen .deck-rail,
+.deck:fullscreen .deck-inspect {
+  display: none;
+}
+.deck:fullscreen .stage {
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.deck:fullscreen .stage svg {
+  max-height: calc(100vh - 80px);
+  width: auto;
+  max-width: 100%;
+}
+
+/* ---------------------------------------------------------------- jobs --- */
+
+.job-banner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 22px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 53px;
+  z-index: 4;
+}
+/* A class that sets a display beats the browser's own `[hidden]`, so anything
+   hidden from script has to say so again here. Without this the bar sat at the
+   top of the page for ever, stuck at its 2% starting width, with no job. */
+.job-banner[hidden] {
+  display: none;
+}
+/* A class that sets a display beats the browser's own `[hidden]`, so anything
+   hidden from script has to say so again here. Without this the bar sat at the
+   top of the page for ever, stuck at its 2% starting width, with no job. */
+
+/* A class that sets a display beats the browser's own `[hidden]`, so anything
+   hidden from script has to say so again here. Without this the bar sat at the
+   top of the page for ever, stuck at its 2% starting width, with no job. */
+
+.job-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 240px;
+}
+.job-text span {
+  color: var(--text-faint);
+  font-size: 0.84rem;
+}
+.job-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.job-bar div {
+  height: 100%;
+  width: 2%;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+
+/* -------------------------------------------------------------- picker --- */
+
+.picker {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  padding: 0;
+  width: min(760px, 92vw);
+}
+.picker::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+.picker-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+}
+.picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.picker-path {
+  display: flex;
+  gap: 8px;
+}
+.picker-path input {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+}
+.picker-shortcuts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 46vh;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.picker-entry {
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 8px 12px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.picker-entry:hover {
+  background: var(--bg);
+}
+.picker-entry.is-current {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.picker-icon {
+  opacity: 0.8;
+}
+.picker-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.picker-foot .hint {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  word-break: break-all;
+}
+
+/* --------------------------------------------------------------- toast --- */
+
+.toast {
+  position: fixed;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--text);
+  color: var(--surface);
+  padding: 10px 18px;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  z-index: 20;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+}
+.toast.bad {
+  background: var(--danger);
+  color: #ffffff;
+}
+
+@media (max-width: 720px) {
+  .source {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .deck-actions {
+    width: 100%;
+  }
+}
+
+/* ---------------------------------------------------------- milestones --- */
+
+.milestones {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.start-day {
+  display: grid;
+  grid-template-columns: auto auto auto 1fr;
+  gap: 10px;
+  align-items: center;
+}
+.start-day .hint {
+  grid-column: 1 / -1;
+  max-width: 62ch;
+}
+.anchor-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.anchor {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+/* The row is icon, what it is, and what you can do with it. The middle takes
+   whatever is left, or `space-between` spreads three children instead of
+   pushing the buttons to the end. */
+.anchor-what {
+  flex: 1;
+  min-width: 0;
+}
+.anchor-icon {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  /* Body text rather than the accent: it says which kind of thing this is, and
+     a column of green would read as a column of status. */
+  color: var(--text-dim);
+}
+.anchor-label {
+  font-weight: 600;
+}
+.anchor-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+/* Folded away until asked for — and a class that sets a display has to say so
+   again, or [hidden] never wins. */
+.milestones[hidden] {
+  display: none;
+}
+.milestones-intro {
+  margin: 0;
+  max-width: 78ch;
+}
+.anchor-tag {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  text-transform: lowercase;
+}
+
+/* The picker's footer hint is a filesystem path; this one is a sentence. */
+.milestone .picker-foot .hint {
+  font-family: var(--sans);
+  font-size: 0.82rem;
+  word-break: normal;
+}
+
+/* The gear picker inside the milestone modal. */
+.milestone-gear {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.milestone-gear[hidden] {
+  display: none;
+}
+
+.milestone-gear input[type="search"] {
+  width: 100%;
+}
+.gear-group {
+  padding: 8px 12px 4px;
+  font-size: 0.76rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.gear-group + li .picker-entry {
+  border-top: none;
+}
+.gear-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.gear-note {
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}
+.gear-meta {
+  font-size: 0.78rem;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.picker-entry.is-current .gear-note,
+.picker-entry.is-current .gear-meta {
+  color: inherit;
+  opacity: 0.85;
+}
+.gear-meta.is-recorded {
+  color: var(--accent-light);
+}
+.picker-entry.is-current .gear-meta.is-recorded {
+  color: inherit;
+}
+.milestone-fields {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.milestone-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+/* Hidden from script when the kind has no end date. Without this the class
+   above wins and the field simply stays. */
+.milestone-field[hidden] {
+  display: none;
+}
+.milestone-field.wide {
+  flex: 1;
+  min-width: 240px;
+}
+
+@media (max-width: 720px) {
+  .anchor {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .start-day {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------------------------------------------------------- naming ------ */
+
+.setting.naming {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 8px;
+}
+/* A figure with a paragraph behind it: the number is small, the reason it is
+   being asked for is not, so the hint takes a row of its own. */
+.setting.deleted-before {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 10px;
+  align-items: center;
+}
+.setting.deleted-before input {
+  width: 12ch;
+}
+.setting.deleted-before .hint {
+  grid-column: 1 / -1;
+  max-width: 62ch;
+}
+/* The name over a row of chips. Quiet, because the chips are the thing being
+   read — but present, because three unlabelled rows in one card is a puzzle. */
+.chips-label {
+  color: var(--text-faint);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  margin-block-start: 2px;
+}
+
+/* ----------------------------------------------------------- colours ---- */
+
+/* The palette sits beside the slide it paints rather than in a panel of
+   library settings two screens away, so the column is narrow: one well per
+   row, and the list scrolls inside the column it belongs to. */
+.deck-colours {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.colour-modes {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.colour-foot {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.colour-wells {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* One line per colour: swatch, what it does, and the hex.
+   It used to be three — label, value and a sentence of explanation, stacked —
+   which made a list of twenty-five roles taller than any screen and left the
+   panel mostly whitespace. The sentence is on the row's tooltip now, where a
+   reader who wants it can find it and one who does not is not paying for it in
+   height every time they open the panel. */
+.colour-well {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 26px;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+.colour-well:hover {
+  background: var(--bg);
+}
+.colour-well-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.86rem;
+}
+.colour-well-hex {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* A colour the reader has set, marked without a word — the row has no room for
+   one. On the swatch rather than after the hex: it is a fact about the colour,
+   and trailing the number it wrapped under it the moment a label ran long. */
+.colour-chip.is-yours {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The well for a colour just clicked on the slide. Loud on purpose: the whole
+   point is to answer "which one of these is that?" without the reader having to
+   compare twenty swatches by eye. */
+.colour-well.is-found {
+  border-color: var(--accent-light);
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+}
+
+/* A gate the palette does not clear, marked where the colour is rather than
+   only in the list underneath: a warning that names "Series 4" is no use if
+   finding series 4 means counting swatches. */
+.colour-well.is-trouble {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+/* A button, not `<input type="color">`: that opens an operating-system dialog
+   which covers the slide being edited, and on Windows will not let go of it. */
+.colour-chip {
+  inline-size: 18px;
+  block-size: 18px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  cursor: pointer;
+  flex: none;
+}
+
+.colour-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.colour-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.picker-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* The track is the colours this slider would give you with the other two held
+   where they are — a hue strip at full saturation would be a lie about what
+   moving it does to *this* colour. `--track` is set from the script. */
+.picker-row input[type="range"] {
+  appearance: none;
+  -webkit-appearance: none;
+  inline-size: 100%;
+  block-size: 15px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--track, var(--surface-2));
+  cursor: pointer;
+}
+.picker-row input[type="range"]::-webkit-slider-runnable-track {
+  background: transparent;
+  block-size: 100%;
+}
+.picker-row input[type="range"]::-moz-range-track {
+  background: transparent;
+  block-size: 100%;
+}
+/* Two rings, light over dark, so the thumb is findable at both ends of every
+   track it slides along — a single-colour thumb vanishes at one of them. */
+.picker-row input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  inline-size: 15px;
+  block-size: 15px;
+  border-radius: 50%;
+  background: transparent;
+  border: 2px solid #ffffff;
+  outline: 1px solid rgb(0 0 0 / 0.65);
+  outline-offset: -3px;
+}
+.picker-row input[type="range"]::-moz-range-thumb {
+  inline-size: 13px;
+  block-size: 13px;
+  border-radius: 50%;
+  background: transparent;
+  border: 2px solid #ffffff;
+  outline: 1px solid rgb(0 0 0 / 0.65);
+  outline-offset: -3px;
+}
+
+.picker-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.picker-swatch {
+  inline-size: 22px;
+  block-size: 22px;
+  border-radius: 5px;
+  border: 1px solid var(--border-strong);
+  flex: none;
+}
+
+.picker-hex {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  padding: 4px 7px;
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.picker-done {
+  padding: 4px 10px;
+  font-size: 0.85rem;
+}
+
+.colour-well > span {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-inline-size: 0;
+}
+
+.colour-problems {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.colour-problems[hidden] {
+  display: none;
+}
+
+.colour-problem {
+  font-size: 0.85rem;
+  color: var(--danger);
+}
+
+.naming-toggles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px 18px;
+  width: 100%;
+}
+.naming-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+.naming-toggle span {
+  display: flex;
+  flex-direction: column;
+}
+.naming-toggle .hint {
+  font-family: var(--mono);
+  font-size: 0.74rem;
+}
+/* The answer to what the toggles do, in the reader's own lenses. */
+.naming-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 14px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+.naming-example {
+  font-weight: 600;
+}
+
+/* An index built by an older version — usable, just missing something. */
+.source-stale {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  font-size: 0.86rem;
+  color: var(--text-dim);
+}
+.badge.stale {
+  border-color: var(--accent-light);
+  color: var(--accent-light);
+}
+
+/* Every slide at once — a contact sheet, meant to be screenshotted whole.
+   The column count is worked out in deck.js against the slide shape and the
+   window, so the sheet fits on screen without scrolling wherever it can. */
+.sheet {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 10px;
+  justify-content: center;
+  align-content: start;
+}
+.sheet[hidden] {
+  display: none;
+}
+.sheet figure {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: pointer;
+  /* No inner spacing: the slide is the tile, edge to edge. */
+  line-height: 0;
+}
+.sheet figure:hover {
+  border-color: var(--accent-light);
+}
+.sheet svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Where you are: a button for the easy case, fields for everyone else. */
+.setting.location {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.location-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.location-row input[type="text"] {
+  width: 160px;
+}
+.location-row input[type="number"] {
+  width: 120px;
+}
+
+
+/* Said loudly, because the alternative is an hour of wondering why an edit did
+   nothing: the running server is not the code on disk. */
+.stale-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: baseline;
+  margin: 0 0 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--warn-border, #d08a2a);
+  border-radius: var(--radius);
+  background: var(--warn-surface, #fdf3e2);
+  color: var(--warn-ink, #6b4400);
+}
+.stale-banner[hidden] {
+  display: none;
+}
+.stale-banner code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .stale-banner {
+    --warn-border: #7a5a1c;
+    --warn-surface: #2a2113;
+    --warn-ink: #f0d9a8;
+  }
+}
+:root[data-theme="dark"] .stale-banner {
+  --warn-border: #7a5a1c;
+  --warn-surface: #2a2113;
+  --warn-ink: #f0d9a8;
+}
+
+/* The hours behind "daylight is these hours", under the chips that ask. */
+.setting-hours {
+  display: flex;
+  gap: 8px;
+}
+.setting-hour {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}
+.setting-hour input[type="time"] {
+  font: inherit;
+  font-size: 0.92rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+/* Below this the three columns stop fitting, and the rail is the one to lose:
+   the inspector is what the reader is using, and changing slide still has the
+   arrows, ← →, space and the deck's own order. */
+@media (max-width: 1180px) {
+  .deck-rail {
+    display: none;
+  }
+}
